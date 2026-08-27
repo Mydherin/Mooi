@@ -1,0 +1,13 @@
+import { requireEnv } from '@/config/requireEnv';
+import type { AppEnv } from '@/config/types/AppEnv';
+
+export const env: AppEnv = {
+  appName: requireEnv(import.meta.env.VITE_APP_NAME, 'VITE_APP_NAME'),
+  appTagline: requireEnv(import.meta.env.VITE_APP_TAGLINE, 'VITE_APP_TAGLINE'),
+  appDescription: requireEnv(import.meta.env.VITE_APP_DESCRIPTION, 'VITE_APP_DESCRIPTION'),
+  appVersion: requireEnv(import.meta.env.VITE_APP_VERSION, 'VITE_APP_VERSION'),
+  githubUrl: requireEnv(import.meta.env.VITE_GITHUB_URL, 'VITE_GITHUB_URL'),
+  docsUrl: requireEnv(import.meta.env.VITE_DOCS_URL, 'VITE_DOCS_URL'),
+  contactEmail: requireEnv(import.meta.env.VITE_CONTACT_EMAIL, 'VITE_CONTACT_EMAIL'),
+  storagePrefix: requireEnv(import.meta.env.VITE_STORAGE_PREFIX, 'VITE_STORAGE_PREFIX'),
+};
