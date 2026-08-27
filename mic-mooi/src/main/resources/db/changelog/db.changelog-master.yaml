@@ -1,0 +1,7 @@
+databaseChangeLog:
+  - include:
+      file: db/changelog/changes/001-create-landing-highlight.yaml
+  - include:
+      file: db/changelog/changes/002-seed-landing-highlight.yaml
+  - include:
+      file: db/changelog/changes/003-create-service-heartbeat.yaml

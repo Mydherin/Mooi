@@ -80,6 +80,47 @@ Before starting the `PLAN.md` implementation you must ask to the user about impl
 
 - The scaffolding just must provide a awesome landing page which will be the start point to iterate everything
 
+## mic-mooi
+
+### Microservice Stack
+
+- It uses Java 25 as programming language
+
+- It uses Spring Boot as a framework
+
+- You must use JPA to handle ORM layer
+
+- You must use Lombok to avoid boilerplate
+
+- You must use Postgres as main db engine
+
+- You must use liquidbase to handle db migrations
+
+- You must config properly the application.yml
+
+- You must support .env file with no external dependencies
+
+### Microservice Guidelines
+
+- Follow the `Project Architecture` rules below to define the architecture of the microservice codebase
+
+#### Project Architecture
+
+The architecture has the following structure:
+
+- `features/` -> Features package in which all features are stored
+- `features/<feature-name>.java` -> A single file where all aspects and feature logic is implemented
+- `shared/` -> It is the package where any transversal aspect lives like `db`, `logging`...
+- `shared/<transversal-aspect>.java` -> A single file that contains the whole implementation of any transversal aspect
+
+Features in this architecture is totally self-contained in its single file.
+
+From features you could only import transversal aspects.
+
+Features will have duplicate code and logic since it is not possible import logic from another feature.
+
+Each transversal aspect should be totally self-contained. Only relevant infrastructure topics should be considered as transversal aspect. You do not consider business logic as transversal aspect
+
 ## Supported Agents Providers
 
 ### Claude

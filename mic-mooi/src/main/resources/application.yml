@@ -1,0 +1,53 @@
+spring:
+  application:
+    name: ${APP_NAME:mic-mooi}
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:mooi}
+    username: ${DB_USER:mooi}
+    password: ${DB_PASSWORD:mooi}
+    hikari:
+      pool-name: mooi-pool
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:10}
+      minimum-idle: ${DB_POOL_MIN_IDLE:2}
+      connection-timeout: ${DB_POOL_CONNECTION_TIMEOUT_MS:30000}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  liquibase:
+    enabled: ${DB_MIGRATIONS_ENABLED:true}
+    change-log: classpath:db/changelog/db.changelog-master.yaml
+    default-schema: ${DB_SCHEMA:public}
+
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  info:
+    env:
+      enabled: true
+
+logging:
+  level:
+    root: ${LOG_LEVEL_ROOT:INFO}
+    dev.mooi.mic: ${LOG_LEVEL_APP:INFO}
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%X{correlationId:-}] %logger{36} - %msg%n"
+
+app:
+  version: ${APP_VERSION:0.1.0}
+  cors:
+    allowed-origins: ${WEB_CORS_ALLOWED_ORIGINS:http://localhost:5173}

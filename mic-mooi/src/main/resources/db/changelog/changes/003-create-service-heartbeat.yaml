@@ -1,0 +1,54 @@
+databaseChangeLog:
+  - changeSet:
+      id: 003-create-service-heartbeat
+      author: mooi
+      changes:
+        - createTable:
+            tableName: service_heartbeat
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_service_heartbeat
+                    nullable: false
+              - column:
+                  name: instance_id
+                  type: varchar(64)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: service_name
+                  type: varchar(64)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: version
+                  type: varchar(32)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status
+                  type: varchar(24)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+        - createIndex:
+            indexName: idx_service_heartbeat_created_at
+            tableName: service_heartbeat
+            columns:
+              - column:
+                  name: created_at
+      rollback:
+        - dropTable:
+            tableName: service_heartbeat

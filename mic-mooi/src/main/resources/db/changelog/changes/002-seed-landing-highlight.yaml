@@ -1,0 +1,45 @@
+databaseChangeLog:
+  - changeSet:
+      id: 002-seed-landing-highlight
+      author: mooi
+      changes:
+        - insert:
+            tableName: landing_highlight
+            columns:
+              - column: {name: id, value: "11111111-1111-4111-8111-111111111111"}
+              - column: {name: slug, value: "modular-architecture"}
+              - column: {name: title, value: "Self-contained features"}
+              - column: {name: description, value: "Every feature lives in a single file with its own entity, repository, service and API."}
+              - column: {name: icon, value: "layers"}
+              - column: {name: display_order, valueNumeric: 1}
+              - column: {name: published, valueBoolean: true}
+              - column: {name: created_at, valueDate: "now()"}
+              - column: {name: updated_at, valueDate: "now()"}
+        - insert:
+            tableName: landing_highlight
+            columns:
+              - column: {name: id, value: "22222222-2222-4222-8222-222222222222"}
+              - column: {name: slug, value: "versioned-schema"}
+              - column: {name: title, value: "Schema owned by migrations"}
+              - column: {name: description, value: "Liquibase owns every table, JPA only validates the mapping against it."}
+              - column: {name: icon, value: "database"}
+              - column: {name: display_order, valueNumeric: 2}
+              - column: {name: published, valueBoolean: true}
+              - column: {name: created_at, valueDate: "now()"}
+              - column: {name: updated_at, valueDate: "now()"}
+        - insert:
+            tableName: landing_highlight
+            columns:
+              - column: {name: id, value: "33333333-3333-4333-8333-333333333333"}
+              - column: {name: slug, value: "env-driven-config"}
+              - column: {name: title, value: "Configuration from .env"}
+              - column: {name: description, value: "A dependency-free loader feeds the Spring environment, real env vars always win."}
+              - column: {name: icon, value: "sliders"}
+              - column: {name: display_order, valueNumeric: 3}
+              - column: {name: published, valueBoolean: true}
+              - column: {name: created_at, valueDate: "now()"}
+              - column: {name: updated_at, valueDate: "now()"}
+      rollback:
+        - delete:
+            tableName: landing_highlight
+            where: slug IN ('modular-architecture', 'versioned-schema', 'env-driven-config')

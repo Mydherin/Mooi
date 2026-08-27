@@ -1,0 +1,67 @@
+databaseChangeLog:
+  - changeSet:
+      id: 001-create-landing-highlight
+      author: mooi
+      changes:
+        - createTable:
+            tableName: landing_highlight
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_landing_highlight
+                    nullable: false
+              - column:
+                  name: slug
+                  type: varchar(64)
+                  constraints:
+                    nullable: false
+                    unique: true
+                    uniqueConstraintName: uq_landing_highlight_slug
+              - column:
+                  name: title
+                  type: varchar(120)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: description
+                  type: varchar(280)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: icon
+                  type: varchar(48)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: display_order
+                  type: int
+                  constraints:
+                    nullable: false
+              - column:
+                  name: published
+                  type: boolean
+                  defaultValueBoolean: true
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+        - createIndex:
+            indexName: idx_landing_highlight_display_order
+            tableName: landing_highlight
+            columns:
+              - column:
+                  name: display_order
+      rollback:
+        - dropTable:
+            tableName: landing_highlight
