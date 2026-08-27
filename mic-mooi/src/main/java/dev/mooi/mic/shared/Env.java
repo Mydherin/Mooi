@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -16,36 +17,52 @@ import org.springframework.core.env.MapPropertySource;
 /**
  * Transversal aspect: environment configuration.
  *
- * <p>Loads a {@code .env} file into the Spring {@code Environment} with zero external dependencies.
- * The file is registered as the lowest precedence property source, so real OS environment variables
- * and JVM system properties always win. Override the file location with {@code ENV_FILE}.
+ * <p>Loads an ordered chain of {@code .env} files into the Spring {@code Environment} with zero
+ * external dependencies. The default chain is the artifact {@code .env} followed by the monorepo root
+ * {@code .env}, so the artifact overrides shared values and the shared data layer configuration is
+ * inherited instead of duplicated. Every file is registered below the real OS environment variables
+ * and the JVM system properties, which always win. Override the chain with {@code ENV_FILES}.
  */
 public class Env implements EnvironmentPostProcessor {
 
-    public static final String PROPERTY_SOURCE_NAME = "dotenv";
+    public static final String PROPERTY_SOURCE_PREFIX = "dotenv:";
 
-    private static final String ENV_FILE_KEY = "ENV_FILE";
-    private static final String DEFAULT_ENV_FILE = ".env";
+    private static final String ENV_FILES_KEY = "ENV_FILES";
+    private static final String DEFAULT_ENV_FILES = ".env,../.env";
+    private static final String FILE_SEPARATOR = ",";
     private static final String EXPORT_PREFIX = "export ";
     private static final String COMMENT_PREFIX = "#";
     private static final String INLINE_COMMENT = " #";
 
     @Override
     public void postProcessEnvironment(ConfigurableEnvironment environment, SpringApplication application) {
-        Path file = resolveFile(environment);
-        if (!Files.isRegularFile(file)) {
-            return;
+        for (Path file : resolveFiles(environment)) {
+            if (!Files.isRegularFile(file)) {
+                continue;
+            }
+            Map<String, Object> values = read(file);
+            if (values.isEmpty()) {
+                continue;
+            }
+            environment.getPropertySources()
+                    .addLast(new MapPropertySource(PROPERTY_SOURCE_PREFIX + file, values));
         }
-        Map<String, Object> values = read(file);
-        if (values.isEmpty()) {
-            return;
-        }
-        environment.getPropertySources().addLast(new MapPropertySource(PROPERTY_SOURCE_NAME, values));
     }
 
-    private Path resolveFile(ConfigurableEnvironment environment) {
-        String configured = environment.getProperty(ENV_FILE_KEY);
-        return Path.of(configured != null && !configured.isBlank() ? configured : DEFAULT_ENV_FILE);
+    private List<Path> resolveFiles(ConfigurableEnvironment environment) {
+        String configured = environment.getProperty(ENV_FILES_KEY);
+        String value = configured != null && !configured.isBlank() ? configured : DEFAULT_ENV_FILES;
+        List<Path> files = new ArrayList<>();
+        for (String candidate : value.split(FILE_SEPARATOR)) {
+            String path = candidate.strip();
+            if (!path.isEmpty()) {
+                Path normalized = Path.of(path).toAbsolutePath().normalize();
+                if (!files.contains(normalized)) {
+                    files.add(normalized);
+                }
+            }
+        }
+        return files;
     }
 
     private Map<String, Object> read(Path file) {

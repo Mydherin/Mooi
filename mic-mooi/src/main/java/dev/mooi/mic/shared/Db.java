@@ -11,6 +11,7 @@ import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.auditing.DateTimeProvider;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
+import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.EntityListeners;
@@ -23,9 +24,13 @@ import lombok.Setter;
  *
  * <p>Enables JPA auditing on a UTC clock and exposes the auditable mapped superclass every feature
  * entity extends. Schema ownership belongs to Liquibase; JPA only validates it.
+ *
+ * <p>Repository interfaces are nested inside each single-file feature, so repository scanning must
+ * consider nested interfaces explicitly; Spring Data skips them by default.
  */
 @Configuration
 @EnableJpaAuditing(dateTimeProviderRef = Db.DATE_TIME_PROVIDER)
+@EnableJpaRepositories(basePackages = "dev.mooi.mic.features", considerNestedRepositories = true)
 public class Db {
 
     public static final String DATE_TIME_PROVIDER = "dbUtcDateTimeProvider";
