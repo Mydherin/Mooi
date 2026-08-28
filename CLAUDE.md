@@ -18,6 +18,8 @@ This is a monorepository which contains a whole application with different techn
 
 - Just preserve a single README.md at project root with only information about how to run and set up the application. Information must be properly structured and be so concise with just essentials words covering all aspects
 
+- The application in dev must be handled only through the root `Makefile`. Use `make dev-start`, `make dev-stop`, `make dev-status` and `make dev-clean` for the whole application, and their `dev-<command>-<artifact-name>` variants for a single artifact. Never run a package manager, a build tool, docker or docker compose directly to start, stop, inspect or clean the application in dev
+
 # Workflow
 
 **PLAN.md**
@@ -43,6 +45,10 @@ You must afford 5 technicals tasks with non stop, after that you must ask about 
 **PLAN.md Question**
 
 Before starting the `PLAN.md` implementation you must ask to the user about implementing the plan
+
+**Makefile Support**
+
+If an artifact is created, deleted or modified and the change affects how it runs in dev, you must update the `Makefile` support in the same change, so `make dev-start`, `make dev-stop`, `make dev-status` and `make dev-clean` keep working for the whole application and for each artifact
 
 # Tech Aspects
 
