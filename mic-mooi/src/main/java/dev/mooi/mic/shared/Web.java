@@ -10,6 +10,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.ErrorResponseException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -24,7 +25,9 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * Transversal aspect: HTTP edge.
  *
- * <p>Owns CORS for the SPA origin and the single error contract returned by every endpoint.
+ * <p>Owns CORS for the SPA origin and the single error contract returned by every endpoint. The CORS
+ * mapping covers the whole surface because the auth endpoints are mounted at the root, next to the
+ * {@code /api} features.
  */
 @Configuration
 public class Web {
@@ -34,7 +37,7 @@ public class Web {
         return new WebMvcConfigurer() {
             @Override
             public void addCorsMappings(CorsRegistry registry) {
-                registry.addMapping("/api/**")
+                registry.addMapping("/**")
                         .allowedOrigins(allowedOrigins)
                         .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
                         .allowedHeaders("*")
@@ -62,6 +65,12 @@ public class Web {
                     .map(error -> new ApiError.FieldIssue(error.getField(), error.getDefaultMessage()))
                     .toList();
             return build(HttpStatus.BAD_REQUEST, "Request validation failed", request, issues);
+        }
+
+        @ExceptionHandler(HttpMessageNotReadableException.class)
+        ResponseEntity<ApiError> onUnreadableBody(HttpMessageNotReadableException exception,
+                                                  HttpServletRequest request) {
+            return build(HttpStatus.BAD_REQUEST, "Request body is missing or malformed", request, List.of());
         }
 
         @ExceptionHandler(ResponseStatusException.class)

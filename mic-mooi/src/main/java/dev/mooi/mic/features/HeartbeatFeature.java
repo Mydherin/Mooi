@@ -148,7 +148,27 @@ public class HeartbeatFeature {
         java.util.Optional<Heartbeat> findFirstByOrderByCreatedAtDesc();
     }
 
+    // --- liveness ---
+
+    /**
+     * Unauthenticated liveness probe for clients that should not have to know about the actuator
+     * surface. Mounted at the root, next to the auth endpoints.
+     */
+    @RestController
+    public static class HealthController {
+
+        private static final String STATUS_UP = "UP";
+
+        @GetMapping("/health")
+        public HealthResponse health() {
+            return new HealthResponse(STATUS_UP);
+        }
+    }
+
     // --- contracts ---
+
+    public record HealthResponse(String status) {
+    }
 
     public record HeartbeatResponse(UUID id, String instanceId, String serviceName, String version, String status,
                                     OffsetDateTime recordedAt) {

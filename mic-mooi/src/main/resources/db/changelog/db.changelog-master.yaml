@@ -5,3 +5,9 @@ databaseChangeLog:
       file: db/changelog/changes/002-seed-landing-highlight.yaml
   - include:
       file: db/changelog/changes/003-create-service-heartbeat.yaml
+  - include:
+      file: db/changelog/changes/004-create-players.yaml
+  - include:
+      file: db/changelog/changes/005-create-auth-sessions.yaml
+  - include:
+      file: db/changelog/changes/006-create-refresh-tokens.yaml

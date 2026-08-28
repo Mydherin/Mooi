@@ -1,0 +1,55 @@
+databaseChangeLog:
+  - changeSet:
+      id: 005-create-auth-sessions
+      author: mooi
+      changes:
+        - createTable:
+            tableName: auth_sessions
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_auth_sessions
+                    nullable: false
+              - column:
+                  name: player_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+              - column:
+                  name: last_used_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+              - column:
+                  name: revoked_at
+                  type: timestamptz
+              - column:
+                  name: user_agent
+                  type: varchar(512)
+              - column:
+                  name: ip_address
+                  type: varchar(64)
+        - addForeignKeyConstraint:
+            constraintName: fk_auth_sessions_player
+            baseTableName: auth_sessions
+            baseColumnNames: player_id
+            referencedTableName: players
+            referencedColumnNames: id
+            onDelete: CASCADE
+        - createIndex:
+            indexName: idx_auth_sessions_player_id
+            tableName: auth_sessions
+            columns:
+              - column:
+                  name: player_id
+      rollback:
+        - dropTable:
+            tableName: auth_sessions

@@ -64,6 +64,7 @@ endef
 reverse = $(if $(1),$(call reverse,$(wordlist 2,$(words $(1)),$(1))) $(firstword $(1)))
 
 include make/env.mk
+include make/ports.mk
 include make/ui.mk
 include make/tools.mk
 include make/process.mk

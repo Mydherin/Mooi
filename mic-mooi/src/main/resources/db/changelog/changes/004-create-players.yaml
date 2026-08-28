@@ -1,0 +1,54 @@
+databaseChangeLog:
+  - changeSet:
+      id: 004-create-players
+      author: mooi
+      changes:
+        - createTable:
+            tableName: players
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_players
+                    nullable: false
+              - column:
+                  name: google_id
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+                    unique: true
+                    uniqueConstraintName: uq_players_google_id
+              - column:
+                  name: email
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+                    unique: true
+                    uniqueConstraintName: uq_players_email
+              - column:
+                  name: username
+                  type: varchar(64)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: avatar_url
+                  type: varchar(512)
+              - column:
+                  name: role
+                  type: varchar(16)
+                  defaultValue: member
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+        - sql:
+            comment: The role is a closed set, decided at signup and never after
+            sql: ALTER TABLE players ADD CONSTRAINT ck_players_role CHECK (role IN ('member', 'admin'))
+      rollback:
+        - dropTable:
+            tableName: players

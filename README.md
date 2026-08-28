@@ -13,8 +13,10 @@ Monorepository. Each artifact lives in its own root-level directory.
 - GNU Make >= 4 (macOS ships 3.81 — install with `brew install make`, exposed as `gmake`; the root `Makefile` delegates to it automatically)
 - [Bun](https://bun.sh) >= 1.3 (falls back to npm)
 - Java 25
-- Maven >= 3.9
 - Docker Engine + Docker Compose V2
+
+Maven is **not** required: `mic-mooi` ships the Maven Wrapper (`mvnw`) and the first
+`make dev-start` downloads the pinned distribution into `~/.m2/wrapper`.
 
 ## Setup
 
@@ -25,6 +27,19 @@ cp mic-mooi/.env.example mic-mooi/.env
 
 Configuration lives in each artifact's `.env`, plus the root `.env` for the data layer and the dev
 entrypoint. Set your own credentials before the first run.
+
+### Google OAuth2
+
+1. Create an OAuth 2.0 Client ID (type *Web application*) in the Google Cloud console.
+2. Authorized JavaScript origin: `http://localhost:28471` (the pinned SPA dev port, see
+   *Dev ports* below). No redirect URI is needed (Google
+   Identity Services returns the ID token in the browser).
+3. Set in `mic-mooi/.env`: `GOOGLE_CLIENT_ID`, `JWT_SECRET` (>= 32 bytes), `ADMIN_EMAILS`
+   (comma separated), `CORS_ORIGIN`.
+4. Set in `spa-mooi/.env`: `VITE_API_BASE_URL`, `VITE_GOOGLE_CLIENT_ID` (same client id).
+
+The first sign-in of an address listed in `ADMIN_EMAILS` creates that player with the admin role;
+adding an address later never promotes an existing player.
 
 ## Dev entrypoint
 
@@ -59,6 +74,22 @@ Every artifact gets the same set of commands, scoped to it and to what it needs:
 | `make dev-logs-<artifact>` | Tail the logs of `<artifact>` |
 
 Current artifacts: `spa-mooi`, `mic-mooi` (e.g. `make dev-start-mic-mooi`).
+
+### Dev ports
+
+`make` pins every dev service to a fixed, uncommon port, hardcoded in `make/ports.mk` and
+exported so Vite, the microservice and docker compose all use it regardless of their `.env`
+values. The `.env` files carry the same numbers as a fallback for non-`make` usage.
+
+| Service | Port | URL |
+| --- | --- | --- |
+| `spa-mooi` | `28471` | `http://localhost:28471` |
+| `mic-mooi` | `39615` | `http://localhost:39615` |
+| `postgres` | `54983` | `localhost:54983` |
+| `pgadmin` | `51247` | `http://localhost:51247` |
+
+Change a port in `make/ports.mk`; the cross-artifact wiring (`VITE_API_BASE_URL`, `CORS_ORIGIN`)
+follows automatically.
 
 ### Support commands
 
@@ -140,6 +171,8 @@ All variables must be prefixed with `VITE_`.
 | `VITE_GITHUB_URL` | Repository link |
 | `VITE_DOCS_URL` | Docs link |
 | `VITE_CONTACT_EMAIL` | Contact email |
+| `VITE_API_BASE_URL` | mic-mooi base URL |
+| `VITE_GOOGLE_CLIENT_ID` | Google OAuth2 client id |
 | `VITE_STORAGE_PREFIX` | Local storage key prefix |
 
 ### mic-mooi (`mic-mooi/.env`)
@@ -157,9 +190,16 @@ the root `.env`.
 | `DB_POOL_MIN_IDLE` | Connection pool min idle |
 | `DB_POOL_CONNECTION_TIMEOUT_MS` | Connection pool timeout (ms) |
 | `DB_MIGRATIONS_ENABLED` | Toggle Liquibase migrations |
-| `WEB_CORS_ALLOWED_ORIGINS` | Allowed CORS origins |
+| `CORS_ORIGIN` | Allowed CORS origins |
+| `GOOGLE_CLIENT_ID` | Google OAuth2 client id / expected token `aud` |
+| `JWT_SECRET` | HS256 access-token signing key (>= 32 bytes) |
+| `ACCESS_TOKEN_EXPIRES_IN` | Access token lifetime (e.g. `15m`) |
+| `REFRESH_TOKEN_EXPIRES_IN` | Refresh token lifetime (e.g. `30d`) |
+| `REPLAY_GRACE_SECONDS` | Grace window for concurrent refresh-token reuse |
+| `ADMIN_EMAILS` | Comma-separated addresses granted admin at signup |
 | `LOG_LEVEL_ROOT` | Root log level |
 | `LOG_LEVEL_APP` | Application log level |
+| `LOG_LEVEL_AUTH` | Auth log level |
 
 ### mic-mooi endpoints
 
@@ -170,4 +210,11 @@ the root `.env`.
 | `POST /api/landing/highlights` | Create a highlight |
 | `GET /api/heartbeats` | List recent heartbeats |
 | `GET /api/heartbeats/latest` | Get the latest heartbeat |
+| `POST /auth/google` | Sign in or sign up with a Google ID token |
+| `POST /auth/refresh` | Rotate the refresh token, mint a new access token |
+| `POST /auth/logout` | Revoke the session behind a refresh token |
+| `POST /auth/logout-all` | Revoke every session of the caller |
+| `GET /me` | Current player (requires a live session) |
+| `GET /admin/ping` | Admin-only probe |
+| `GET /health` | Liveness probe |
 | `GET /actuator/health` | Health check |

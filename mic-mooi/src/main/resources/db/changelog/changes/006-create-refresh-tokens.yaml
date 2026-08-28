@@ -1,0 +1,56 @@
+databaseChangeLog:
+  - changeSet:
+      id: 006-create-refresh-tokens
+      author: mooi
+      changes:
+        - createTable:
+            tableName: refresh_tokens
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_refresh_tokens
+                    nullable: false
+              - column:
+                  name: session_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: token_hash
+                  type: varchar(64)
+                  constraints:
+                    nullable: false
+                    unique: true
+                    uniqueConstraintName: uq_refresh_tokens_token_hash
+              - column:
+                  name: expires_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+              - column:
+                  name: used_at
+                  type: timestamptz
+        - addForeignKeyConstraint:
+            constraintName: fk_refresh_tokens_session
+            baseTableName: refresh_tokens
+            baseColumnNames: session_id
+            referencedTableName: auth_sessions
+            referencedColumnNames: id
+            onDelete: CASCADE
+        - createIndex:
+            indexName: idx_refresh_tokens_session_id
+            tableName: refresh_tokens
+            columns:
+              - column:
+                  name: session_id
+      rollback:
+        - dropTable:
+            tableName: refresh_tokens

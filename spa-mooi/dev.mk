@@ -3,8 +3,8 @@
 
 ARTIFACT_NAME := spa-mooi
 ARTIFACT_KIND := spa
-ARTIFACT_PORT := $(call env-get,spa-mooi/.env,VITE_DEV_PORT,5173)
-ARTIFACT_URL := http://$(call env-get,spa-mooi/.env,VITE_DEV_HOST,localhost):$(ARTIFACT_PORT)
+ARTIFACT_PORT := $(DEV_PORT_SPA)
+ARTIFACT_URL := http://$(DEV_HOST_SPA):$(ARTIFACT_PORT)
 ARTIFACT_HEALTH := $(ARTIFACT_URL)
 ARTIFACT_SERVICES :=
 ARTIFACT_NEEDS :=

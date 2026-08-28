@@ -4,6 +4,7 @@ import { ROUTES } from '@/app/routes';
 import { env } from '@/config/env';
 import { navLinks } from '@/layouts/navLinks';
 import { MobileMenu } from '@/layouts/MobileMenu';
+import { HeaderAuthActions } from '@/features/auth/components/HeaderAuthActions';
 import { Container } from '@/shared/components/Container';
 import { Logo } from '@/shared/components/Logo';
 import { ThemeToggle } from '@/shared/components/ThemeToggle';
@@ -33,6 +34,7 @@ export const Header = () => {
         </nav>
 
         <div className="flex items-center gap-1">
+          <HeaderAuthActions />
           <ThemeToggle />
           <a
             href={env.githubUrl}
