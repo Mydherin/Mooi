@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, CircleAlert, CircleCheck, LoaderCircle, ShieldCheck } from 'lucide-react';
 import { ROUTES } from '@/app/routes';
 import { authenticatedFetch } from '@/features/auth/lib/authenticatedFetch';
-import { Container } from '@/shared/components/Container';
+import { Card } from '@/shared/components/Card';
+import { buttonStyles } from '@/shared/styles/buttonStyles';
 
 type PingState = 'loading' | 'ok' | 'error';
 
@@ -31,33 +32,48 @@ export const AdminPage = () => {
   }, []);
 
   return (
-    <Container className="py-16 sm:py-24">
-      <div className="mx-auto max-w-xl text-center">
-        <span className="flex size-14 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-lg shadow-indigo-500/25 mx-auto">
-          <ShieldCheck className="size-6" />
+    <div className="mx-auto w-full max-w-2xl px-4 py-6 lg:px-6 lg:py-8">
+      <h1 className="text-2xl font-semibold tracking-tight text-ink sm:text-3xl">Admin</h1>
+      <p className="mt-1.5 text-sm text-ink-muted">
+        Server-verified role. This screen only reflects what the API allows.
+      </p>
+
+      <Card className="mt-6 p-6">
+        <span className="flex size-11 items-center justify-center rounded-xl bg-brand-soft text-brand">
+          <ShieldCheck className="size-5" />
         </span>
 
-        <h1 className="mt-8 text-3xl font-semibold tracking-tight sm:text-4xl">Admin area</h1>
-        <p className="mt-3 text-base text-slate-600 dark:text-slate-400">
-          The server verifies your role independently of this screen.
-        </p>
+        <p className="mt-5 font-mono text-xs text-ink-subtle">GET /admin/ping</p>
 
-        <p className="mt-8 rounded-xl border px-4 py-3 text-sm font-medium data-[state=ok]:border-emerald-300 data-[state=ok]:bg-emerald-50 data-[state=ok]:text-emerald-700 data-[state=error]:border-rose-300 data-[state=error]:bg-rose-50 data-[state=error]:text-rose-700 data-[state=loading]:border-slate-200 data-[state=loading]:text-slate-500 dark:data-[state=ok]:border-emerald-500/40 dark:data-[state=ok]:bg-emerald-500/10 dark:data-[state=ok]:text-emerald-300 dark:data-[state=error]:border-rose-500/40 dark:data-[state=error]:bg-rose-500/10 dark:data-[state=error]:text-rose-300"
+        <p
           data-state={state}
+          className="mt-3 inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium data-[state=error]:border-danger/30 data-[state=error]:bg-danger-soft data-[state=error]:text-danger data-[state=loading]:border-line data-[state=loading]:bg-surface-2 data-[state=loading]:text-ink-subtle data-[state=ok]:border-success/30 data-[state=ok]:bg-success-soft data-[state=ok]:text-success"
         >
-          {state === 'loading' && 'Checking /admin/ping…'}
-          {state === 'ok' && 'GET /admin/ping → ok'}
-          {state === 'error' && 'GET /admin/ping → denied'}
+          {state === 'loading' && (
+            <>
+              <LoaderCircle className="size-4 animate-spin" />
+              Checking…
+            </>
+          )}
+          {state === 'ok' && (
+            <>
+              <CircleCheck className="size-4" />
+              ok
+            </>
+          )}
+          {state === 'error' && (
+            <>
+              <CircleAlert className="size-4" />
+              denied
+            </>
+          )}
         </p>
+      </Card>
 
-        <Link
-          to={ROUTES.account}
-          className="mt-8 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/70 px-5 py-2.5 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-white dark:border-white/15 dark:bg-white/5 dark:text-slate-200 dark:hover:border-white/25 dark:hover:bg-white/10"
-        >
-          <ArrowLeft className="size-4" />
-          Back to account
-        </Link>
-      </div>
-    </Container>
+      <Link to={ROUTES.projects} className={buttonStyles('ghost', 'sm', 'mt-6 -ml-3.5')}>
+        <ArrowLeft className="size-4" />
+        Back to projects
+      </Link>
+    </div>
   );
 };

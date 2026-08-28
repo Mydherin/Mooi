@@ -84,8 +84,6 @@ If an artifact is created, deleted or modified and the change affects how it run
 
 - Application must be totally responsive with awesome view in desktop and mobile
 
-- The scaffolding just must provide a awesome landing page which will be the start point to iterate everything
-
 ## mic-mooi
 
 ### Microservice Stack

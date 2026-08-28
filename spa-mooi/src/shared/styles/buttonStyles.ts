@@ -1,15 +1,26 @@
-import { cn } from '@/shared/utils/cn';
+import type { ButtonSize } from '@/shared/types/ButtonSize';
 import type { ButtonVariant } from '@/shared/types/ButtonVariant';
+import { cn } from '@/shared/utils/cn';
 
 const base =
-  'inline-flex items-center justify-center gap-2 rounded-full px-6 py-3 text-sm font-medium transition duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500';
+  'inline-flex items-center justify-center gap-2 rounded-xl font-medium whitespace-nowrap transition duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:pointer-events-none disabled:opacity-55';
 
-const variants: Record<ButtonVariant, string> = {
-  primary:
-    'bg-gradient-to-r from-indigo-500 to-violet-600 text-white shadow-lg shadow-indigo-500/25 hover:from-indigo-400 hover:to-violet-500 hover:shadow-xl hover:shadow-indigo-500/35',
-  secondary:
-    'border border-slate-200 bg-white/70 text-slate-700 backdrop-blur hover:border-slate-300 hover:bg-white dark:border-white/15 dark:bg-white/5 dark:text-slate-200 dark:hover:border-white/25 dark:hover:bg-white/10',
+const sizes: Record<ButtonSize, string> = {
+  sm: 'h-9 px-3.5 text-sm',
+  md: 'h-10 px-4 text-sm',
+  lg: 'h-12 px-6 text-base',
 };
 
-export const buttonStyles = (variant: ButtonVariant, className?: string): string =>
-  cn(base, variants[variant], className);
+const variants: Record<ButtonVariant, string> = {
+  primary: 'bg-contrast text-contrast-ink hover:bg-contrast/90',
+  brand: 'bg-brand text-brand-ink hover:bg-brand-strong shadow-[0_10px_30px_-14px_var(--brand)]',
+  secondary: 'border border-line bg-surface text-ink hover:border-line-strong hover:bg-surface-2',
+  ghost: 'text-ink-muted hover:bg-surface-2 hover:text-ink',
+  danger: 'border border-danger/40 bg-danger-soft text-danger hover:bg-danger/15',
+};
+
+export const buttonStyles = (
+  variant: ButtonVariant,
+  size: ButtonSize = 'md',
+  className?: string,
+): string => cn(base, sizes[size], variants[variant], className);

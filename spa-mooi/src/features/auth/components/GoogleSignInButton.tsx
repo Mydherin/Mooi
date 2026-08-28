@@ -1,4 +1,4 @@
-import { LogIn } from 'lucide-react';
+import { LoaderCircle, LogIn } from 'lucide-react';
 import { useGoogleIdentityServices } from '@/features/auth/hooks/useGoogleIdentityServices';
 import { buttonStyles } from '@/shared/styles/buttonStyles';
 
@@ -16,13 +16,13 @@ export const GoogleSignInButton = ({
   const { containerRef, isReady } = useGoogleIdentityServices(onCredential);
 
   return (
-    <div className="relative inline-flex w-full sm:w-auto">
+    <div className="relative inline-flex w-full">
       <span
         aria-hidden
-        className={buttonStyles('primary', 'w-full justify-center sm:w-auto')}
+        className={buttonStyles('primary', 'lg', 'w-full')}
         data-loading={busy || !isReady}
       >
-        <LogIn className="size-4" />
+        {busy ? <LoaderCircle className="size-4 animate-spin" /> : <LogIn className="size-4" />}
         {busy ? 'Signing in…' : label}
       </span>
 

@@ -1,11 +1,15 @@
-import { Sparkles } from 'lucide-react';
 import { env } from '@/config/env';
+import { LogoMark } from '@/shared/components/LogoMark';
 
-export const Logo = () => (
+interface LogoProps {
+  compact?: boolean;
+}
+
+export const Logo = ({ compact = false }: LogoProps) => (
   <span className="flex items-center gap-2.5">
-    <span className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 via-violet-500 to-fuchsia-500 text-white shadow-lg shadow-violet-500/30">
-      <Sparkles className="size-4.5" />
-    </span>
-    <span className="text-lg font-semibold tracking-tight">{env.appName}</span>
+    <LogoMark className="size-8" />
+    {compact ? null : (
+      <span className="text-lg font-semibold tracking-tight text-ink">{env.appName}</span>
+    )}
   </span>
 );

@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
-import { UserRound } from 'lucide-react';
 import { ROUTES } from '@/app/routes';
+import { Avatar } from '@/shared/components/Avatar';
+import { buttonStyles } from '@/shared/styles/buttonStyles';
 import { useAuthStore } from '@/stores/authStore';
 
 export const HeaderAuthActions = () => {
@@ -9,28 +10,27 @@ export const HeaderAuthActions = () => {
 
   if (!player || !session) {
     return (
-      <Link
-        to={ROUTES.login}
-        className="rounded-full px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white"
-      >
-        Sign in
-      </Link>
+      <div className="flex items-center gap-1.5">
+        <Link to={ROUTES.login} className={buttonStyles('ghost', 'sm')}>
+          Sign in
+        </Link>
+        <Link
+          to={ROUTES.login}
+          className={buttonStyles('brand', 'sm', 'hidden sm:inline-flex')}
+        >
+          Get started
+        </Link>
+      </div>
     );
   }
 
   return (
     <Link
-      to={ROUTES.account}
-      className="flex items-center gap-2 rounded-full py-1 pr-3 pl-1 text-sm font-medium text-slate-700 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-white/10"
+      to={ROUTES.projects}
+      className="flex h-10 items-center gap-2 rounded-xl px-2 text-sm font-medium text-ink-muted transition hover:bg-surface-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
     >
-      {player.avatarUrl ? (
-        <img src={player.avatarUrl} alt="" className="size-7 rounded-full object-cover" />
-      ) : (
-        <span className="flex size-7 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 text-white">
-          <UserRound className="size-4" />
-        </span>
-      )}
-      <span className="hidden sm:inline">{player.username}</span>
+      <Avatar src={player.avatarUrl} name={player.username} size="sm" />
+      <span className="hidden sm:inline">Dashboard</span>
     </Link>
   );
 };
