@@ -2,15 +2,20 @@ import { Link } from 'react-router-dom';
 import { FolderGit2, Menu } from 'lucide-react';
 import { ROUTES } from '@/app/routes';
 import { env } from '@/config/env';
-import { Avatar } from '@/shared/components/Avatar';
+import { AppUserMenu } from '@/layouts/app/AppUserMenu';
 import { IconButton } from '@/shared/components/IconButton';
 import { Logo } from '@/shared/components/Logo';
 import { ThemeToggle } from '@/shared/components/ThemeToggle';
-import { useAuthStore } from '@/stores/authStore';
 import { useSidebarStore } from '@/stores/sidebarStore';
 
+/**
+ * The bar every screen sits under, and the one place the player themselves appears.
+ *
+ * The account menu lives here at every breakpoint rather than only on mobile: who is signed in, and
+ * leaving, are properties of the session, so they belong to the frame around the application and
+ * not to any screen inside it.
+ */
 export const AppTopBar = () => {
-  const player = useAuthStore((state) => state.player);
   const open = useSidebarStore((state) => state.open);
 
   return (
@@ -35,15 +40,7 @@ export const AppTopBar = () => {
         >
           <FolderGit2 className="size-4.5" />
         </a>
-        {player ? (
-          <Link
-            to={ROUTES.account}
-            aria-label="Open account"
-            className="flex size-10 items-center justify-center rounded-xl transition hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand lg:hidden"
-          >
-            <Avatar src={player.avatarUrl} name={player.username} size="sm" />
-          </Link>
-        ) : null}
+        <AppUserMenu />
       </div>
     </header>
   );

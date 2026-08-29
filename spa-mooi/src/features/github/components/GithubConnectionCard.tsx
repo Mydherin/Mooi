@@ -1,4 +1,4 @@
-import { ExternalLink, RefreshCw, Unlink } from 'lucide-react';
+import { ExternalLink, FolderGit2, RefreshCw, Unlink } from 'lucide-react';
 import { GithubConnectButton } from '@/features/github/components/GithubConnectButton';
 import { useGithubConnection } from '@/features/github/hooks/useGithubConnection';
 import type { GithubConnection } from '@/features/github/types/GithubConnection';
@@ -23,13 +23,15 @@ const Skeleton = () => (
 const Connected = ({
   connection,
   busy,
+  onManageAccess,
   onDisconnect,
 }: {
   connection: GithubConnection;
   busy: boolean;
+  onManageAccess: () => void;
   onDisconnect: () => void;
 }) => (
-  <div className="mt-5 flex flex-col gap-4 sm:flex-row sm:items-center">
+  <div className="mt-5 flex flex-col gap-4 sm:flex-row sm:items-start">
     <Avatar src={connection.avatarUrl} name={connection.login} size="md" />
 
     <div className="min-w-0 flex-1">
@@ -41,9 +43,14 @@ const Connected = ({
         {connection.name ? `${connection.name} · ` : ''}
         Linked {formatDate(connection.connectedAt)}
       </p>
+      {/* Being linked and being able to read a repository are two different grants on GitHub, and
+          a player who cannot find a private repository has no way to know that from the badge. */}
+      <p className="mt-2 text-xs leading-relaxed text-ink-subtle">
+        Private repositories appear once Mooi is granted access to them on GitHub.
+      </p>
     </div>
 
-    <div className="flex shrink-0 items-center gap-1.5">
+    <div className="flex shrink-0 flex-wrap items-center gap-1.5">
       {connection.profileUrl ? (
         <a
           href={connection.profileUrl}
@@ -55,6 +62,11 @@ const Connected = ({
           Profile
         </a>
       ) : null}
+
+      <Button variant="secondary" size="sm" onClick={onManageAccess} disabled={busy}>
+        <FolderGit2 className="size-4" />
+        Repository access
+      </Button>
 
       <Button variant="danger" size="sm" onClick={onDisconnect} disabled={busy}>
         <Unlink className="size-4" />
@@ -86,7 +98,8 @@ const Disconnected = ({ busy, onConnect }: { busy: boolean; onConnect: () => voi
  * account they authorized is actually connected.
  */
 export const GithubConnectionCard = () => {
-  const { connection, status, error, connect, disconnect, reload } = useGithubConnection();
+  const { connection, status, error, connect, manageAccess, disconnect, reload } =
+    useGithubConnection();
   const busy = status === 'loading' || status === 'connecting';
 
   return (
@@ -110,7 +123,12 @@ export const GithubConnectionCard = () => {
       {status !== 'error' && status !== 'ready' && !connection ? <Skeleton /> : null}
 
       {status !== 'error' && connection ? (
-        <Connected connection={connection} busy={busy} onDisconnect={disconnect} />
+        <Connected
+          connection={connection}
+          busy={busy}
+          onManageAccess={manageAccess}
+          onDisconnect={disconnect}
+        />
       ) : null}
 
       {status === 'ready' && !connection ? (

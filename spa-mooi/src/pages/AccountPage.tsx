@@ -1,7 +1,6 @@
 import { ConnectionsCard } from '@/features/account/components/ConnectionsCard';
 import { PreferencesCard } from '@/features/account/components/PreferencesCard';
 import { ProfileCard } from '@/features/account/components/ProfileCard';
-import { SecurityCard } from '@/features/account/components/SecurityCard';
 import { GithubConnectionCard } from '@/features/github/components/GithubConnectionCard';
 import { useAuthStore } from '@/stores/authStore';
 
@@ -24,7 +23,6 @@ export const AccountPage = () => {
         <GithubConnectionCard />
         <ConnectionsCard />
         <PreferencesCard />
-        <SecurityCard />
       </div>
     </div>
   );

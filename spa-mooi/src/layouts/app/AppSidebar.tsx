@@ -4,7 +4,6 @@ import { ROUTES } from '@/app/routes';
 import { projectPath } from '@/app/paths';
 import { AppNavItem } from '@/layouts/app/AppNavItem';
 import { appNavLinks } from '@/layouts/app/appNavLinks';
-import { AppUserCard } from '@/layouts/app/AppUserCard';
 import { Logo } from '@/shared/components/Logo';
 import { cn } from '@/shared/utils/cn';
 import { useAuthStore } from '@/stores/authStore';
@@ -54,7 +53,7 @@ export const AppSidebar = ({ className, onNavigate }: AppSidebarProps) => {
       {/* Only rendered once there is a workspace: an empty heading would promise a list that the
           player has not created yet. */}
       {sidebarProjects.length > 0 ? (
-        <div className="min-h-0 flex-1 overflow-y-auto px-3 pt-6">
+        <div className="min-h-0 flex-1 overflow-y-auto px-3 pt-6 pb-3">
           <p className="px-3 text-xs font-semibold tracking-[0.18em] text-ink-subtle uppercase">
             Projects
           </p>
@@ -75,11 +74,6 @@ export const AppSidebar = ({ className, onNavigate }: AppSidebarProps) => {
         <div className="min-h-0 flex-1" />
       )}
 
-      {player ? (
-        <div className="shrink-0 border-t border-line p-3">
-          <AppUserCard player={player} onNavigate={onNavigate} />
-        </div>
-      ) : null}
     </aside>
   );
 };

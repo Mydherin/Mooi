@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { FolderGit2, RefreshCw, Search } from 'lucide-react';
 import { fetchGithubRepositories } from '@/features/github/api/githubRepositoriesApi';
+import { useGithubConnection } from '@/features/github/hooks/useGithubConnection';
 import type { GithubRepository } from '@/features/github/types/GithubRepository';
 import { RepositoryRow } from '@/features/projects/components/RepositoryRow';
 import { useProjects } from '@/features/projects/hooks/useProjects';
@@ -38,7 +39,9 @@ const Skeleton = () => (
  */
 export const AddProjectDialog = ({ open, onClose }: AddProjectDialogProps) => {
   const { projects, busy, actionError, add, clearActionError } = useProjects();
+  const { manageAccess } = useGithubConnection();
   const [repositories, setRepositories] = useState<GithubRepository[]>([]);
+  const [installations, setInstallations] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const [query, setQuery] = useState('');
@@ -46,9 +49,13 @@ export const AddProjectDialog = ({ open, onClose }: AddProjectDialogProps) => {
   const load = useCallback(() => {
     setLoading(true);
     setFailure(null);
+    setInstallations(null);
 
     fetchGithubRepositories()
-      .then((loaded) => setRepositories(loaded))
+      .then((access) => {
+        setRepositories(access.repositories);
+        setInstallations(access.installations);
+      })
       .catch((error: Error) => setFailure(error.message))
       .finally(() => setLoading(false));
   }, []);
@@ -107,6 +114,24 @@ export const AddProjectDialog = ({ open, onClose }: AddProjectDialogProps) => {
       ) : null}
 
       <div className="mt-4">
+        {/* Zero installations is the difference between "you own nothing else" and "Mooi was never
+            let in" — without saying so, a list missing every private repository looks like a bug. */}
+        {!loading && !failure && installations === 0 ? (
+          <div className="mb-4 flex flex-col gap-3 rounded-xl border border-warning/30 bg-warning-soft px-4 py-3.5 sm:flex-row sm:items-center">
+            <p className="min-w-0 flex-1 text-sm leading-relaxed text-ink">
+              <span className="font-medium">Only public repositories are listed.</span>
+              <span className="text-ink-muted">
+                {' '}Mooi has not been granted access to any repository on GitHub yet.
+              </span>
+            </p>
+            <span className="shrink-0">
+              <Button variant="secondary" size="sm" onClick={manageAccess}>
+                Grant access
+              </Button>
+            </span>
+          </div>
+        ) : null}
+
         {loading ? <Skeleton /> : null}
 
         {!loading && failure ? (
@@ -125,7 +150,7 @@ export const AddProjectDialog = ({ open, onClose }: AddProjectDialogProps) => {
           <EmptyState
             icon={FolderGit2}
             title="No repositories available"
-            description="Your GitHub account exposes no repository to Mooi yet."
+            description="Grant Mooi access to the repositories you want to work on."
           />
         ) : null}
 
@@ -149,6 +174,18 @@ export const AddProjectDialog = ({ open, onClose }: AddProjectDialogProps) => {
               />
             ))}
           </ul>
+        ) : null}
+
+        {/* Quiet, and always there: searching an incomplete list is the moment a player needs the
+            way to widen it, and by then the notice above may no longer apply. */}
+        {!loading && !failure && repositories.length > 0 ? (
+          <button
+            type="button"
+            onClick={manageAccess}
+            className="mt-4 rounded text-xs text-ink-subtle underline-offset-4 transition hover:text-ink hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+          >
+            Missing a repository? Manage GitHub access
+          </button>
         ) : null}
       </div>
     </Modal>

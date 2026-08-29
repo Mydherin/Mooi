@@ -84,7 +84,8 @@ public class GithubConnectionFeature {
     @GetMapping("/me/github/repositories")
     @Auth.Authenticated
     public RepositoriesResponse repositories(Auth.Principal principal) {
-        return new RepositoriesResponse(githubConnectionService.repositories(principal.player().id()));
+        Github.RepositoryAccess access = githubConnectionService.repositories(principal.player().id());
+        return new RepositoriesResponse(access.repositories(), access.installations());
     }
 
     /** Always 204, linked or not: disconnecting is stated as an outcome, not as a transaction. */
@@ -123,7 +124,8 @@ public class GithubConnectionFeature {
          * party that will later verify it.
          */
         public AuthorizationPayload startAuthorization(UUID playerId) {
-            return new AuthorizationPayload(oauthClient.authorizeUrl(stateCodec.issue(playerId)));
+            String state = stateCodec.issue(playerId);
+            return new AuthorizationPayload(oauthClient.authorizeUrl(state), oauthClient.installUrl(state));
         }
 
         /**
@@ -188,7 +190,7 @@ public class GithubConnectionFeature {
          * the player like GitHub losing their repositories.
          */
         @Transactional
-        public List<Github.Repository> repositories(UUID playerId) {
+        public Github.RepositoryAccess repositories(UUID playerId) {
             GithubConnection connection = githubConnectionRepository.findByPlayerId(playerId)
                     .map(this::ensureFreshToken)
                     .orElseThrow(Github.GithubException::reauthorize);
@@ -340,7 +342,13 @@ public class GithubConnectionFeature {
 
     // --- contracts ---
 
-    public record AuthorizationPayload(String authorizeUrl) {
+    /**
+     * The two doors of the integration. {@code authorizeUrl} identifies the player and lets them
+     * choose which GitHub account to use; {@code installUrl} is where they choose which repositories
+     * Mooi may read. Both carry the same freshly signed state, so either one closes the loop on the
+     * same callback.
+     */
+    public record AuthorizationPayload(String authorizeUrl, String installUrl) {
     }
 
     public record ConnectionRequest(@NotBlank String code, @NotBlank String state) {
@@ -360,7 +368,11 @@ public class GithubConnectionFeature {
     public record ConnectionResponse(GithubConnectionPayload connection) {
     }
 
-    /** Repository metadata only, straight from GitHub: nothing here is persisted by this feature. */
-    public record RepositoriesResponse(List<Github.Repository> repositories) {
+    /**
+     * Repository metadata only, straight from GitHub: nothing here is persisted by this feature.
+     * {@code installations} travels with it because it is what separates "you have no other
+     * repository" from "Mooi was never granted access to one".
+     */
+    public record RepositoriesResponse(List<Github.Repository> repositories, int installations) {
     }
 }

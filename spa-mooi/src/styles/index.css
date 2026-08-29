@@ -109,6 +109,7 @@
   --animate-rise: rise 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
   --animate-pulse-soft: pulse-soft 1.6s ease-in-out infinite;
   --animate-shimmer: shimmer 2s linear infinite;
+  --animate-menu-in: menu-in 0.16s cubic-bezier(0.16, 1, 0.3, 1) both;
 
   @keyframes float {
     0%,
@@ -147,6 +148,18 @@
     }
     to {
       background-position: 200% 0;
+    }
+  }
+
+  /* Short and slightly scaled: a menu should read as opening from its trigger, not as arriving. */
+  @keyframes menu-in {
+    from {
+      opacity: 0;
+      transform: translateY(-6px) scale(0.97);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
     }
   }
 }

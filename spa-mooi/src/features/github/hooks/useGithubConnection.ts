@@ -13,6 +13,7 @@ interface UseGithubConnection {
   status: GithubConnectionStatus;
   error: string | null;
   connect: () => void;
+  manageAccess: () => void;
   disconnect: () => void;
   reload: () => void;
 }
@@ -36,11 +37,28 @@ export const useGithubConnection = (): UseGithubConnection => {
   const connect = useCallback(() => {
     useGithubStore.getState().setStatus('connecting');
     startGithubAuthorization()
-      .then((authorizeUrl) => {
-        window.location.assign(authorizeUrl);
+      .then((authorization) => {
+        window.location.assign(authorization.authorizeUrl);
       })
       .catch(() => {
         useGithubStore.getState().setError('Could not start the GitHub authorization.');
+      });
+  }, []);
+
+  /**
+   * The other half of the link, and the one that actually decides what Mooi can read.
+   *
+   * Authorizing grants an identity; only an installation grants repositories, which is why a player
+   * who sees no private repository is sent here rather than told to authorize again.
+   */
+  const manageAccess = useCallback(() => {
+    useGithubStore.getState().setStatus('connecting');
+    startGithubAuthorization()
+      .then((authorization) => {
+        window.location.assign(authorization.installUrl);
+      })
+      .catch(() => {
+        useGithubStore.getState().setError('Could not open your GitHub repository access.');
       });
   }, []);
 
@@ -66,5 +84,5 @@ export const useGithubConnection = (): UseGithubConnection => {
       });
   }, []);
 
-  return { connection, status, error, connect, disconnect, reload };
+  return { connection, status, error, connect, manageAccess, disconnect, reload };
 };

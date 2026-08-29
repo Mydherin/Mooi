@@ -7,19 +7,20 @@ const AUTHORIZATION_PATH = '/me/github/authorization';
 const CONNECTION_PATH = '/me/github/connection';
 
 /**
- * Opens the flow. The API answers with a ready-made authorize URL carrying a state it signed for
- * this player, so nothing here has to know the client id or protect the round trip itself.
+ * Opens the flow. The API answers with ready-made URLs carrying a state it signed for this player,
+ * so nothing here has to know the client id or protect the round trip itself.
+ *
+ * Both URLs come back from the one call because both are minted from the same state: whichever the
+ * player is sent to, GitHub closes the loop on the same callback.
  */
-export const startGithubAuthorization = async (): Promise<string> => {
+export const startGithubAuthorization = async (): Promise<GithubAuthorizationResponse> => {
   const response = await authenticatedFetch(AUTHORIZATION_PATH, { method: 'POST' });
 
   if (!response.ok) {
     throw new Error(`Request to ${AUTHORIZATION_PATH} failed with ${response.status}`);
   }
 
-  const body = (await response.json()) as GithubAuthorizationResponse;
-
-  return body.authorizeUrl;
+  return (await response.json()) as GithubAuthorizationResponse;
 };
 
 /** Redeems the authorization code. Sent with the player's own token, which is what binds the link. */

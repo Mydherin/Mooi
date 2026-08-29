@@ -49,22 +49,28 @@ Links a GitHub account to an existing player. It never signs anyone in — sign-
 2. Enable **Expire user authorization tokens**: it is the only setup that issues refresh tokens,
    which is what keeps the link alive without asking the player to authorize again.
 3. Enable **Request user authorization (OAuth) during installation**, and grant **Repository
-   permissions → Metadata: Read-only**: this is what lets an installation be redeemed as a login and
-   lets the app list the repositories it was granted.
+   permissions → Metadata: Read-only** and **Contents: Read-only**: this is what lets an
+   installation be redeemed as a login and lets the app list the repositories it was granted.
 4. Callback URL: `http://localhost:28471/account/github/callback` (pinned SPA dev port; `make`
    exports the matching `GITHUB_REDIRECT_URI` automatically).
 5. Generate a client secret, then set in `mic-mooi/.env`: `GITHUB_CLIENT_ID`,
    `GITHUB_CLIENT_SECRET`.
 6. Set `GITHUB_APP_SLUG` in `mic-mooi/.env` to the app's URL slug (the last segment of
-   `https://github.com/apps/<slug>`). It sends players to the install-and-authorize page, which is
-   what makes private repositories selectable — without it only public repositories are listed.
+   `https://github.com/apps/<slug>`). It backs the **Repository access** action, which is the
+   install-and-authorize page — without it players are sent to their GitHub installations screen
+   instead, one step longer.
 7. Generate the key encrypting stored GitHub tokens at rest and set it as `SECRETS_KEY`:
 
 ```bash
 openssl rand -base64 32
 ```
 
-The SPA needs no GitHub variable: it asks the API for a ready-made authorize URL.
+8. **Install the app on every account owning repositories to work on** — the personal account and
+   each organization. Authorizing grants an identity; only an installation decides which
+   repositories the grant may read, so private repositories of an account with no installation are
+   invisible to Mooi by GitHub's design and no configuration can widen that.
+
+The SPA needs no GitHub variable: it asks the API for ready-made authorize and install URLs.
 
 ## Dev entrypoint
 
@@ -227,7 +233,7 @@ the root `.env`.
 | `SECRETS_KEY` | AES-256-GCM key encrypting third-party tokens at rest (32 bytes, base64) |
 | `GITHUB_CLIENT_ID` | GitHub App client id |
 | `GITHUB_CLIENT_SECRET` | GitHub App client secret |
-| `GITHUB_APP_SLUG` | GitHub App URL slug; enables the install-and-authorize flow |
+| `GITHUB_APP_SLUG` | GitHub App URL slug; backs the install-and-authorize page for repository access |
 | `GITHUB_REDIRECT_URI` | Callback registered on the GitHub App |
 | `GITHUB_AUTHORIZE_URI` | GitHub authorization endpoint |
 | `GITHUB_TOKEN_URI` | GitHub token endpoint |

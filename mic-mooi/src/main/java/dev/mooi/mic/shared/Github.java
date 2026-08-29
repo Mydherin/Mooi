@@ -334,6 +334,16 @@ public class Github {
     }
 
     /**
+     * What a grant can reach, and how far into GitHub it was actually let in.
+     *
+     * <p>The installation count travels with the list because it is the only thing that explains a
+     * short one: zero installations means the player authorized Mooi but never granted it a
+     * repository, which from their side looks exactly like their private repositories going missing.
+     */
+    public record RepositoryAccess(List<Repository> repositories, int installations) {
+    }
+
+    /**
      * The only place this application talks to GitHub.
      *
      * <p>Two habits of GitHub's OAuth endpoint drive the shape of this class. It answers failures
@@ -377,21 +387,38 @@ public class Github {
          * No {@code scope} parameter: a GitHub App carries its permissions in its own configuration,
          * and asking for scopes here would be silently ignored while suggesting otherwise.
          *
-         * <p>With the app slug configured the player is sent to the installation page instead of the
-         * bare authorization page. That is the only flow that can reach a private repository: an
-         * authorization alone grants an identity, while the installation is what decides which
-         * repositories the grant may read. It redirects back to the same callback with the same
-         * {@code code} and {@code state}, so nothing downstream changes.
+         * <p>{@code prompt=select_account} is what makes a second account reachable. Without it
+         * GitHub reuses the session the browser already holds and the authorization it already
+         * granted, so relinking returns instantly with the same account and the player is never
+         * asked which one they meant. This is the authorization page rather than the installation
+         * page for that same reason: only this one can offer an account chooser.
          */
         public String authorizeUrl(String state) {
-            if (!settings.getAppSlug().isBlank()) {
-                return "https://github.com/apps/" + encode(settings.getAppSlug())
-                        + "/installations/new?state=" + encode(state);
-            }
             return settings.getAuthorizeUri()
                     + "?client_id=" + encode(settings.getClientId())
                     + "&redirect_uri=" + encode(settings.getRedirectUri())
-                    + "&state=" + encode(state);
+                    + "&state=" + encode(state)
+                    + "&prompt=select_account";
+        }
+
+        /**
+         * Where a player goes to decide which repositories Mooi may read.
+         *
+         * <p>This is the only flow that can reach a private repository: an authorization alone
+         * grants an identity, while the installation is what decides which repositories the grant
+         * may read. It redirects back to the same callback with the same {@code code} and
+         * {@code state}, so nothing downstream changes.
+         *
+         * <p>Without a configured slug there is no install page to send anyone to, so the player
+         * lands on their own installations screen instead — still the right place to widen access,
+         * only one step longer.
+         */
+        public String installUrl(String state) {
+            if (settings.getAppSlug().isBlank()) {
+                return "https://github.com/settings/installations";
+            }
+            return "https://github.com/apps/" + encode(settings.getAppSlug())
+                    + "/installations/new?state=" + encode(state);
         }
 
         public Tokens exchangeCode(String code) {
@@ -434,15 +461,23 @@ public class Github {
          * <p>Paged, but not exhaustively: this list feeds a picker a person reads, not a mirror of
          * an account, so it stops at {@value #MAX_PAGES} pages per source. Somebody with more
          * repositories than that finds theirs by searching, which is faster than any scroll.
+         *
+         * <p>The installation count is returned rather than discarded because it is already known
+         * here, and because it is the difference between "you own no other repository" and "Mooi was
+         * never granted one" — two answers a player cannot tell apart from the list alone.
          */
-        public List<Repository> listRepositories(String accessToken) {
+        public RepositoryAccess listRepositories(String accessToken) {
             Map<Long, Repository> byId = new LinkedHashMap<>();
             collectUserRepositories(accessToken, byId);
-            collectInstallationRepositories(accessToken, byId);
-            return byId.values().stream()
+            int installations = collectInstallationRepositories(accessToken, byId);
+            List<Repository> repositories = byId.values().stream()
                     .sorted(Comparator.comparing(Repository::pushedAt,
                             Comparator.nullsLast(Comparator.reverseOrder())))
                     .toList();
+            LOG.debug("The GitHub grant reaches {} repositories ({} private) across {} installations",
+                    repositories.size(), repositories.stream().filter(Repository::isPrivate).count(),
+                    installations);
+            return new RepositoryAccess(repositories, installations);
         }
 
         private void collectUserRepositories(String accessToken, Map<Long, Repository> byId) {
@@ -467,24 +502,27 @@ public class Github {
          * installation the token cannot read is not a reason to fail the whole picker. In both
          * cases the public listing above still answers.
          */
-        private void collectInstallationRepositories(String accessToken, Map<Long, Repository> byId) {
+        private int collectInstallationRepositories(String accessToken, Map<Long, Repository> byId) {
             JsonNode installations;
             try {
                 installations = readJson(get("/user/installations?per_page=" + PAGE_SIZE, accessToken,
                         "GET /user/installations")).path("installations");
             } catch (GithubException exception) {
                 LOG.warn("Unable to read the GitHub installations of the player: {}", exception.getMessage());
-                return;
+                return 0;
             }
             if (!installations.isArray()) {
-                return;
+                return 0;
             }
+            int granted = 0;
             for (JsonNode installation : installations) {
                 long installationId = installation.path("id").asLong(0L);
                 if (installationId > 0) {
+                    granted++;
                     collectInstallationPages(installationId, accessToken, byId);
                 }
             }
+            return granted;
         }
 
         private void collectInstallationPages(long installationId, String accessToken, Map<Long, Repository> byId) {

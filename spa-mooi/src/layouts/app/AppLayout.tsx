@@ -1,5 +1,4 @@
 import { Outlet } from 'react-router-dom';
-import { GithubRequiredBanner } from '@/features/github/components/GithubRequiredBanner';
 import { useGithubConnectionSync } from '@/features/github/hooks/useGithubConnectionSync';
 import { useProjectsSync } from '@/features/projects/hooks/useProjectsSync';
 import { AppMobileDrawer } from '@/layouts/app/AppMobileDrawer';
@@ -16,7 +15,6 @@ export const AppLayout = () => {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <AppTopBar />
-        <GithubRequiredBanner />
         <main className="min-h-0 flex-1 overflow-y-auto">
           <Outlet />
         </main>
