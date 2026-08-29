@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { cn } from '@/shared/utils/cn';
 
 interface AvatarProps {
@@ -12,13 +13,31 @@ const sizes = {
   lg: 'size-16 text-xl',
 };
 
+/**
+ * A picture when there is one, the initial when there is not — and the initial again when the
+ * picture cannot be loaded.
+ *
+ * `referrerPolicy` is what makes Google profile pictures work: `lh3.googleusercontent.com` refuses
+ * requests that carry a cross-origin referrer, which is why the avatar broke on the first sign-in
+ * and appeared to heal later, once the browser had the image cached from Google's own frame.
+ */
 export const Avatar = ({ src, name, size = 'md' }: AvatarProps) => {
-  if (src) {
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [src]);
+
+  if (src && !failed) {
     return (
       <img
         src={src}
         alt=""
-        className={cn('shrink-0 rounded-full object-cover', sizes[size])}
+        loading="lazy"
+        decoding="async"
+        referrerPolicy="no-referrer"
+        onError={() => setFailed(true)}
+        className={cn('shrink-0 rounded-full bg-surface-2 object-cover', sizes[size])}
       />
     );
   }

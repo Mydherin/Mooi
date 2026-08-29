@@ -5,7 +5,7 @@ export interface AppNavLink {
   label: string;
   to: string;
   icon: LucideIcon;
-  /** Matches the path exactly. The dashboard sits at `/`, which prefixes every other route. */
+  /** Matches the path exactly, for a link whose path prefixes another one. */
   end?: boolean;
   adminOnly?: boolean;
 }

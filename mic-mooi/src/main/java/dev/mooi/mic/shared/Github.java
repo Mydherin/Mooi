@@ -17,9 +17,10 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeParseException;
-import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Comparator;
 import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -152,6 +153,7 @@ public class Github {
 
         private final String clientId;
         private final String clientSecret;
+        private final String appSlug;
         private final String redirectUri;
         private final String authorizeUri;
         private final String tokenUri;
@@ -162,6 +164,7 @@ public class Github {
 
         Settings(@Value("${app.github.client-id:}") String clientId,
                  @Value("${app.github.client-secret:}") String clientSecret,
+                 @Value("${app.github.app-slug:}") String appSlug,
                  @Value("${app.github.redirect-uri:}") String redirectUri,
                  @Value("${app.github.authorize-uri}") String authorizeUri,
                  @Value("${app.github.token-uri}") String tokenUri,
@@ -171,6 +174,7 @@ public class Github {
                  @Value("${app.github.request-timeout-ms}") long requestTimeoutMs) {
             this.clientId = require(clientId, "GITHUB_CLIENT_ID");
             this.clientSecret = require(clientSecret, "GITHUB_CLIENT_SECRET");
+            this.appSlug = appSlug == null ? "" : appSlug.strip();
             this.redirectUri = validUrl(require(redirectUri, "GITHUB_REDIRECT_URI"), "GITHUB_REDIRECT_URI");
             this.authorizeUri = validUrl(authorizeUri, "GITHUB_AUTHORIZE_URI");
             this.tokenUri = validUrl(tokenUri, "GITHUB_TOKEN_URI");
@@ -372,8 +376,18 @@ public class Github {
         /**
          * No {@code scope} parameter: a GitHub App carries its permissions in its own configuration,
          * and asking for scopes here would be silently ignored while suggesting otherwise.
+         *
+         * <p>With the app slug configured the player is sent to the installation page instead of the
+         * bare authorization page. That is the only flow that can reach a private repository: an
+         * authorization alone grants an identity, while the installation is what decides which
+         * repositories the grant may read. It redirects back to the same callback with the same
+         * {@code code} and {@code state}, so nothing downstream changes.
          */
         public String authorizeUrl(String state) {
+            if (!settings.getAppSlug().isBlank()) {
+                return "https://github.com/apps/" + encode(settings.getAppSlug())
+                        + "/installations/new?state=" + encode(state);
+            }
             return settings.getAuthorizeUri()
                     + "?client_id=" + encode(settings.getClientId())
                     + "&redirect_uri=" + encode(settings.getRedirectUri())
@@ -411,25 +425,94 @@ public class Github {
         /**
          * The repositories the player's grant can reach, most recently pushed first.
          *
-         * Paged, but not exhaustively: this list feeds a picker a person reads, not a mirror of an
-         * account, so it stops at {@value #MAX_PAGES} pages. Somebody with more repositories than
-         * that finds theirs by searching, which is faster than any scroll through hundreds of rows.
+         * <p>Two sources, merged. {@code /user/repos} answers what the user token sees on its own,
+         * which for a GitHub App user token is essentially the public ones. Private repositories
+         * live behind the installation: they are only ever returned by the installation endpoints,
+         * and only for the repositories the player granted the app when installing it. Reading both
+         * is what makes a private repository appear here without a public one disappearing.
+         *
+         * <p>Paged, but not exhaustively: this list feeds a picker a person reads, not a mirror of
+         * an account, so it stops at {@value #MAX_PAGES} pages per source. Somebody with more
+         * repositories than that finds theirs by searching, which is faster than any scroll.
          */
         public List<Repository> listRepositories(String accessToken) {
-            List<Repository> repositories = new ArrayList<>();
+            Map<Long, Repository> byId = new LinkedHashMap<>();
+            collectUserRepositories(accessToken, byId);
+            collectInstallationRepositories(accessToken, byId);
+            return byId.values().stream()
+                    .sorted(Comparator.comparing(Repository::pushedAt,
+                            Comparator.nullsLast(Comparator.reverseOrder())))
+                    .toList();
+        }
+
+        private void collectUserRepositories(String accessToken, Map<Long, Repository> byId) {
             for (int page = 1; page <= MAX_PAGES; page++) {
-                JsonNode body = readJson(get("/user/repos?sort=pushed&per_page=" + PAGE_SIZE
+                JsonNode body = readJson(get("/user/repos?sort=pushed&visibility=all&per_page=" + PAGE_SIZE
                         + "&affiliation=owner,collaborator,organization_member&page=" + page,
                         accessToken, "GET /user/repos"));
                 if (!body.isArray()) {
                     throw GithubException.unavailable("GET /user/repos returned no list");
                 }
-                body.forEach(node -> repositories.add(toRepository(node)));
+                body.forEach(node -> collect(node, byId));
                 if (body.size() < PAGE_SIZE) {
-                    break;
+                    return;
                 }
             }
-            return repositories;
+        }
+
+        /**
+         * The installations the player granted, and the repositories inside each one.
+         *
+         * <p>Best effort: a player who never installed the app has no installation, and an
+         * installation the token cannot read is not a reason to fail the whole picker. In both
+         * cases the public listing above still answers.
+         */
+        private void collectInstallationRepositories(String accessToken, Map<Long, Repository> byId) {
+            JsonNode installations;
+            try {
+                installations = readJson(get("/user/installations?per_page=" + PAGE_SIZE, accessToken,
+                        "GET /user/installations")).path("installations");
+            } catch (GithubException exception) {
+                LOG.warn("Unable to read the GitHub installations of the player: {}", exception.getMessage());
+                return;
+            }
+            if (!installations.isArray()) {
+                return;
+            }
+            for (JsonNode installation : installations) {
+                long installationId = installation.path("id").asLong(0L);
+                if (installationId > 0) {
+                    collectInstallationPages(installationId, accessToken, byId);
+                }
+            }
+        }
+
+        private void collectInstallationPages(long installationId, String accessToken, Map<Long, Repository> byId) {
+            String path = "/user/installations/" + installationId + "/repositories";
+            for (int page = 1; page <= MAX_PAGES; page++) {
+                JsonNode repositories;
+                try {
+                    repositories = readJson(get(path + "?per_page=" + PAGE_SIZE + "&page=" + page, accessToken,
+                            "GET " + path)).path("repositories");
+                } catch (GithubException exception) {
+                    LOG.warn("Unable to read the repositories of installation {}: {}", installationId,
+                            exception.getMessage());
+                    return;
+                }
+                if (!repositories.isArray()) {
+                    return;
+                }
+                repositories.forEach(node -> collect(node, byId));
+                if (repositories.size() < PAGE_SIZE) {
+                    return;
+                }
+            }
+        }
+
+        /** First source wins: the same repository can be returned by both listings. */
+        private void collect(JsonNode node, Map<Long, Repository> byId) {
+            Repository repository = toRepository(node);
+            byId.putIfAbsent(repository.id(), repository);
         }
 
         /**

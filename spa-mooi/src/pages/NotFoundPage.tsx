@@ -21,10 +21,7 @@ export const NotFoundPage = () => (
     </p>
 
     <div className="mt-9 flex w-full flex-col items-center gap-3 sm:w-auto sm:flex-row">
-      <Link to={ROUTES.home} className={buttonStyles('brand', 'md', 'w-full sm:w-auto')}>
-        Back to dashboard
-      </Link>
-      <Link to={ROUTES.projects} className={buttonStyles('secondary', 'md', 'w-full sm:w-auto')}>
+      <Link to={ROUTES.projects} className={buttonStyles('brand', 'md', 'w-full sm:w-auto')}>
         Go to projects
       </Link>
     </div>

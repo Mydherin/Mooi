@@ -1,6 +1,9 @@
-/** `home` is the signed-in dashboard: the application has no public page to send a visitor to. */
+/**
+ * `root` only redirects: the signed-in player lands on their projects, which is the workspace
+ * itself. The application has no public page to send a visitor to.
+ */
 export const ROUTES = {
-  home: '/',
+  root: '/',
   login: '/login',
   projects: '/projects',
   project: '/projects/:projectId',

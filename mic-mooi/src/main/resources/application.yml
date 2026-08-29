@@ -68,6 +68,7 @@ app:
   github:
     client-id: ${GITHUB_CLIENT_ID:}
     client-secret: ${GITHUB_CLIENT_SECRET:}
+    app-slug: ${GITHUB_APP_SLUG:}
     redirect-uri: ${GITHUB_REDIRECT_URI:}
     authorize-uri: ${GITHUB_AUTHORIZE_URI:https://github.com/login/oauth/authorize}
     token-uri: ${GITHUB_TOKEN_URI:https://github.com/login/oauth/access_token}

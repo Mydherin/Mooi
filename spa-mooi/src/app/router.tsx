@@ -1,4 +1,4 @@
-import { createBrowserRouter } from 'react-router-dom';
+import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { ROUTES } from '@/app/routes';
 import { AppLayout } from '@/layouts/app/AppLayout';
 import { GuestRoute } from '@/shared/router/GuestRoute';
@@ -6,7 +6,6 @@ import { ProtectedRoute } from '@/shared/router/ProtectedRoute';
 import { RoleRoute } from '@/shared/router/RoleRoute';
 import { AccountPage } from '@/pages/AccountPage';
 import { AdminPage } from '@/pages/AdminPage';
-import { DashboardPage } from '@/pages/DashboardPage';
 import { GithubCallbackPage } from '@/pages/GithubCallbackPage';
 import { LoginPage } from '@/pages/LoginPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
@@ -31,7 +30,7 @@ export const router = createBrowserRouter([
       {
         element: <AppLayout />,
         children: [
-          { path: ROUTES.home, element: <DashboardPage /> },
+          { path: ROUTES.root, element: <Navigate to={ROUTES.projects} replace /> },
           { path: ROUTES.projects, element: <ProjectsPage /> },
           { path: ROUTES.project, element: <ProjectPage /> },
           { path: ROUTES.session, element: <SessionPage /> },

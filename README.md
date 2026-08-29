@@ -48,11 +48,17 @@ Links a GitHub account to an existing player. It never signs anyone in — sign-
 1. Create a **GitHub App** (Settings → Developer settings → GitHub Apps → New GitHub App).
 2. Enable **Expire user authorization tokens**: it is the only setup that issues refresh tokens,
    which is what keeps the link alive without asking the player to authorize again.
-3. Callback URL: `http://localhost:28471/account/github/callback` (pinned SPA dev port; `make`
+3. Enable **Request user authorization (OAuth) during installation**, and grant **Repository
+   permissions → Metadata: Read-only**: this is what lets an installation be redeemed as a login and
+   lets the app list the repositories it was granted.
+4. Callback URL: `http://localhost:28471/account/github/callback` (pinned SPA dev port; `make`
    exports the matching `GITHUB_REDIRECT_URI` automatically).
-4. Generate a client secret, then set in `mic-mooi/.env`: `GITHUB_CLIENT_ID`,
+5. Generate a client secret, then set in `mic-mooi/.env`: `GITHUB_CLIENT_ID`,
    `GITHUB_CLIENT_SECRET`.
-5. Generate the key encrypting stored GitHub tokens at rest and set it as `SECRETS_KEY`:
+6. Set `GITHUB_APP_SLUG` in `mic-mooi/.env` to the app's URL slug (the last segment of
+   `https://github.com/apps/<slug>`). It sends players to the install-and-authorize page, which is
+   what makes private repositories selectable — without it only public repositories are listed.
+7. Generate the key encrypting stored GitHub tokens at rest and set it as `SECRETS_KEY`:
 
 ```bash
 openssl rand -base64 32
@@ -221,6 +227,7 @@ the root `.env`.
 | `SECRETS_KEY` | AES-256-GCM key encrypting third-party tokens at rest (32 bytes, base64) |
 | `GITHUB_CLIENT_ID` | GitHub App client id |
 | `GITHUB_CLIENT_SECRET` | GitHub App client secret |
+| `GITHUB_APP_SLUG` | GitHub App URL slug; enables the install-and-authorize flow |
 | `GITHUB_REDIRECT_URI` | Callback registered on the GitHub App |
 | `GITHUB_AUTHORIZE_URI` | GitHub authorization endpoint |
 | `GITHUB_TOKEN_URI` | GitHub token endpoint |

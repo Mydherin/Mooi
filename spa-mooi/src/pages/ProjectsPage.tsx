@@ -20,8 +20,11 @@ const Skeleton = () => (
 );
 
 /**
- * The workspace starts empty on purpose: a project exists because the player imported a repository
- * they own, so there is nothing to show until they do.
+ * The homepage of a signed-in player: the workspace is its projects, so there is nothing to put in
+ * front of them.
+ *
+ * It starts empty on purpose — a project exists because the player imported a repository they own,
+ * so there is nothing to show until they do.
  */
 export const ProjectsPage = () => {
   const { linked, resolved } = useGithubLinked();

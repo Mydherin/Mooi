@@ -18,7 +18,7 @@ export const AppTopBar = () => {
       <IconButton icon={Menu} label="Open navigation" onClick={open} className="lg:hidden" />
 
       <Link
-        to={ROUTES.home}
+        to={ROUTES.projects}
         className="rounded-xl focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand lg:hidden"
       >
         <Logo compact />

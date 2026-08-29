@@ -27,7 +27,7 @@ export const AppSidebar = ({ className, onNavigate }: AppSidebarProps) => {
     <aside className={cn('flex flex-col border-line bg-surface', className)}>
       <div className="flex h-14 shrink-0 items-center justify-between gap-2 px-3">
         <Link
-          to={ROUTES.home}
+          to={ROUTES.projects}
           onClick={onNavigate}
           className="rounded-xl px-1 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand"
         >

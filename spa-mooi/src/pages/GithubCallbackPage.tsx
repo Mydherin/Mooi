@@ -15,7 +15,7 @@ import { useGithubStore } from '@/stores/githubStore';
  * is bound to them. An unauthenticated hit never reaches this page — the route guard sends it to
  * the login screen first.
  *
- * A success lands on the dashboard rather than back on the account screen: linking GitHub is what
+ * A success lands on the projects screen rather than back on the account screen: linking GitHub is what
  * the whole workspace was waiting for, so the player is returned to the place where it now works.
  */
 export const GithubCallbackPage = () => {
@@ -54,7 +54,7 @@ export const GithubCallbackPage = () => {
     completeGithubAuthorization(code, state)
       .then((connection) => {
         useGithubStore.getState().setConnection(connection);
-        navigate(ROUTES.home, { replace: true });
+        navigate(ROUTES.projects, { replace: true });
       })
       .catch(() => {
         setFailure('We could not link your GitHub account. Please try again.');
