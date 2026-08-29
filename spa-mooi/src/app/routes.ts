@@ -1,3 +1,4 @@
+/** `home` is the signed-in dashboard: the application has no public page to send a visitor to. */
 export const ROUTES = {
   home: '/',
   login: '/login',

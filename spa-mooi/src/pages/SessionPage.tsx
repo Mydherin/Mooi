@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Compass } from 'lucide-react';
 import { ROUTES } from '@/app/routes';
+import { useProjects } from '@/features/projects/hooks/useProjects';
 import { findProject } from '@/features/projects/lib/findProject';
 import { ChangesPanel } from '@/features/sessions/components/changes/ChangesPanel';
 import { ChatPanel } from '@/features/sessions/components/chat/ChatPanel';
@@ -26,7 +27,8 @@ const stageItems: SegmentItem[] = [
 
 export const SessionPage = () => {
   const { projectId, sessionId } = useParams();
-  const project = findProject(projectId);
+  const { projects } = useProjects();
+  const project = findProject(projects, projectId);
   const session = findSession(projectId, sessionId);
   const activePane = useWorkspaceStore((state) => state.activePane);
   const setActivePane = useWorkspaceStore((state) => state.setActivePane);

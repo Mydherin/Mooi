@@ -8,7 +8,7 @@ interface RoleRouteProps {
   redirectTo?: string;
 }
 
-export const RoleRoute = ({ role, redirectTo = ROUTES.projects }: RoleRouteProps) => {
+export const RoleRoute = ({ role, redirectTo = ROUTES.home }: RoleRouteProps) => {
   const player = useAuthStore((state) => state.player);
 
   if (!player) {

@@ -1,0 +1,104 @@
+databaseChangeLog:
+  - changeSet:
+      id: 008-create-projects
+      author: mooi
+      changes:
+        - createTable:
+            tableName: projects
+            remarks: A GitHub repository added to a player's workspace, by reference only
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_projects
+                    nullable: false
+              - column:
+                  name: player_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: github_repo_id
+                  type: bigint
+                  constraints:
+                    nullable: false
+              - column:
+                  name: owner
+                  type: varchar(128)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: name
+                  type: varchar(128)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: full_name
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: description
+                  type: varchar(1024)
+              - column:
+                  name: is_private
+                  type: boolean
+                  constraints:
+                    nullable: false
+              - column:
+                  name: default_branch
+                  type: varchar(128)
+              - column:
+                  name: html_url
+                  type: varchar(512)
+              - column:
+                  name: language
+                  type: varchar(64)
+              - column:
+                  name: stars
+                  type: integer
+                  constraints:
+                    nullable: false
+              - column:
+                  name: added_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            constraintName: fk_projects_player
+            baseTableName: projects
+            baseColumnNames: player_id
+            referencedTableName: players
+            referencedColumnNames: id
+            onDelete: CASCADE
+        - addUniqueConstraint:
+            constraintName: uq_projects_player_repo
+            tableName: projects
+            columnNames: player_id, github_repo_id
+        - createIndex:
+            indexName: ix_projects_player_added
+            tableName: projects
+            columns:
+              - column:
+                  name: player_id
+              - column:
+                  name: added_at
+                  descending: true
+        - sql:
+            comment: The table holds repository metadata only, never code or any heavy artifact
+            sql: "COMMENT ON TABLE projects IS 'Repository metadata only: no code, tree or archive is ever stored here'"
+      rollback:
+        - dropTable:
+            tableName: projects

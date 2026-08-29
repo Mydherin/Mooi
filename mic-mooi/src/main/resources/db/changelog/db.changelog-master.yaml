@@ -13,3 +13,5 @@ databaseChangeLog:
       file: db/changelog/changes/006-create-refresh-tokens.yaml
   - include:
       file: db/changelog/changes/007-create-github-connections.yaml
+  - include:
+      file: db/changelog/changes/008-create-projects.yaml

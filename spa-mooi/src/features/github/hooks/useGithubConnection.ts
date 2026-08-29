@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback } from 'react';
 import {
   disconnectGithub,
   fetchGithubConnection,
@@ -18,37 +18,16 @@ interface UseGithubConnection {
 }
 
 /**
- * The account screen's view of the GitHub link: loads it on mount, and exposes the two actions
- * that change it. Reading it also renews the stored GitHub token server-side, so simply opening
- * the screen keeps the link alive.
+ * The actions that change the GitHub link, over the state the shell already loaded.
+ *
+ * It deliberately does not fetch on mount: the connection is application-wide state filled once by
+ * `useGithubConnectionSync`, and re-reading it from every card that renders it would turn one fact
+ * into several racing answers.
  */
 export const useGithubConnection = (): UseGithubConnection => {
   const connection = useGithubStore((state) => state.connection);
   const status = useGithubStore((state) => state.status);
   const error = useGithubStore((state) => state.error);
-
-  const load = useCallback((): (() => void) => {
-    let cancelled = false;
-
-    useGithubStore.getState().setStatus('loading');
-    fetchGithubConnection()
-      .then((loaded) => {
-        if (!cancelled) {
-          useGithubStore.getState().setConnection(loaded);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          useGithubStore.getState().setError('Could not load your GitHub connection.');
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => load(), [load]);
 
   /**
    * Leaves the application on purpose: the authorization happens on github.com, and the callback
@@ -77,8 +56,15 @@ export const useGithubConnection = (): UseGithubConnection => {
   }, []);
 
   const reload = useCallback(() => {
-    load();
-  }, [load]);
+    useGithubStore.getState().setStatus('loading');
+    fetchGithubConnection()
+      .then((loaded) => {
+        useGithubStore.getState().setConnection(loaded);
+      })
+      .catch(() => {
+        useGithubStore.getState().setError('Could not load your GitHub connection.');
+      });
+  }, []);
 
   return { connection, status, error, connect, disconnect, reload };
 };

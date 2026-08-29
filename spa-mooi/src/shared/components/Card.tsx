@@ -2,7 +2,8 @@ import type { ReactNode } from 'react';
 import { cn } from '@/shared/utils/cn';
 
 interface CardProps {
-  children: ReactNode;
+  /** Optional so a card can stand in for itself while its content loads. */
+  children?: ReactNode;
   className?: string;
   as?: 'div' | 'section' | 'article' | 'li';
 }

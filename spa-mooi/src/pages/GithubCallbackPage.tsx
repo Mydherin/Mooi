@@ -14,6 +14,9 @@ import { useGithubStore } from '@/stores/githubStore';
  * holds a Mooi access token, so the authorization code is redeemed as a known player and the link
  * is bound to them. An unauthenticated hit never reaches this page — the route guard sends it to
  * the login screen first.
+ *
+ * A success lands on the dashboard rather than back on the account screen: linking GitHub is what
+ * the whole workspace was waiting for, so the player is returned to the place where it now works.
  */
 export const GithubCallbackPage = () => {
   const navigate = useNavigate();
@@ -51,7 +54,7 @@ export const GithubCallbackPage = () => {
     completeGithubAuthorization(code, state)
       .then((connection) => {
         useGithubStore.getState().setConnection(connection);
-        navigate(ROUTES.account, { replace: true });
+        navigate(ROUTES.home, { replace: true });
       })
       .catch(() => {
         setFailure('We could not link your GitHub account. Please try again.');

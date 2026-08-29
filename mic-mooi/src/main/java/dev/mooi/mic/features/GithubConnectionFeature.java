@@ -2,6 +2,7 @@ package dev.mooi.mic.features;
 
 import java.time.Clock;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -74,6 +75,16 @@ public class GithubConnectionFeature {
     public ConnectionResponse currentConnection(Auth.Principal principal) {
         return new ConnectionResponse(
                 githubConnectionService.currentConnection(principal.player().id()).orElse(null));
+    }
+
+    /**
+     * The repositories behind the link, read live rather than stored: what a grant can reach changes
+     * on GitHub's side, and a cached list would offer the player repositories they no longer have.
+     */
+    @GetMapping("/me/github/repositories")
+    @Auth.Authenticated
+    public RepositoriesResponse repositories(Auth.Principal principal) {
+        return new RepositoriesResponse(githubConnectionService.repositories(principal.player().id()));
     }
 
     /** Always 204, linked or not: disconnecting is stated as an outcome, not as a transaction. */
@@ -169,6 +180,19 @@ public class GithubConnectionFeature {
             return githubConnectionRepository.findByPlayerId(playerId)
                     .map(this::ensureFreshToken)
                     .map(GithubConnectionService::toPayload);
+        }
+
+        /**
+         * Lists what the linked account can reach, renewing the token first for the same reason
+         * every other read does: a call that dies mid-flight on an expired credential would look to
+         * the player like GitHub losing their repositories.
+         */
+        @Transactional
+        public List<Github.Repository> repositories(UUID playerId) {
+            GithubConnection connection = githubConnectionRepository.findByPlayerId(playerId)
+                    .map(this::ensureFreshToken)
+                    .orElseThrow(Github.GithubException::reauthorize);
+            return oauthClient.listRepositories(secretBox.decrypt(connection.getAccessToken()));
         }
 
         /**
@@ -334,5 +358,9 @@ public class GithubConnectionFeature {
 
     /** Nullable payload: "not linked" is an answer, not an error. */
     public record ConnectionResponse(GithubConnectionPayload connection) {
+    }
+
+    /** Repository metadata only, straight from GitHub: nothing here is persisted by this feature. */
+    public record RepositoriesResponse(List<Github.Repository> repositories) {
     }
 }

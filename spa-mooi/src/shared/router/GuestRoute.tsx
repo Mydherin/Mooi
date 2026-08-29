@@ -7,7 +7,7 @@ export const GuestRoute = () => {
   const session = useAuthStore((state) => state.session);
 
   if (player && session) {
-    return <Navigate to={ROUTES.projects} replace />;
+    return <Navigate to={ROUTES.home} replace />;
   }
 
   return <Outlet />;

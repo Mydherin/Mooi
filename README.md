@@ -251,6 +251,10 @@ the root `.env`.
 | `POST /me/github/connection` | Redeem the GitHub authorization code |
 | `GET /me/github/connection` | Current GitHub connection, or `null` |
 | `DELETE /me/github/connection` | Unlink the GitHub account |
+| `GET /me/github/repositories` | Repositories the linked GitHub account reaches |
+| `GET /me/projects` | Repositories added to the caller's workspace |
+| `POST /me/projects` | Add a repository by `owner/repository` |
+| `DELETE /me/projects/{projectId}` | Remove a repository from the workspace |
 | `GET /admin/ping` | Admin-only probe |
 | `GET /health` | Liveness probe |
 | `GET /actuator/health` | Health check |

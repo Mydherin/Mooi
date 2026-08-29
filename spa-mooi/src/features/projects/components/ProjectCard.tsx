@@ -1,9 +1,10 @@
 import { Link } from 'react-router-dom';
-import { Clock, FolderGit2, GitBranch, MessagesSquare } from 'lucide-react';
+import { Clock, FolderGit2, GitBranch, Star } from 'lucide-react';
 import { projectPath } from '@/app/paths';
-import { ProjectStatusBadge } from '@/features/projects/components/ProjectStatusBadge';
 import type { Project } from '@/features/projects/types/Project';
+import { Badge } from '@/shared/components/Badge';
 import { Card } from '@/shared/components/Card';
+import { formatDate } from '@/shared/utils/formatDate';
 
 interface ProjectCardProps {
   project: Project;
@@ -21,39 +22,38 @@ export const ProjectCard = ({ project }: ProjectCardProps) => (
       <div className="flex items-start justify-between gap-3">
         <span className="flex min-w-0 items-center gap-2">
           <FolderGit2 className="size-4 shrink-0 text-ink-subtle" />
-          <span className="truncate font-mono text-xs text-ink-subtle">{project.repo}</span>
+          <span className="truncate font-mono text-xs text-ink-subtle">{project.fullName}</span>
         </span>
-        <ProjectStatusBadge status={project.status} />
+        <Badge tone={project.isPrivate ? 'neutral' : 'info'}>
+          {project.isPrivate ? 'Private' : 'Public'}
+        </Badge>
       </div>
 
       <h3 className="mt-4 text-base font-semibold tracking-tight text-ink">{project.name}</h3>
       <p className="mt-1.5 line-clamp-2 text-sm leading-relaxed text-ink-muted">
-        {project.description}
+        {project.description ?? 'No description on GitHub.'}
       </p>
 
-      <div className="mt-4 flex flex-wrap gap-1.5">
-        {project.stack.map((item) => (
-          <span
-            key={item}
-            className="rounded-full bg-surface-2 px-2.5 py-0.5 text-xs text-ink-muted"
-          >
-            {item}
+      {project.language ? (
+        <div className="mt-4">
+          <span className="rounded-full bg-surface-2 px-2.5 py-0.5 text-xs text-ink-muted">
+            {project.language}
           </span>
-        ))}
-      </div>
+        </div>
+      ) : null}
 
       <div className="mt-auto flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line pt-4 text-xs text-ink-subtle">
         <span className="flex min-w-0 items-center gap-1.5">
           <GitBranch className="size-3.5 shrink-0" />
-          <span className="truncate font-mono">{project.branch}</span>
+          <span className="truncate font-mono">{project.defaultBranch ?? '—'}</span>
         </span>
         <span className="flex items-center gap-1.5">
-          <MessagesSquare className="size-3.5" />
-          {project.sessions} sessions
+          <Star className="size-3.5" />
+          {project.stars}
         </span>
         <span className="flex items-center gap-1.5">
           <Clock className="size-3.5" />
-          {project.updatedLabel}
+          Added {formatDate(project.addedAt)}
         </span>
       </div>
     </Link>

@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, CircleCheck } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { CircleCheck } from 'lucide-react';
 import { ROUTES } from '@/app/routes';
 import { env } from '@/config/env';
 import { loginWithGoogle } from '@/features/auth/api/authApi';
@@ -8,15 +8,22 @@ import { GoogleSignInButton } from '@/features/auth/components/GoogleSignInButto
 import { toAuthSession } from '@/features/auth/lib/toAuthSession';
 import { Logo } from '@/shared/components/Logo';
 import { LogoMark } from '@/shared/components/LogoMark';
-import { buttonStyles } from '@/shared/styles/buttonStyles';
+import { GithubMark } from '@/shared/components/icons/GithubMark';
 import { useAuthStore } from '@/stores/authStore';
 
 const highlights = [
-  'Every repository, session and deploy in one place',
-  'Sessions that keep full project context',
+  'Import the repositories you already own',
+  'Agent sessions with full project context',
   'Preview and ship without leaving the conversation',
 ];
 
+/**
+ * The first screen of the application, and the only one a signed-out player can reach.
+ *
+ * Signing in is deliberately presented as step one of two: the workspace runs on the player's own
+ * repositories, so a Google account alone opens an empty shell. Saying that here, before the click,
+ * is what stops the dashboard from feeling broken a moment later.
+ */
 export const LoginPage = () => {
   const navigate = useNavigate();
   const setSession = useAuthStore((state) => state.setSession);
@@ -31,7 +38,7 @@ export const LoginPage = () => {
       loginWithGoogle(idToken)
         .then((response) => {
           setSession(response.player, toAuthSession(response));
-          navigate(ROUTES.projects, { replace: true });
+          navigate(ROUTES.home, { replace: true });
         })
         .catch(() => {
           setBusy(false);
@@ -49,12 +56,7 @@ export const LoginPage = () => {
           <div className="absolute right-0 bottom-0 size-[360px] animate-float-fast rounded-full bg-info/20 blur-[130px]" />
         </div>
 
-        <Link
-          to={ROUTES.home}
-          className="w-fit rounded-xl focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand"
-        >
-          <Logo />
-        </Link>
+        <Logo />
 
         <div className="my-auto">
           <h2 className="max-w-md text-4xl font-semibold tracking-tight text-balance text-ink">
@@ -78,14 +80,9 @@ export const LoginPage = () => {
 
       <main className="flex min-h-dvh flex-col justify-center px-4 py-12 sm:px-8 lg:min-h-0">
         <div className="mx-auto w-full max-w-sm">
-          <Link to={ROUTES.home} className={buttonStyles('ghost', 'sm', '-ml-3.5')}>
-            <ArrowLeft className="size-4" />
-            Back to home
-          </Link>
+          <LogoMark className="size-10 lg:hidden" />
 
-          <LogoMark className="mt-8 size-10 lg:hidden" />
-
-          <h1 className="mt-8 text-3xl font-semibold tracking-tight text-ink">Sign in</h1>
+          <h1 className="mt-8 text-3xl font-semibold tracking-tight text-ink lg:mt-0">Sign in</h1>
           <p className="mt-3 text-sm leading-relaxed text-ink-muted">
             Continue with Google to open your workspace. Your first sign-in creates your account.
           </p>
@@ -100,9 +97,29 @@ export const LoginPage = () => {
             </p>
           ) : null}
 
+          <div className="mt-8 rounded-xl border border-line bg-surface-2 p-4">
+            <p className="text-xs font-semibold tracking-[0.18em] text-ink-subtle uppercase">
+              Two steps to start
+            </p>
+            <ol className="mt-3 flex flex-col gap-2.5 text-sm text-ink-muted">
+              <li className="flex items-center gap-2.5">
+                <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-surface-3 text-xs font-semibold text-ink">
+                  1
+                </span>
+                Sign in with Google
+              </li>
+              <li className="flex items-center gap-2.5">
+                <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-surface-3 text-ink">
+                  <GithubMark className="size-3" />
+                </span>
+                Connect your GitHub account
+              </li>
+            </ol>
+          </div>
+
           <p className="mt-6 text-xs leading-relaxed text-ink-subtle">
-            Repositories, sessions and deploys stay under your own account. You can disconnect them
-            at any time from the account screen.
+            Mooi works on your own repositories. Nothing is imported until you connect GitHub, and
+            you can unlink it at any time from the account screen.
           </p>
         </div>
       </main>

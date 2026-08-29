@@ -16,8 +16,11 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Date;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.regex.Matcher;
@@ -55,8 +58,8 @@ import lombok.Getter;
  * Transversal aspect: GitHub OAuth2 and REST mechanics.
  *
  * <p>Only the protocol lives here: building the authorization URL, signing and verifying the
- * {@code state} that protects it, trading a code for tokens, renewing them, reading the GitHub
- * profile behind a token and handing the grant back. What is stored, for whom, and when it is
+ * {@code state} that protects it, trading a code for tokens, renewing them, and reading what a
+ * token can see — the profile behind it and the repositories it reaches. What is stored, for whom, and when it is
  * renewed belongs to the feature that owns the connection table — this aspect never imports it and
  * holds no state of its own.
  *
@@ -103,6 +106,31 @@ public class Github {
         public static GithubException alreadyLinked() {
             return new GithubException(HttpStatus.CONFLICT,
                     "This GitHub account is already linked to another player");
+        }
+
+        /**
+         * The stored grant no longer opens anything — revoked on GitHub, expired past renewal, or
+         * narrowed until it cannot see what is asked of it.
+         *
+         * Deliberately not a 401: the SPA reads that status as its own session expiring and would
+         * sign the player out of Mooi over a GitHub problem. A 409 says what is true — the link is
+         * there but no longer usable, and re-authorizing repairs it.
+         */
+        public static GithubException reauthorize() {
+            return new GithubException(HttpStatus.CONFLICT,
+                    "Your GitHub authorization is no longer valid, please connect again");
+        }
+
+        /** The repository is already in the caller's workspace: a reference has no second copy. */
+        public static GithubException alreadyAdded() {
+            return new GithubException(HttpStatus.CONFLICT,
+                    "This repository is already in your workspace");
+        }
+
+        /** Asked for a repository the player's own token cannot see. Indistinguishable, by design, from one that does not exist. */
+        public static GithubException repositoryNotFound() {
+            return new GithubException(HttpStatus.NOT_FOUND,
+                    "Repository not found or not visible to your GitHub account");
         }
 
         /** GitHub is unreachable, slow or broken. Distinct from a refusal: retrying may work. */
@@ -292,6 +320,16 @@ public class Github {
     }
 
     /**
+     * A repository as the application ever needs to know it: a name, a description, a branch and a
+     * link. No tree, no archive, no clone — what Mooi keeps of a repository is a reference to it,
+     * and the code stays where it already lives.
+     */
+    public record Repository(long id, String owner, String name, String fullName, String description,
+                             boolean isPrivate, String defaultBranch, String htmlUrl, String language,
+                             int stars, OffsetDateTime pushedAt) {
+    }
+
+    /**
      * The only place this application talks to GitHub.
      *
      * <p>Two habits of GitHub's OAuth endpoint drive the shape of this class. It answers failures
@@ -314,6 +352,11 @@ public class Github {
         private static final int MAX_URL_LENGTH = 512;
         private static final int MAX_SCOPE_LENGTH = 512;
         private static final int MAX_ERROR_LENGTH = 256;
+        private static final int MAX_FULL_NAME_LENGTH = 255;
+        private static final int MAX_DESCRIPTION_LENGTH = 1024;
+        private static final int MAX_LANGUAGE_LENGTH = 64;
+        private static final int PAGE_SIZE = 100;
+        private static final int MAX_PAGES = 3;
 
         private final Settings settings;
         private final Clock clock;
@@ -355,14 +398,7 @@ public class Github {
         }
 
         public Viewer fetchViewer(String accessToken) {
-            HttpRequest request = HttpRequest.newBuilder(URI.create(settings.getApiBaseUrl() + "/user"))
-                    .timeout(settings.getRequestTimeout())
-                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
-                    .header(ACCEPT_HEADER, GITHUB_JSON)
-                    .header(API_VERSION_HEADER, API_VERSION)
-                    .GET()
-                    .build();
-            JsonNode body = readJson(send(request, "GET /user"));
+            JsonNode body = readJson(get("/user", accessToken, "GET /user"));
             long id = body.path("id").asLong(0L);
             String login = text(body, "login", MAX_LOGIN_LENGTH);
             if (id <= 0 || login == null) {
@@ -370,6 +406,42 @@ public class Github {
             }
             return new Viewer(id, login, text(body, "name", MAX_NAME_LENGTH),
                     text(body, "avatar_url", MAX_URL_LENGTH), text(body, "html_url", MAX_URL_LENGTH));
+        }
+
+        /**
+         * The repositories the player's grant can reach, most recently pushed first.
+         *
+         * Paged, but not exhaustively: this list feeds a picker a person reads, not a mirror of an
+         * account, so it stops at {@value #MAX_PAGES} pages. Somebody with more repositories than
+         * that finds theirs by searching, which is faster than any scroll through hundreds of rows.
+         */
+        public List<Repository> listRepositories(String accessToken) {
+            List<Repository> repositories = new ArrayList<>();
+            for (int page = 1; page <= MAX_PAGES; page++) {
+                JsonNode body = readJson(get("/user/repos?sort=pushed&per_page=" + PAGE_SIZE
+                        + "&affiliation=owner,collaborator,organization_member&page=" + page,
+                        accessToken, "GET /user/repos"));
+                if (!body.isArray()) {
+                    throw GithubException.unavailable("GET /user/repos returned no list");
+                }
+                body.forEach(node -> repositories.add(toRepository(node)));
+                if (body.size() < PAGE_SIZE) {
+                    break;
+                }
+            }
+            return repositories;
+        }
+
+        /**
+         * One repository, read with the player's own grant.
+         *
+         * That is what makes it an authorization check as much as a lookup: a repository the player
+         * cannot see answers 404 for them, so nothing can be added to a workspace on the strength of
+         * a name typed into a request body.
+         */
+        public Repository fetchRepository(String owner, String name, String accessToken) {
+            return toRepository(readJson(get("/repos/" + encode(owner) + "/" + encode(name), accessToken,
+                    "GET /repos/" + owner + "/" + name)));
         }
 
         /**
@@ -439,6 +511,41 @@ public class Github {
             return send(request, "the GitHub token endpoint");
         }
 
+        /**
+         * Every authenticated read of the GitHub API goes through here, so one place decides what a
+         * status code means to the player: a token that no longer opens the resource is something
+         * they can repair by connecting again, and a missing repository is not a server failure.
+         */
+        private String get(String path, String accessToken, String description) {
+            HttpRequest request = HttpRequest.newBuilder(URI.create(settings.getApiBaseUrl() + path))
+                    .timeout(settings.getRequestTimeout())
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                    .header(ACCEPT_HEADER, GITHUB_JSON)
+                    .header(API_VERSION_HEADER, API_VERSION)
+                    .GET()
+                    .build();
+            try {
+                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                int status = response.statusCode();
+                if (status == 401 || status == 403) {
+                    LOG.warn("GitHub refused {} with {}", description, status);
+                    throw GithubException.reauthorize();
+                }
+                if (status == 404) {
+                    throw GithubException.repositoryNotFound();
+                }
+                if (status / 100 != 2) {
+                    throw GithubException.unavailable(description + " answered " + status);
+                }
+                return response.body();
+            } catch (IOException exception) {
+                throw GithubException.unavailable(description + " failed: " + exception.getMessage());
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                throw GithubException.unavailable(description + " was interrupted");
+            }
+        }
+
         private String send(HttpRequest request, String description) {
             try {
                 HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
@@ -459,6 +566,34 @@ public class Github {
                 return objectMapper.readTree(body);
             } catch (JacksonException exception) {
                 throw GithubException.unavailable("GitHub returned a malformed response");
+            }
+        }
+
+        /** Truncates every field to what the projects table holds, so no repository can fail an insert. */
+        private static Repository toRepository(JsonNode node) {
+            long id = node.path("id").asLong(0L);
+            String fullName = text(node, "full_name", MAX_FULL_NAME_LENGTH);
+            String name = text(node, "name", MAX_LOGIN_LENGTH);
+            String owner = text(node.path("owner"), "login", MAX_LOGIN_LENGTH);
+            if (id <= 0 || fullName == null || name == null || owner == null) {
+                throw GithubException.unavailable("GitHub returned a repository without an identity");
+            }
+            return new Repository(id, owner, name, fullName, text(node, "description", MAX_DESCRIPTION_LENGTH),
+                    node.path("private").asBoolean(false), text(node, "default_branch", MAX_LOGIN_LENGTH),
+                    text(node, "html_url", MAX_URL_LENGTH), text(node, "language", MAX_LANGUAGE_LENGTH),
+                    node.path("stargazers_count").asInt(0), timestamp(node, "pushed_at"));
+        }
+
+        /** An unreadable or absent timestamp is simply unknown: it is decoration, never a decision. */
+        private static OffsetDateTime timestamp(JsonNode node, String field) {
+            String value = text(node, field);
+            if (value == null) {
+                return null;
+            }
+            try {
+                return OffsetDateTime.parse(value);
+            } catch (DateTimeParseException exception) {
+                return null;
             }
         }
 

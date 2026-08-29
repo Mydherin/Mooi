@@ -1,4 +1,3 @@
-import { ConnectRepoCard } from '@/features/projects/components/ConnectRepoCard';
 import { ProjectCard } from '@/features/projects/components/ProjectCard';
 import type { Project } from '@/features/projects/types/Project';
 
@@ -11,6 +10,5 @@ export const ProjectGrid = ({ projects }: ProjectGridProps) => (
     {projects.map((project) => (
       <ProjectCard key={project.id} project={project} />
     ))}
-    <ConnectRepoCard />
   </div>
 );

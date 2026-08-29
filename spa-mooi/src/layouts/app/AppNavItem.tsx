@@ -13,6 +13,7 @@ export const AppNavItem = ({ link, onNavigate }: AppNavItemProps) => {
   return (
     <NavLink
       to={link.to}
+      end={link.end}
       onClick={onNavigate}
       className={({ isActive }) =>
         cn(
