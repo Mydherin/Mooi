@@ -26,3 +26,5 @@ export PGADMIN_PORT   := $(DEV_PORT_PGADMIN)
 # Cross-artifact wiring that must follow the ports.
 export VITE_API_BASE_URL := http://localhost:$(DEV_PORT_MIC)
 export CORS_ORIGIN       := http://$(DEV_HOST_SPA):$(DEV_PORT_SPA)
+# Registered on the GitHub App; it embeds the SPA port, so it follows a change here.
+export GITHUB_REDIRECT_URI := http://$(DEV_HOST_SPA):$(DEV_PORT_SPA)/account/github/callback

@@ -209,6 +209,13 @@ public class Auth {
         private final String jwtSecret;
         private final Duration accessTokenTtl;
         private final Duration refreshTokenTtl;
+        /**
+         * The ceiling a sliding refresh token cannot slide past. Rotation re-issues the deadline on
+         * every renewal, which is what keeps an active player signed in — and would also let a
+         * single stolen token be renewed forever. Measured from the session's own creation, this is
+         * the date on which the sign-in ends no matter how faithfully it was renewed.
+         */
+        private final Duration sessionMaxLifetime;
         private final Duration replayGrace;
         private final Set<String> adminEmails;
 
@@ -217,6 +224,7 @@ public class Auth {
                  @Value("${app.auth.jwt-secret:}") String jwtSecret,
                  @Value("${app.auth.access-token-expires-in}") String accessTokenExpiresIn,
                  @Value("${app.auth.refresh-token-expires-in}") String refreshTokenExpiresIn,
+                 @Value("${app.auth.session-max-lifetime}") String sessionMaxLifetime,
                  @Value("${app.auth.replay-grace-seconds}") long replayGraceSeconds,
                  @Value("${app.auth.admin-emails:}") String adminEmails) {
             if (googleClientId == null || googleClientId.isBlank()) {
@@ -233,6 +241,7 @@ public class Auth {
             this.jwtSecret = jwtSecret;
             this.accessTokenTtl = parseDuration(accessTokenExpiresIn, "ACCESS_TOKEN_EXPIRES_IN");
             this.refreshTokenTtl = parseDuration(refreshTokenExpiresIn, "REFRESH_TOKEN_EXPIRES_IN");
+            this.sessionMaxLifetime = parseDuration(sessionMaxLifetime, "SESSION_MAX_LIFETIME");
             this.replayGrace = Duration.ofSeconds(replayGraceSeconds);
             this.adminEmails = Arrays.stream(adminEmails == null ? new String[0] : adminEmails.split(","))
                     .map(email -> email.strip().toLowerCase(Locale.ROOT))

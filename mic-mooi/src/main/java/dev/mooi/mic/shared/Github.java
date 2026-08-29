@@ -1,0 +1,497 @@
+package dev.mooi.mic.shared;
+
+import java.io.IOException;
+import java.net.MalformedURLException;
+import java.net.URI;
+import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.security.InvalidKeyException;
+import java.security.NoSuchAlgorithmException;
+import java.text.ParseException;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.util.Base64;
+import java.util.Date;
+import java.util.Map;
+import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Component;
+import org.springframework.web.server.ResponseStatusException;
+
+import com.nimbusds.jose.JOSEException;
+import com.nimbusds.jose.JWSAlgorithm;
+import com.nimbusds.jose.JWSHeader;
+import com.nimbusds.jose.crypto.MACSigner;
+import com.nimbusds.jose.crypto.MACVerifier;
+import com.nimbusds.jwt.JWTClaimsSet;
+import com.nimbusds.jwt.SignedJWT;
+
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
+
+import lombok.Getter;
+
+/**
+ * Transversal aspect: GitHub OAuth2 and REST mechanics.
+ *
+ * <p>Only the protocol lives here: building the authorization URL, signing and verifying the
+ * {@code state} that protects it, trading a code for tokens, renewing them, reading the GitHub
+ * profile behind a token and handing the grant back. What is stored, for whom, and when it is
+ * renewed belongs to the feature that owns the connection table — this aspect never imports it and
+ * holds no state of its own.
+ *
+ * <p>Self-contained by architecture, which is why the TTL grammar is parsed here rather than
+ * borrowed from {@link Auth}: transversal aspects do not depend on each other, so a small,
+ * deliberate duplication is the correct trade.
+ */
+@Configuration
+public class Github {
+
+    /** Log scope shared by this aspect and the feature that owns the connections. */
+    public static final Logger LOG = LoggerFactory.getLogger("github");
+
+    private static final Pattern DURATION_PATTERN = Pattern.compile("^(\\d+)([smhd])$");
+
+    // --- errors ---
+
+    /**
+     * Every way this integration can fail, mapped once to the status the SPA should act on and to a
+     * message that says what to do about it. Rendered by the shared error contract.
+     *
+     * <p>GitHub's own wording never reaches the client: it is written for an app developer, not for
+     * the person clicking the button, and repeating it verbatim would describe our request to
+     * whoever provoked the failure.
+     */
+    public static class GithubException extends ResponseStatusException {
+
+        private GithubException(HttpStatus status, String reason) {
+            super(status, reason);
+        }
+
+        /** A forged, edited, expired or foreign {@code state}: the CSRF check did its job. */
+        public static GithubException invalidState() {
+            return new GithubException(HttpStatus.BAD_REQUEST, "Invalid or expired GitHub authorization state");
+        }
+
+        /** GitHub refused the grant — a spent code, a revoked token, a mismatched redirect URI. */
+        public static GithubException rejected(String description) {
+            LOG.warn("GitHub refused the authorization: {}", description);
+            return new GithubException(HttpStatus.BAD_REQUEST, "GitHub refused the authorization");
+        }
+
+        /** The GitHub account is already linked to a different player. */
+        public static GithubException alreadyLinked() {
+            return new GithubException(HttpStatus.CONFLICT,
+                    "This GitHub account is already linked to another player");
+        }
+
+        /** GitHub is unreachable, slow or broken. Distinct from a refusal: retrying may work. */
+        public static GithubException unavailable(String detail) {
+            LOG.warn("GitHub is unavailable: {}", detail);
+            return new GithubException(HttpStatus.BAD_GATEWAY, "GitHub is unavailable, please try again");
+        }
+    }
+
+    // --- configuration ---
+
+    /**
+     * Every GitHub variable, read and validated at boot: a missing secret or a malformed endpoint
+     * fails the application start instead of the first click on the connect button.
+     */
+    @Getter
+    @Component
+    public static class Settings {
+
+        private final String clientId;
+        private final String clientSecret;
+        private final String redirectUri;
+        private final String authorizeUri;
+        private final String tokenUri;
+        private final String apiBaseUrl;
+        private final Duration stateExpiresIn;
+        private final Duration tokenRefreshSkew;
+        private final Duration requestTimeout;
+
+        Settings(@Value("${app.github.client-id:}") String clientId,
+                 @Value("${app.github.client-secret:}") String clientSecret,
+                 @Value("${app.github.redirect-uri:}") String redirectUri,
+                 @Value("${app.github.authorize-uri}") String authorizeUri,
+                 @Value("${app.github.token-uri}") String tokenUri,
+                 @Value("${app.github.api-base-url}") String apiBaseUrl,
+                 @Value("${app.github.state-expires-in}") String stateExpiresIn,
+                 @Value("${app.github.token-refresh-skew}") String tokenRefreshSkew,
+                 @Value("${app.github.request-timeout-ms}") long requestTimeoutMs) {
+            this.clientId = require(clientId, "GITHUB_CLIENT_ID");
+            this.clientSecret = require(clientSecret, "GITHUB_CLIENT_SECRET");
+            this.redirectUri = validUrl(require(redirectUri, "GITHUB_REDIRECT_URI"), "GITHUB_REDIRECT_URI");
+            this.authorizeUri = validUrl(authorizeUri, "GITHUB_AUTHORIZE_URI");
+            this.tokenUri = validUrl(tokenUri, "GITHUB_TOKEN_URI");
+            this.apiBaseUrl = trimTrailingSlash(validUrl(apiBaseUrl, "GITHUB_API_BASE_URL"));
+            this.stateExpiresIn = parseDuration(stateExpiresIn, "GITHUB_STATE_EXPIRES_IN");
+            this.tokenRefreshSkew = parseDuration(tokenRefreshSkew, "GITHUB_TOKEN_REFRESH_SKEW");
+            if (requestTimeoutMs <= 0) {
+                throw new IllegalStateException("GITHUB_REQUEST_TIMEOUT_MS must be greater than zero");
+            }
+            this.requestTimeout = Duration.ofMillis(requestTimeoutMs);
+        }
+
+        private static String require(String value, String name) {
+            if (value == null || value.isBlank()) {
+                throw new IllegalStateException(name + " must be set");
+            }
+            return value.strip();
+        }
+
+        private static String validUrl(String value, String name) {
+            String stripped = value == null ? "" : value.strip();
+            try {
+                URI.create(stripped).toURL();
+            } catch (MalformedURLException | IllegalArgumentException exception) {
+                throw new IllegalStateException(name + " is not a valid URL: " + value, exception);
+            }
+            return stripped;
+        }
+
+        private static String trimTrailingSlash(String value) {
+            return value.endsWith("/") ? value.substring(0, value.length() - 1) : value;
+        }
+    }
+
+    /** Parses the {@code <n><s|m|h|d>} TTL format. Malformed values throw, at boot. */
+    private static Duration parseDuration(String value, String name) {
+        Matcher matcher = value == null ? null : DURATION_PATTERN.matcher(value.strip());
+        if (matcher == null || !matcher.matches()) {
+            throw new IllegalStateException(name + " must match <n><s|m|h|d>, got: " + value);
+        }
+        long amount = Long.parseLong(matcher.group(1));
+        if (amount <= 0) {
+            throw new IllegalStateException(name + " must be greater than zero, got: " + value);
+        }
+        return switch (matcher.group(2)) {
+            case "s" -> Duration.ofSeconds(amount);
+            case "m" -> Duration.ofMinutes(amount);
+            case "h" -> Duration.ofHours(amount);
+            default -> Duration.ofDays(amount);
+        };
+    }
+
+    // --- state ---
+
+    /**
+     * The {@code state} parameter, as a signed short-lived token rather than a random string kept in
+     * a table.
+     *
+     * <p>It carries the player it was minted for, so the callback can refuse a {@code state} issued
+     * for somebody else — the check that actually stops the cross-site attack this parameter exists
+     * for, since GitHub offers no PKCE and the code is redeemed server-side with the client secret.
+     * Signing it keeps the whole round trip stateless: nothing to store, nothing to clean up, and no
+     * window where a pending authorization outlives its ten minutes.
+     */
+    @Component
+    public static class StateCodec {
+
+        /** Fixed label so the signing key is bound to this purpose and to nothing else. */
+        private static final String KEY_LABEL = "mooi:github:oauth-state";
+        private static final String HMAC_ALGORITHM = "HmacSHA256";
+
+        private final Settings settings;
+        private final Clock clock;
+        private final byte[] key;
+
+        StateCodec(Settings settings, Clock clock) {
+            this.settings = settings;
+            this.clock = clock;
+            this.key = deriveKey(settings.getClientSecret());
+        }
+
+        public String issue(UUID playerId) {
+            Instant issuedAt = clock.instant();
+            JWTClaimsSet claims = new JWTClaimsSet.Builder()
+                    .subject(playerId.toString())
+                    .jwtID(UUID.randomUUID().toString())
+                    .issueTime(Date.from(issuedAt))
+                    .expirationTime(Date.from(issuedAt.plus(settings.getStateExpiresIn())))
+                    .build();
+            SignedJWT jwt = new SignedJWT(new JWSHeader(JWSAlgorithm.HS256), claims);
+            try {
+                jwt.sign(new MACSigner(key));
+            } catch (JOSEException exception) {
+                throw new IllegalStateException("Unable to sign a GitHub authorization state", exception);
+            }
+            return jwt.serialize();
+        }
+
+        /** Returns the player the state was minted for. Every rejection is the same failure. */
+        public UUID verify(String state) {
+            try {
+                SignedJWT jwt = SignedJWT.parse(state);
+                if (!JWSAlgorithm.HS256.equals(jwt.getHeader().getAlgorithm()) || !jwt.verify(new MACVerifier(key))) {
+                    throw GithubException.invalidState();
+                }
+                JWTClaimsSet claims = jwt.getJWTClaimsSet();
+                Date expiresAt = claims.getExpirationTime();
+                if (expiresAt == null || !expiresAt.toInstant().isAfter(clock.instant())) {
+                    throw GithubException.invalidState();
+                }
+                return UUID.fromString(claims.getSubject());
+            } catch (GithubException exception) {
+                throw exception;
+            } catch (ParseException | JOSEException | IllegalArgumentException | NullPointerException exception) {
+                throw GithubException.invalidState();
+            }
+        }
+
+        /**
+         * The client secret signs nothing directly: a separate key is derived from it, so the value
+         * used here could never be mistaken for, or replayed as, the credential itself.
+         */
+        private static byte[] deriveKey(String clientSecret) {
+            try {
+                Mac mac = Mac.getInstance(HMAC_ALGORITHM);
+                mac.init(new SecretKeySpec(clientSecret.getBytes(StandardCharsets.UTF_8), HMAC_ALGORITHM));
+                return mac.doFinal(KEY_LABEL.getBytes(StandardCharsets.UTF_8));
+            } catch (NoSuchAlgorithmException | InvalidKeyException exception) {
+                throw new IllegalStateException("Unable to derive the GitHub state signing key", exception);
+            }
+        }
+    }
+
+    // --- oauth2 and rest ---
+
+    /**
+     * A GitHub grant. Both expiries are nullable: a GitHub App with token expiration turned off
+     * hands out a non-expiring access token and no refresh token at all, and this integration keeps
+     * working in that shape rather than pretending the fields are always there.
+     */
+    public record Tokens(String accessToken, OffsetDateTime accessTokenExpiresAt, String refreshToken,
+                         OffsetDateTime refreshTokenExpiresAt, String scope) {
+    }
+
+    /** The GitHub profile behind a token — exactly the fields the connection stores, and no more. */
+    public record Viewer(long id, String login, String name, String avatarUrl, String profileUrl) {
+    }
+
+    /**
+     * The only place this application talks to GitHub.
+     *
+     * <p>Two habits of GitHub's OAuth endpoint drive the shape of this class. It answers failures
+     * with HTTP 200 and an {@code error} field, so the status code alone is never enough to know a
+     * grant succeeded. And it reports lifetimes as relative seconds, which are turned into absolute
+     * instants here, once, against the injected clock — every caller downstream then compares real
+     * timestamps instead of re-deriving them.
+     */
+    @Component
+    public static class OAuthClient {
+
+        private static final String ACCEPT_HEADER = "Accept";
+        private static final String JSON = "application/json";
+        private static final String GITHUB_JSON = "application/vnd.github+json";
+        private static final String FORM = "application/x-www-form-urlencoded";
+        private static final String API_VERSION_HEADER = "X-GitHub-Api-Version";
+        private static final String API_VERSION = "2022-11-28";
+        private static final int MAX_LOGIN_LENGTH = 128;
+        private static final int MAX_NAME_LENGTH = 255;
+        private static final int MAX_URL_LENGTH = 512;
+        private static final int MAX_SCOPE_LENGTH = 512;
+        private static final int MAX_ERROR_LENGTH = 256;
+
+        private final Settings settings;
+        private final Clock clock;
+        private final HttpClient httpClient;
+        private final ObjectMapper objectMapper = JsonMapper.shared();
+
+        OAuthClient(Settings settings, Clock clock) {
+            this.settings = settings;
+            this.clock = clock;
+            this.httpClient = HttpClient.newBuilder().connectTimeout(settings.getRequestTimeout()).build();
+        }
+
+        /**
+         * No {@code scope} parameter: a GitHub App carries its permissions in its own configuration,
+         * and asking for scopes here would be silently ignored while suggesting otherwise.
+         */
+        public String authorizeUrl(String state) {
+            return settings.getAuthorizeUri()
+                    + "?client_id=" + encode(settings.getClientId())
+                    + "&redirect_uri=" + encode(settings.getRedirectUri())
+                    + "&state=" + encode(state);
+        }
+
+        public Tokens exchangeCode(String code) {
+            return readTokens(postForm(Map.of(
+                    "client_id", settings.getClientId(),
+                    "client_secret", settings.getClientSecret(),
+                    "code", code,
+                    "redirect_uri", settings.getRedirectUri())));
+        }
+
+        /** GitHub rotates both halves on renewal, so the answer replaces the whole grant. */
+        public Tokens refresh(String refreshToken) {
+            return readTokens(postForm(Map.of(
+                    "client_id", settings.getClientId(),
+                    "client_secret", settings.getClientSecret(),
+                    "grant_type", "refresh_token",
+                    "refresh_token", refreshToken)));
+        }
+
+        public Viewer fetchViewer(String accessToken) {
+            HttpRequest request = HttpRequest.newBuilder(URI.create(settings.getApiBaseUrl() + "/user"))
+                    .timeout(settings.getRequestTimeout())
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                    .header(ACCEPT_HEADER, GITHUB_JSON)
+                    .header(API_VERSION_HEADER, API_VERSION)
+                    .GET()
+                    .build();
+            JsonNode body = readJson(send(request, "GET /user"));
+            long id = body.path("id").asLong(0L);
+            String login = text(body, "login", MAX_LOGIN_LENGTH);
+            if (id <= 0 || login == null) {
+                throw GithubException.unavailable("GET /user returned no identity");
+            }
+            return new Viewer(id, login, text(body, "name", MAX_NAME_LENGTH),
+                    text(body, "avatar_url", MAX_URL_LENGTH), text(body, "html_url", MAX_URL_LENGTH));
+        }
+
+        /**
+         * Best effort by design. This drops GitHub's copy of the link; ours is dropped either way.
+         * The player asked to disconnect, so that must succeed even when GitHub cannot be reached —
+         * a failure here is logged and nothing more.
+         */
+        public void revoke(String accessToken) {
+            String payload;
+            try {
+                payload = objectMapper.writeValueAsString(Map.of("access_token", accessToken));
+            } catch (JacksonException exception) {
+                LOG.warn("Unable to build the GitHub revocation payload");
+                return;
+            }
+            String credentials = Base64.getEncoder().encodeToString(
+                    (settings.getClientId() + ":" + settings.getClientSecret()).getBytes(StandardCharsets.UTF_8));
+            HttpRequest request = HttpRequest.newBuilder(URI.create(
+                            settings.getApiBaseUrl() + "/application/" + encode(settings.getClientId()) + "/grant"))
+                    .timeout(settings.getRequestTimeout())
+                    .header(HttpHeaders.AUTHORIZATION, "Basic " + credentials)
+                    .header(HttpHeaders.CONTENT_TYPE, JSON)
+                    .header(ACCEPT_HEADER, GITHUB_JSON)
+                    .header(API_VERSION_HEADER, API_VERSION)
+                    .method("DELETE", HttpRequest.BodyPublishers.ofString(payload))
+                    .build();
+            try {
+                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                if (response.statusCode() / 100 != 2) {
+                    LOG.warn("GitHub refused to revoke the grant ({})", response.statusCode());
+                }
+            } catch (IOException exception) {
+                LOG.warn("Unable to revoke the GitHub grant: {}", exception.getMessage());
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                LOG.warn("Revoking the GitHub grant was interrupted");
+            }
+        }
+
+        /** The {@code error} field is read first: a refusal arrives with a 200 status. */
+        private Tokens readTokens(String body) {
+            JsonNode node = readJson(body);
+            String error = text(node, "error", MAX_ERROR_LENGTH);
+            if (error != null) {
+                String description = text(node, "error_description", MAX_ERROR_LENGTH);
+                throw GithubException.rejected(description != null ? description : error);
+            }
+            String accessToken = text(node, "access_token");
+            if (accessToken == null) {
+                throw GithubException.unavailable("the token endpoint returned no access token");
+            }
+            Instant now = clock.instant();
+            return new Tokens(accessToken, expiresAt(node, "expires_in", now), text(node, "refresh_token"),
+                    expiresAt(node, "refresh_token_expires_in", now), text(node, "scope", MAX_SCOPE_LENGTH));
+        }
+
+        private String postForm(Map<String, String> form) {
+            String body = form.entrySet().stream()
+                    .map(entry -> encode(entry.getKey()) + "=" + encode(entry.getValue()))
+                    .collect(Collectors.joining("&"));
+            HttpRequest request = HttpRequest.newBuilder(URI.create(settings.getTokenUri()))
+                    .timeout(settings.getRequestTimeout())
+                    .header(HttpHeaders.CONTENT_TYPE, FORM)
+                    .header(ACCEPT_HEADER, JSON)
+                    .POST(HttpRequest.BodyPublishers.ofString(body))
+                    .build();
+            return send(request, "the GitHub token endpoint");
+        }
+
+        private String send(HttpRequest request, String description) {
+            try {
+                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                if (response.statusCode() / 100 != 2) {
+                    throw GithubException.unavailable(description + " answered " + response.statusCode());
+                }
+                return response.body();
+            } catch (IOException exception) {
+                throw GithubException.unavailable(description + " failed: " + exception.getMessage());
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                throw GithubException.unavailable(description + " was interrupted");
+            }
+        }
+
+        private JsonNode readJson(String body) {
+            try {
+                return objectMapper.readTree(body);
+            } catch (JacksonException exception) {
+                throw GithubException.unavailable("GitHub returned a malformed response");
+            }
+        }
+
+        /** Relative seconds become an absolute instant once, here. Absent or zero means no expiry. */
+        private static OffsetDateTime expiresAt(JsonNode node, String field, Instant now) {
+            JsonNode value = node.get(field);
+            if (value == null || !value.isNumber() || value.asLong() <= 0) {
+                return null;
+            }
+            return OffsetDateTime.ofInstant(now.plusSeconds(value.asLong()), ZoneOffset.UTC);
+        }
+
+        /** Untruncated: token material must survive intact. */
+        private static String text(JsonNode node, String field) {
+            JsonNode value = node.get(field);
+            if (value == null || !value.isString()) {
+                return null;
+            }
+            String stripped = value.asText().strip();
+            return stripped.isEmpty() ? null : stripped;
+        }
+
+        /** Truncated to what the column holds, so a long profile field can never fail an insert. */
+        private static String text(JsonNode node, String field, int maxLength) {
+            String value = text(node, field);
+            if (value == null) {
+                return null;
+            }
+            return value.length() <= maxLength ? value : value.substring(0, maxLength);
+        }
+
+        private static String encode(String value) {
+            return URLEncoder.encode(value, StandardCharsets.UTF_8);
+        }
+    }
+}

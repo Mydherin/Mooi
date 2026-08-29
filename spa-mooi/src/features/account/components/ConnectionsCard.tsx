@@ -5,7 +5,7 @@ import { Card } from '@/shared/components/Card';
 
 export const ConnectionsCard = () => (
   <Card className="p-6">
-    <h2 className="text-sm font-semibold tracking-tight text-ink">Connections</h2>
+    <h2 className="text-sm font-semibold tracking-tight text-ink">Other connections</h2>
 
     <ul className="mt-4 flex flex-col gap-4">
       {connections.map((connection) => (
@@ -29,7 +29,7 @@ export const ConnectionsCard = () => (
     </ul>
 
     <Button variant="ghost" size="sm" className="mt-5 -ml-3.5">
-      Manage connections
+      Manage
     </Button>
   </Card>
 );

@@ -7,6 +7,7 @@ import { ProtectedRoute } from '@/shared/router/ProtectedRoute';
 import { RoleRoute } from '@/shared/router/RoleRoute';
 import { AccountPage } from '@/pages/AccountPage';
 import { AdminPage } from '@/pages/AdminPage';
+import { GithubCallbackPage } from '@/pages/GithubCallbackPage';
 import { LandingPage } from '@/pages/LandingPage';
 import { LoginPage } from '@/pages/LoginPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
@@ -36,6 +37,7 @@ export const router = createBrowserRouter([
           { path: ROUTES.project, element: <ProjectPage /> },
           { path: ROUTES.session, element: <SessionPage /> },
           { path: ROUTES.account, element: <AccountPage /> },
+          { path: ROUTES.githubCallback, element: <GithubCallbackPage /> },
           {
             element: <RoleRoute role="admin" />,
             children: [{ path: ROUTES.admin, element: <AdminPage /> }],

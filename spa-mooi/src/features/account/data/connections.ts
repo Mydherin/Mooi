@@ -1,15 +1,8 @@
-import { Bot, FolderGit2, UserRound } from 'lucide-react';
+import { Bot, UserRound } from 'lucide-react';
 import type { Connection } from '@/features/account/types/Connection';
 
+/** GitHub is deliberately absent: that connection is live and owned by its own card. */
 export const connections: Connection[] = [
-  {
-    id: 'github',
-    name: 'GitHub',
-    description: 'Repositories and pull requests',
-    icon: FolderGit2,
-    connected: true,
-    action: 'Manage',
-  },
   {
     id: 'google',
     name: 'Google',

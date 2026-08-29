@@ -41,6 +41,25 @@ entrypoint. Set your own credentials before the first run.
 The first sign-in of an address listed in `ADMIN_EMAILS` creates that player with the admin role;
 adding an address later never promotes an existing player.
 
+### GitHub OAuth2
+
+Links a GitHub account to an existing player. It never signs anyone in — sign-in stays Google-only.
+
+1. Create a **GitHub App** (Settings → Developer settings → GitHub Apps → New GitHub App).
+2. Enable **Expire user authorization tokens**: it is the only setup that issues refresh tokens,
+   which is what keeps the link alive without asking the player to authorize again.
+3. Callback URL: `http://localhost:28471/account/github/callback` (pinned SPA dev port; `make`
+   exports the matching `GITHUB_REDIRECT_URI` automatically).
+4. Generate a client secret, then set in `mic-mooi/.env`: `GITHUB_CLIENT_ID`,
+   `GITHUB_CLIENT_SECRET`.
+5. Generate the key encrypting stored GitHub tokens at rest and set it as `SECRETS_KEY`:
+
+```bash
+openssl rand -base64 32
+```
+
+The SPA needs no GitHub variable: it asks the API for a ready-made authorize URL.
+
 ## Dev entrypoint
 
 The whole application in dev is driven only through the root `Makefile`. It starts, stops, inspects
@@ -88,8 +107,8 @@ values. The `.env` files carry the same numbers as a fallback for non-`make` usa
 | `postgres` | `54983` | `localhost:54983` |
 | `pgadmin` | `51247` | `http://localhost:51247` |
 
-Change a port in `make/ports.mk`; the cross-artifact wiring (`VITE_API_BASE_URL`, `CORS_ORIGIN`)
-follows automatically.
+Change a port in `make/ports.mk`; the cross-artifact wiring (`VITE_API_BASE_URL`, `CORS_ORIGIN`,
+`GITHUB_REDIRECT_URI`) follows automatically.
 
 ### Support commands
 
@@ -194,12 +213,25 @@ the root `.env`.
 | `GOOGLE_CLIENT_ID` | Google OAuth2 client id / expected token `aud` |
 | `JWT_SECRET` | HS256 access-token signing key (>= 32 bytes) |
 | `ACCESS_TOKEN_EXPIRES_IN` | Access token lifetime (e.g. `15m`) |
-| `REFRESH_TOKEN_EXPIRES_IN` | Refresh token lifetime (e.g. `30d`) |
+| `REFRESH_TOKEN_EXPIRES_IN` | Refresh token lifetime, re-issued on every rotation (e.g. `365d`) |
+| `SESSION_MAX_LIFETIME` | Absolute session ceiling from its creation (e.g. `730d`) |
+| `REFRESH_TOKEN_PURGE_CRON` | Cron deleting expired refresh tokens |
 | `REPLAY_GRACE_SECONDS` | Grace window for concurrent refresh-token reuse |
 | `ADMIN_EMAILS` | Comma-separated addresses granted admin at signup |
+| `SECRETS_KEY` | AES-256-GCM key encrypting third-party tokens at rest (32 bytes, base64) |
+| `GITHUB_CLIENT_ID` | GitHub App client id |
+| `GITHUB_CLIENT_SECRET` | GitHub App client secret |
+| `GITHUB_REDIRECT_URI` | Callback registered on the GitHub App |
+| `GITHUB_AUTHORIZE_URI` | GitHub authorization endpoint |
+| `GITHUB_TOKEN_URI` | GitHub token endpoint |
+| `GITHUB_API_BASE_URL` | GitHub REST API base URL |
+| `GITHUB_STATE_EXPIRES_IN` | Lifetime of the signed OAuth2 `state` (e.g. `10m`) |
+| `GITHUB_TOKEN_REFRESH_SKEW` | Renew the GitHub token this long before it expires |
+| `GITHUB_REQUEST_TIMEOUT_MS` | Per-call timeout against GitHub |
 | `LOG_LEVEL_ROOT` | Root log level |
 | `LOG_LEVEL_APP` | Application log level |
 | `LOG_LEVEL_AUTH` | Auth log level |
+| `LOG_LEVEL_GITHUB` | GitHub integration log level |
 
 ### mic-mooi endpoints
 
@@ -215,6 +247,10 @@ the root `.env`.
 | `POST /auth/logout` | Revoke the session behind a refresh token |
 | `POST /auth/logout-all` | Revoke every session of the caller |
 | `GET /me` | Current player (requires a live session) |
+| `POST /me/github/authorization` | Start the GitHub link, returns an authorize URL |
+| `POST /me/github/connection` | Redeem the GitHub authorization code |
+| `GET /me/github/connection` | Current GitHub connection, or `null` |
+| `DELETE /me/github/connection` | Unlink the GitHub account |
 | `GET /admin/ping` | Admin-only probe |
 | `GET /health` | Liveness probe |
 | `GET /actuator/health` | Health check |

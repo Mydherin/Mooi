@@ -45,6 +45,7 @@ logging:
     root: ${LOG_LEVEL_ROOT:INFO}
     dev.mooi.mic: ${LOG_LEVEL_APP:INFO}
     auth: ${LOG_LEVEL_AUTH:INFO}
+    github: ${LOG_LEVEL_GITHUB:INFO}
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%X{correlationId:-}] [%X{playerId:-}] %logger{36} - %msg%n"
 
@@ -52,11 +53,25 @@ app:
   version: ${APP_VERSION:0.1.0}
   cors:
     allowed-origins: ${CORS_ORIGIN:http://localhost:28471}
+  crypto:
+    secrets-key: ${SECRETS_KEY:}
   auth:
     google-client-id: ${GOOGLE_CLIENT_ID:}
     google-jwks-uri: ${GOOGLE_JWKS_URI:https://www.googleapis.com/oauth2/v3/certs}
     jwt-secret: ${JWT_SECRET:}
     access-token-expires-in: ${ACCESS_TOKEN_EXPIRES_IN:15m}
-    refresh-token-expires-in: ${REFRESH_TOKEN_EXPIRES_IN:30d}
+    refresh-token-expires-in: ${REFRESH_TOKEN_EXPIRES_IN:365d}
+    session-max-lifetime: ${SESSION_MAX_LIFETIME:730d}
+    refresh-token-purge-cron: ${REFRESH_TOKEN_PURGE_CRON:0 30 3 * * *}
     replay-grace-seconds: ${REPLAY_GRACE_SECONDS:30}
     admin-emails: ${ADMIN_EMAILS:}
+  github:
+    client-id: ${GITHUB_CLIENT_ID:}
+    client-secret: ${GITHUB_CLIENT_SECRET:}
+    redirect-uri: ${GITHUB_REDIRECT_URI:}
+    authorize-uri: ${GITHUB_AUTHORIZE_URI:https://github.com/login/oauth/authorize}
+    token-uri: ${GITHUB_TOKEN_URI:https://github.com/login/oauth/access_token}
+    api-base-url: ${GITHUB_API_BASE_URL:https://api.github.com}
+    state-expires-in: ${GITHUB_STATE_EXPIRES_IN:10m}
+    token-refresh-skew: ${GITHUB_TOKEN_REFRESH_SKEW:5m}
+    request-timeout-ms: ${GITHUB_REQUEST_TIMEOUT_MS:10000}

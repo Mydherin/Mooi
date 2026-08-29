@@ -1,0 +1,93 @@
+databaseChangeLog:
+  - changeSet:
+      id: 007-create-github-connections
+      author: mooi
+      changes:
+        - createTable:
+            tableName: github_connections
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_github_connections
+                    nullable: false
+              - column:
+                  name: player_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    unique: true
+                    uniqueConstraintName: uq_github_connections_player
+              - column:
+                  name: github_user_id
+                  type: bigint
+                  constraints:
+                    nullable: false
+                    unique: true
+                    uniqueConstraintName: uq_github_connections_github_user
+              - column:
+                  name: login
+                  type: varchar(128)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: name
+                  type: varchar(255)
+              - column:
+                  name: avatar_url
+                  type: varchar(512)
+              - column:
+                  name: profile_url
+                  type: varchar(512)
+              - column:
+                  name: scope
+                  type: varchar(512)
+              - column:
+                  name: access_token
+                  type: varchar(1024)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: access_token_expires_at
+                  type: timestamptz
+              - column:
+                  name: refresh_token
+                  type: varchar(1024)
+              - column:
+                  name: refresh_token_expires_at
+                  type: timestamptz
+              - column:
+                  name: connected_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+              - column:
+                  name: last_refreshed_at
+                  type: timestamptz
+              - column:
+                  name: created_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            constraintName: fk_github_connections_player
+            baseTableName: github_connections
+            baseColumnNames: player_id
+            referencedTableName: players
+            referencedColumnNames: id
+            onDelete: CASCADE
+        - sql:
+            comment: The token columns hold AES-GCM ciphertext, never a usable GitHub credential
+            sql: COMMENT ON COLUMN github_connections.access_token IS 'AES-256-GCM ciphertext, sealed by Crypto.SecretBox'
+        - sql:
+            sql: COMMENT ON COLUMN github_connections.refresh_token IS 'AES-256-GCM ciphertext, sealed by Crypto.SecretBox'
+      rollback:
+        - dropTable:
+            tableName: github_connections

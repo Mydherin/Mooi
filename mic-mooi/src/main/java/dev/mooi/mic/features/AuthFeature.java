@@ -11,6 +11,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.http.HttpStatus;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -170,6 +171,10 @@ public class AuthFeature {
          * spent token is judged by <em>when</em> it was spent: inside the grace window two tabs simply
          * raced, so the session is left alone; after it, a copy of a retired token is the only
          * explanation left and the whole session goes.
+         *
+         * <p>Renewal also extends the token's own deadline, so a player who keeps using the
+         * application never signs in again. The session's maximum lifetime is what stops that from
+         * being unbounded.
          */
         @Transactional
         public SessionPayload refreshSession(String presentedToken) {
@@ -189,9 +194,17 @@ public class AuthFeature {
                 throw new Auth.AuthenticationException(INVALID_REFRESH_TOKEN);
             }
 
-            UUID playerId = authSessionRepository.findByIdAndRevokedAtIsNull(row.getSessionId())
-                    .map(AuthSession::getPlayerId)
+            AuthSession session = authSessionRepository.findByIdAndRevokedAtIsNull(row.getSessionId())
                     .orElseThrow(() -> new Auth.AuthenticationException(SESSION_NOT_ACTIVE));
+
+            // The sliding token has no deadline of its own, so the ceiling comes from the session it
+            // renews. Past it the sign-in is simply over: the row is closed here rather than merely
+            // refused, so every token still outstanding under it dies with it.
+            if (session.getCreatedAt().plus(settings.getSessionMaxLifetime()).isBefore(now)) {
+                authSessionRepository.revoke(session.getId(), now);
+                Auth.LOG.info("Session {} reached its maximum lifetime and was revoked", session.getId());
+                throw new Auth.AuthenticationException(SESSION_NOT_ACTIVE);
+            }
 
             // The claim is one conditional statement, so Postgres serialises concurrent attempts and
             // exactly one of them wins. Losing it means another tab spent the token a moment ago,
@@ -201,7 +214,7 @@ public class AuthFeature {
             }
             authSessionRepository.touch(row.getSessionId(), now);
 
-            Player player = playerRepository.findById(playerId)
+            Player player = playerRepository.findById(session.getPlayerId())
                     .orElseThrow(() -> new Auth.AuthenticationException(SESSION_NOT_ACTIVE));
             return issueSessionTokens(player, row.getSessionId(), now);
         }
@@ -229,6 +242,23 @@ public class AuthFeature {
             int revoked = authSessionRepository.revokeAllForPlayer(playerId, OffsetDateTime.now(clock));
             Auth.LOG.info("Revoked {} sessions of player {}", revoked, playerId);
             return revoked;
+        }
+
+        /**
+         * Keeps the rotation ledger bounded.
+         *
+         * <p>A sliding token leaves a spent row behind on every renewal — tens of thousands a year
+         * for a single daily-active session. Only <em>expired</em> rows are deleted: a spent but
+         * still unexpired one is exactly what replay detection reads, and removing it early would
+         * turn a stolen token back into an unrecognised one.
+         */
+        @Transactional
+        @Scheduled(cron = "${app.auth.refresh-token-purge-cron}")
+        public void purgeExpiredRefreshTokens() {
+            int purged = refreshTokenRepository.purgeExpired(OffsetDateTime.now(clock));
+            if (purged > 0) {
+                Auth.LOG.info("Purged {} expired refresh tokens", purged);
+            }
         }
 
         /**
@@ -439,6 +469,11 @@ public class AuthFeature {
         @Modifying(clearAutomatically = true, flushAutomatically = true)
         @Query("update RefreshToken t set t.usedAt = :now where t.id = :id and t.usedAt is null")
         int spend(@Param("id") UUID id, @Param("now") OffsetDateTime now);
+
+        /** Expiry is the only condition: spent rows stay until then, because replay detection reads them. */
+        @Modifying(clearAutomatically = true, flushAutomatically = true)
+        @Query("delete from RefreshToken t where t.expiresAt < :now")
+        int purgeExpired(@Param("now") OffsetDateTime now);
     }
 
     // --- contracts ---

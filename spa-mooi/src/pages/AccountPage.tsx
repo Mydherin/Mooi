@@ -2,6 +2,7 @@ import { ConnectionsCard } from '@/features/account/components/ConnectionsCard';
 import { PreferencesCard } from '@/features/account/components/PreferencesCard';
 import { ProfileCard } from '@/features/account/components/ProfileCard';
 import { SecurityCard } from '@/features/account/components/SecurityCard';
+import { GithubConnectionCard } from '@/features/github/components/GithubConnectionCard';
 import { useAuthStore } from '@/stores/authStore';
 
 export const AccountPage = () => {
@@ -20,6 +21,7 @@ export const AccountPage = () => {
 
       <div className="mt-6 grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-3">
         <ProfileCard player={player} />
+        <GithubConnectionCard />
         <ConnectionsCard />
         <PreferencesCard />
         <SecurityCard />

@@ -11,3 +11,5 @@ databaseChangeLog:
       file: db/changelog/changes/005-create-auth-sessions.yaml
   - include:
       file: db/changelog/changes/006-create-refresh-tokens.yaml
+  - include:
+      file: db/changelog/changes/007-create-github-connections.yaml
