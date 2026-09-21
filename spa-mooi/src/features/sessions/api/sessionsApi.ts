@@ -1,0 +1,166 @@
+import type { SessionConfiguration } from '@/features/sessions/types/SessionConfiguration';
+import type { SessionProvider } from '@/features/sessions/types/SessionProvider';
+import { sessionsFetch } from '@/features/sessions/lib/sessionsFetch';
+import type { ChangesSummary } from '@/features/sessions/types/ChangesSummary';
+import type { CreateSessionRequest } from '@/features/sessions/types/CreateSessionRequest';
+import type { FileDiffPayload } from '@/features/sessions/types/FileDiffPayload';
+import type { SendMessageResponse } from '@/features/sessions/types/SendMessageResponse';
+import type { Session } from '@/features/sessions/types/Session';
+import type { SessionsResponse } from '@/features/sessions/types/SessionsResponse';
+import { apiErrorMessage } from '@/shared/utils/apiErrorMessage';
+
+const sessionsPath = (projectId?: string) =>
+  projectId ? `/sessions?projectId=${encodeURIComponent(projectId)}` : '/sessions';
+const sessionPath = (sessionId: string) => `/sessions/${sessionId}`;
+const messagesPath = (sessionId: string) => `/sessions/${sessionId}/messages`;
+const configurationPath = (sessionId: string) => `/sessions/${sessionId}/configuration`;
+const interruptPath = (sessionId: string) => `/sessions/${sessionId}/interrupt`;
+const permissionPath = (sessionId: string, requestId: string) =>
+  `/sessions/${sessionId}/permissions/${requestId}`;
+const questionPath = (sessionId: string, requestId: string) => `/sessions/${sessionId}/questions/${requestId}`;
+const changesPath = (sessionId: string) => `/sessions/${sessionId}/changes`;
+const fileDiffPath = (sessionId: string, path: string) =>
+  `/sessions/${sessionId}/changes/file?path=${encodeURIComponent(path)}`;
+
+const jsonHeaders = { 'Content-Type': 'application/json' };
+
+export const fetchSessions = async (projectId?: string): Promise<Session[]> => {
+  const response = await sessionsFetch(sessionsPath(projectId));
+
+  if (!response.ok) {
+    throw new Error(await apiErrorMessage(response, 'Could not load the sessions.'));
+  }
+
+  const body = (await response.json()) as SessionsResponse;
+
+  return body.sessions;
+};
+
+export const fetchSession = async (sessionId: string): Promise<Session> => {
+  const response = await sessionsFetch(sessionPath(sessionId));
+
+  if (!response.ok) {
+    throw new Error(await apiErrorMessage(response, 'Could not load this session.'));
+  }
+
+  return (await response.json()) as Session;
+};
+
+export const createSession = async (request: CreateSessionRequest): Promise<Session> => {
+  const response = await sessionsFetch('/sessions', {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    throw new Error(await apiErrorMessage(response, 'Could not create the session.'));
+  }
+
+  return (await response.json()) as Session;
+};
+
+export const closeSession = async (sessionId: string): Promise<void> => {
+  const response = await sessionsFetch(sessionPath(sessionId), { method: 'DELETE' });
+
+  if (!response.ok) {
+    throw new Error(await apiErrorMessage(response, 'Could not close this session.'));
+  }
+};
+
+export const sendSessionMessage = async (sessionId: string, text: string): Promise<SendMessageResponse> => {
+  const response = await sessionsFetch(messagesPath(sessionId), {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify({ text }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await apiErrorMessage(response, 'Could not send this message.'));
+  }
+
+  return (await response.json()) as SendMessageResponse;
+};
+
+export const updateSessionConfiguration = async (sessionId: string, configuration: SessionConfiguration): Promise<Session> => {
+  const response = await sessionsFetch(configurationPath(sessionId), {
+    method: 'PATCH',
+    headers: jsonHeaders,
+    body: JSON.stringify(configuration),
+  });
+
+  if (!response.ok) {
+    throw new Error(await apiErrorMessage(response, 'Could not change the session configuration.'));
+  }
+
+  return (await response.json()) as Session;
+};
+
+export const interruptSession = async (sessionId: string): Promise<void> => {
+  const response = await sessionsFetch(interruptPath(sessionId), { method: 'POST' });
+
+  if (!response.ok) {
+    throw new Error(await apiErrorMessage(response, 'Could not interrupt the agent.'));
+  }
+};
+
+export const answerPermission = async (
+  sessionId: string,
+  requestId: string,
+  decision: 'allow' | 'deny',
+  message?: string,
+  updatedInput?: Record<string, unknown>,
+): Promise<void> => {
+  const response = await sessionsFetch(permissionPath(sessionId, requestId), {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify({ decision, message, updatedInput }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await apiErrorMessage(response, 'Could not send this decision.'));
+  }
+};
+
+export const answerQuestion = async (
+  sessionId: string,
+  requestId: string,
+  answers: Record<string, string | string[]>,
+  response_?: string,
+): Promise<void> => {
+  const response = await sessionsFetch(questionPath(sessionId, requestId), {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify({ answers, response: response_ }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await apiErrorMessage(response, 'Could not send these answers.'));
+  }
+};
+
+export const fetchChanges = async (sessionId: string): Promise<ChangesSummary> => {
+  const response = await sessionsFetch(changesPath(sessionId));
+
+  if (!response.ok) {
+    throw new Error(await apiErrorMessage(response, 'Could not load the changes.'));
+  }
+
+  return (await response.json()) as ChangesSummary;
+};
+
+export const fetchFileDiff = async (sessionId: string, path: string): Promise<FileDiffPayload> => {
+  const response = await sessionsFetch(fileDiffPath(sessionId, path));
+
+  if (!response.ok) {
+    throw new Error(await apiErrorMessage(response, 'Could not load the diff for this file.'));
+  }
+
+  return (await response.json()) as FileDiffPayload;
+};
+
+export const fetchSessionProviders = async (): Promise<SessionProvider[]> => {
+  const response = await sessionsFetch('/sessions/providers');
+  if (!response.ok) throw new Error(await apiErrorMessage(response, 'Could not load session models.'));
+  return ((await response.json()) as { providers: SessionProvider[] }).providers;
+};

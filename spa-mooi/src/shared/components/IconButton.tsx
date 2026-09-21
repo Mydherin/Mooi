@@ -22,8 +22,8 @@ export const IconButton = ({
     aria-label={label}
     title={label}
     className={cn(
-      'inline-flex size-10 shrink-0 items-center justify-center rounded-xl transition duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand',
-      active ? 'bg-brand-soft text-brand' : 'text-ink-muted hover:bg-surface-2 hover:text-ink',
+      'inline-flex size-11 shrink-0 items-center justify-center rounded-[10px] transition duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand',
+      active ? 'bg-surface-2 text-ink' : 'text-ink-muted hover:bg-surface-2 hover:text-ink',
       className,
     )}
   >

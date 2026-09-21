@@ -96,6 +96,17 @@ public class GithubConnectionFeature {
         githubConnectionService.disconnect(principal.player().id());
     }
 
+    /**
+     * A usable clone token, handed only to another internal service so it can fetch the player's
+     * repositories onto its own filesystem. A browser holding a valid access token is not enough.
+     */
+    @GetMapping("/me/github/token")
+    @Auth.Authenticated
+    @Auth.ServiceCall
+    public GithubTokenPayload token(Auth.Principal principal) {
+        return githubConnectionService.token(principal.player().id());
+    }
+
     // --- application ---
 
     /**
@@ -209,6 +220,19 @@ public class GithubConnectionFeature {
                 githubConnectionRepository.deleteByPlayerId(playerId);
                 Github.LOG.info("Player {} unlinked GitHub account {}", playerId, connection.getLogin());
             });
+        }
+
+        /**
+         * Renewing the token here is what makes this endpoint safe to call on every session start:
+         * the caller is never handed a credential that dies mid-clone.
+         */
+        @Transactional
+        public GithubTokenPayload token(UUID playerId) {
+            GithubConnection connection = githubConnectionRepository.findByPlayerId(playerId)
+                    .map(this::ensureFreshToken)
+                    .orElseThrow(Github.GithubException::reauthorize);
+            return new GithubTokenPayload(secretBox.decrypt(connection.getAccessToken()),
+                    connection.getAccessTokenExpiresAt());
         }
 
         /**
@@ -374,5 +398,9 @@ public class GithubConnectionFeature {
      * repository" from "Mooi was never granted access to one".
      */
     public record RepositoriesResponse(List<Github.Repository> repositories, int installations) {
+    }
+
+    /** A usable GitHub clone token. The only payload in this feature that ever serializes one. */
+    public record GithubTokenPayload(String token, OffsetDateTime expiresAt) {
     }
 }

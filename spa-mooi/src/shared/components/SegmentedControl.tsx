@@ -9,7 +9,7 @@ interface SegmentedControlProps {
 }
 
 export const SegmentedControl = ({ items, value, onChange, className }: SegmentedControlProps) => (
-  <div role="tablist" className={cn('inline-flex rounded-xl bg-surface-2 p-1', className)}>
+  <div role="group" className={cn('inline-flex flex-wrap gap-1 rounded-[10px] bg-surface-2 p-1', className)}>
     {items.map((item) => {
       const Icon = item.icon;
       const isActive = item.id === value;
@@ -18,12 +18,11 @@ export const SegmentedControl = ({ items, value, onChange, className }: Segmente
         <button
           key={item.id}
           type="button"
-          role="tab"
-          aria-selected={isActive}
+          aria-pressed={isActive}
           onClick={() => onChange(item.id)}
           className={cn(
-            'inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-sm font-medium transition duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand',
-            isActive ? 'bg-surface text-ink shadow-sm' : 'text-ink-muted hover:text-ink',
+            'inline-flex min-h-10 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-[13px] font-bold transition duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand',
+            isActive ? 'bg-surface text-ink ring-1 ring-line' : 'text-ink-muted hover:text-ink',
           )}
         >
           {Icon ? <Icon className="size-4" /> : null}

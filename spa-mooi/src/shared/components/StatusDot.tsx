@@ -7,12 +7,12 @@ interface StatusDotProps {
 }
 
 const fills: Record<Tone, string> = {
-  neutral: 'bg-ink-subtle',
-  brand: 'bg-brand',
-  success: 'bg-success',
-  warning: 'bg-warning',
-  danger: 'bg-danger',
-  info: 'bg-info',
+  neutral: 'bg-line-strong',
+  brand: 'bg-info-dot',
+  success: 'bg-success-dot',
+  warning: 'bg-warning-dot',
+  danger: 'bg-danger-dot',
+  info: 'bg-info-dot',
 };
 
 export const StatusDot = ({ tone, pulse = false }: StatusDotProps) => (

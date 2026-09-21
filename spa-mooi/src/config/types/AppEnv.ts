@@ -7,6 +7,7 @@ export interface AppEnv {
   docsUrl: string;
   contactEmail: string;
   apiBaseUrl: string;
+  sessionsBaseUrl: string;
   googleClientId: string;
   storagePrefix: string;
 }

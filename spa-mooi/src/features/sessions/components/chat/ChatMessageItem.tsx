@@ -1,53 +1,72 @@
-import { AgentStepList } from '@/features/sessions/components/chat/AgentStepList';
+import { memo } from 'react';
+import { CircleAlert } from 'lucide-react';
+import { TranscriptContent } from './TranscriptContent';
 import { ThinkingIndicator } from '@/features/sessions/components/chat/ThinkingIndicator';
-import type { ChatMessage } from '@/features/sessions/types/ChatMessage';
-import { Avatar } from '@/shared/components/Avatar';
+import { TurnFooter } from '@/features/sessions/components/chat/TurnFooter';
+import type { AgentCapabilities } from '@/features/sessions/types/AgentCapabilities';
+import type { TranscriptEntry } from '@/features/sessions/types/TranscriptEntry';
 import { LogoMark } from '@/shared/components/LogoMark';
+import { formatTime } from '@/shared/utils/formatTime';
 
 interface ChatMessageItemProps {
-  message: ChatMessage;
+  entry: TranscriptEntry;
+  providerLabel: string;
+  capabilities: AgentCapabilities;
+  working: boolean;
 }
 
-export const ChatMessageItem = ({ message }: ChatMessageItemProps) => {
-  if (message.role === 'system') {
+/**
+ * One transcript row. An `assistant` entry is a whole turn, so its blocks — text, thinking and tool
+ * steps — render in the order they actually happened rather than as text with a step list bolted
+ * underneath. Optional blocks are gated on the session's capabilities, never on its provider id:
+ * a provider without `thinking` never produces one, and one declaring the bare
+ * minimum still renders correctly.
+ */
+export const ChatMessageItem = memo(function ChatMessageItem({ entry, providerLabel, capabilities, working }: ChatMessageItemProps) {
+  if (entry.kind === 'error') {
     return (
-      <li className="rounded-xl border border-line bg-surface-2 px-3 py-2 text-xs text-ink-subtle">
-        {message.text}
+      <li className="flex items-start gap-2.5 rounded-xl border border-danger/40 bg-danger-soft px-3.5 py-2.5 text-sm leading-relaxed text-danger">
+        <CircleAlert className="mt-0.5 size-4 shrink-0" />
+        <span className="min-w-0 flex-1 break-words">{entry.text}</span>
       </li>
     );
   }
 
-  const isRunning = message.steps?.some((step) => step.status === 'running') ?? false;
+  if (entry.kind === 'user') {
+    return (
+      <li className="flex flex-col items-end gap-1">
+        <p className="max-w-[95%] sm:max-w-[85%] break-words rounded-2xl rounded-br-md bg-surface-2 px-5 py-3.5 text-[15px] leading-relaxed whitespace-pre-wrap text-ink">
+          {entry.text}
+        </p>
+        <span className="text-xs text-ink-subtle">{formatTime(entry.at)}</span>
+      </li>
+    );
+  }
 
   return (
-    <li className="flex gap-3">
-      {message.role === 'user' ? (
-        <Avatar src={null} name={message.author} size="sm" />
-      ) : (
-        <LogoMark className="size-8 shrink-0 rounded-lg" />
-      )}
+    <li className="flex gap-2 sm:gap-4">
+      <LogoMark className="hidden size-8 shrink-0 sm:block rounded-lg" />
 
       <div className="min-w-0 flex-1">
         <p className="flex items-center gap-2">
-          <span className="text-sm font-medium text-ink">{message.author}</span>
-          <span className="text-xs text-ink-subtle">{message.time}</span>
+          <span className="text-[13px] font-extrabold text-ink">{providerLabel}</span>
+          <span className="text-xs text-ink-subtle">{formatTime(entry.at)}</span>
         </p>
 
-        {message.role === 'user' ? (
-          <p className="mt-2 rounded-2xl border border-line bg-surface-2 px-4 py-3 text-sm leading-relaxed text-ink">
-            {message.text}
-          </p>
-        ) : (
-          <p className="mt-1.5 text-sm leading-relaxed text-ink-muted">{message.text}</p>
-        )}
+        <div className="mt-1.5 flex flex-col gap-2">
+          {entry.blocks.map((block) => block.kind === 'thinking' && !capabilities.thinking ? null : (
+            <TranscriptContent key={block.kind === 'step' ? `step-${block.step.toolUseId}` : `${block.kind}-${block.id}`}  block={block} />
+          ))}
+        </div>
 
-        {message.steps ? <AgentStepList steps={message.steps} /> : null}
-        {isRunning ? (
+        {entry.streaming && working ? (
           <div className="mt-2">
             <ThinkingIndicator />
           </div>
         ) : null}
+
+        {entry.result ? <TurnFooter result={entry.result} showCost={capabilities.cost} /> : null}
       </div>
     </li>
   );
-};
+});

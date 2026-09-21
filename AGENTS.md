@@ -1,0 +1,1 @@
+Always read CLAUDE.md as main agent guidelines 

@@ -1,0 +1,93 @@
+databaseChangeLog:
+  - changeSet:
+      id: 009-create-agent-connections
+      author: mooi
+      changes:
+        - createTable:
+            tableName: agent_connections
+            remarks: An agent-provider credential linked to a player, one row per (player, provider)
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_agent_connections
+                    nullable: false
+              - column:
+                  name: player_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: provider
+                  type: varchar(32)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: mode
+                  type: varchar(16)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: account_label
+                  type: varchar(255)
+              - column:
+                  name: access_token
+                  type: varchar(2048)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: access_token_expires_at
+                  type: timestamptz
+              - column:
+                  name: refresh_token
+                  type: varchar(2048)
+              - column:
+                  name: scope
+                  type: varchar(512)
+              - column:
+                  name: stale
+                  type: boolean
+                  constraints:
+                    nullable: false
+              - column:
+                  name: connected_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            constraintName: fk_agent_connections_player
+            baseTableName: agent_connections
+            baseColumnNames: player_id
+            referencedTableName: players
+            referencedColumnNames: id
+            onDelete: CASCADE
+        - addUniqueConstraint:
+            constraintName: uq_agent_connections_player_provider
+            tableName: agent_connections
+            columnNames: player_id, provider
+        - createIndex:
+            indexName: ix_agent_connections_player
+            tableName: agent_connections
+            columns:
+              - column:
+                  name: player_id
+        - sql:
+            comment: The token columns hold AES-GCM ciphertext, never a usable third-party credential
+            sql: COMMENT ON COLUMN agent_connections.access_token IS 'AES-256-GCM ciphertext, sealed by Crypto.SecretBox'
+        - sql:
+            sql: COMMENT ON COLUMN agent_connections.refresh_token IS 'AES-256-GCM ciphertext, sealed by Crypto.SecretBox'
+      rollback:
+        - dropTable:
+            tableName: agent_connections

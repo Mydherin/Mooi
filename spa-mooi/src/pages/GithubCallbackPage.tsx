@@ -65,11 +65,11 @@ export const GithubCallbackPage = () => {
     return (
       <div className="mx-auto w-full max-w-7xl px-4 py-16 lg:px-6">
         <Card className="mx-auto w-full max-w-md p-8 text-center">
-          <span className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-danger-soft text-danger">
+          <span className="mx-auto flex size-12 items-center justify-center rounded-[14px] bg-danger-soft text-danger">
             <TriangleAlert className="size-5" />
           </span>
 
-          <h1 className="mt-6 text-lg font-semibold tracking-tight text-ink">
+          <h1 className="mt-6 text-lg font-extrabold tracking-[-0.03em] text-ink">
             GitHub was not connected
           </h1>
           <p className="mt-2 text-sm leading-relaxed text-ink-muted">{failure}</p>

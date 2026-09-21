@@ -1,1 +1,1 @@
-export type SessionStatus = 'working' | 'review' | 'deployed' | 'failed' | 'idle';
+export type SessionStatus = 'provisioning' | 'ready' | 'working' | 'waiting' | 'failed' | 'closed';

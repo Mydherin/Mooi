@@ -1,55 +1,47 @@
 import { Link } from 'react-router-dom';
-import { Bot, ChevronLeft, Ellipsis, GitBranch, GitPullRequest } from 'lucide-react';
+import { ChevronLeft, GitBranch } from 'lucide-react';
 import { projectPath } from '@/app/paths';
 import type { Project } from '@/features/projects/types/Project';
-import { DeployButton } from '@/features/sessions/components/deploy/DeployButton';
-import { SessionStatusBadge } from '@/features/sessions/components/SessionStatusBadge';
 import type { Session } from '@/features/sessions/types/Session';
-import { IconButton } from '@/shared/components/IconButton';
-import { buttonStyles } from '@/shared/styles/buttonStyles';
 
 interface WorkspaceHeaderProps {
   project: Project;
   session: Session;
+  onClose: () => void;
+  closeBusy: boolean;
 }
 
-export const WorkspaceHeader = ({ project, session }: WorkspaceHeaderProps) => (
-  <div className="flex shrink-0 flex-col gap-3 border-b border-line px-4 py-3 lg:flex-row lg:items-center lg:justify-between lg:px-6">
-    <div className="flex min-w-0 items-center gap-2">
-      <Link
-        to={projectPath(project.id)}
-        aria-label="Back to project"
-        className="flex size-8 shrink-0 items-center justify-center rounded-lg text-ink-muted transition hover:bg-surface-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
-      >
-        <ChevronLeft className="size-4" />
-      </Link>
+export const WorkspaceHeader = ({
+  project,
+  session,
+  onClose,
+  closeBusy,
+}: WorkspaceHeaderProps) => (
+  <div className="flex min-h-14 shrink-0 items-center gap-2 border-b border-line bg-surface px-3 py-2 sm:gap-3 sm:px-5">
+    <Link
+      to={projectPath(project.id)}
+      aria-label="Back to project"
+      className="flex size-10 shrink-0 items-center justify-center rounded-[10px] text-ink-muted transition hover:bg-surface-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+    >
+      <ChevronLeft className="size-4" />
+    </Link>
 
-      <p className="min-w-0 truncate text-sm text-ink-subtle">
-        {project.name} / <span className="font-medium text-ink">{session.title}</span>
-      </p>
+    <h1 className="min-w-0 flex-1 truncate text-[17px] font-extrabold tracking-[-0.03em] text-ink sm:text-lg">
+      {session.title}
+    </h1>
 
-      <SessionStatusBadge status={session.status} />
-    </div>
+    <span className="hidden min-w-0 max-w-[15rem] items-center gap-1.5 rounded-[10px] border border-line px-2.5 py-1.5 font-mono text-[11px] text-ink-muted sm:inline-flex">
+      <GitBranch className="size-3 shrink-0" />
+      <span className="truncate">{session.branch}</span>
+    </span>
 
-    <div className="flex items-center gap-2">
-      <span className="flex min-w-0 items-center gap-1.5 rounded-lg bg-surface-2 px-2.5 py-1 font-mono text-xs text-ink-muted">
-        <GitBranch className="size-3.5 shrink-0" />
-        <span className="truncate">{session.branch}</span>
-      </span>
-
-      <span className="hidden items-center gap-1.5 rounded-lg bg-surface-2 px-2.5 py-1 text-xs text-ink-muted sm:flex">
-        <Bot className="size-3.5 shrink-0" />
-        {session.provider}
-      </span>
-
-      <button type="button" className={buttonStyles('secondary', 'sm', 'ml-auto hidden sm:inline-flex')}>
-        <GitPullRequest className="size-4" />
-        Open PR
-      </button>
-
-      <DeployButton session={session} />
-
-      <IconButton icon={Ellipsis} label="Session actions" className="size-9" />
-    </div>
+    <button
+      type="button"
+      onClick={onClose}
+      disabled={closeBusy}
+      className="shrink-0 rounded-[10px] px-2 py-2 text-xs font-bold text-danger transition hover:bg-danger-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:opacity-50 sm:px-2.5 sm:text-[13px]"
+    >
+      Close
+    </button>
   </div>
 );

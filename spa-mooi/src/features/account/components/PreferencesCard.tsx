@@ -15,18 +15,23 @@ export const PreferencesCard = () => {
   const setTheme = useThemeStore((state) => state.setTheme);
 
   return (
-    <Card className="p-6">
-      <h2 className="text-sm font-semibold tracking-tight text-ink">Preferences</h2>
-      <p className="mt-1.5 text-sm leading-relaxed text-ink-muted">
-        The workspace follows this theme on every device you sign in from.
-      </p>
+    <Card className="p-5 sm:p-6">
+      <h2 className="text-sm font-extrabold tracking-[-0.02em] text-ink">Preferences</h2>
 
-      <SegmentedControl
-        items={themes}
-        value={theme}
-        onChange={(id) => setTheme(id as Theme)}
-        className="mt-5 flex w-full"
-      />
+      <p className="mt-4 text-[13px] font-bold text-ink">Appearance</p>
+
+      <div className="sm:flex sm:items-center sm:justify-between sm:gap-6">
+        <p className="mt-1.5 text-[13px] leading-relaxed text-ink-muted">
+          The preference is per device: it does not travel with your account.
+        </p>
+
+        <SegmentedControl
+          items={themes}
+          value={theme}
+          onChange={(id) => setTheme(id as Theme)}
+          className="mt-4 flex w-full sm:mt-0 sm:w-auto sm:shrink-0"
+        />
+      </div>
     </Card>
   );
 };

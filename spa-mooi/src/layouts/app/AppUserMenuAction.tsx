@@ -32,7 +32,7 @@ export const AppUserMenuAction = ({
   tone = 'default',
 }: AppUserMenuActionProps) => {
   const className = cn(
-    'flex h-10 w-full items-center gap-2.5 rounded-xl px-3 text-left text-sm transition duration-200 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand',
+    'flex h-11 w-full items-center gap-2.5 rounded-[10px] px-3 text-left text-sm font-bold transition duration-200 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand',
     tones[tone],
     disabled && 'pointer-events-none opacity-55',
   );

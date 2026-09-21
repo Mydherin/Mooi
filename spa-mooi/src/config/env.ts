@@ -10,6 +10,7 @@ export const env: AppEnv = {
   docsUrl: requireEnv(import.meta.env.VITE_DOCS_URL, 'VITE_DOCS_URL'),
   contactEmail: requireEnv(import.meta.env.VITE_CONTACT_EMAIL, 'VITE_CONTACT_EMAIL'),
   apiBaseUrl: requireEnv(import.meta.env.VITE_API_BASE_URL, 'VITE_API_BASE_URL'),
+  sessionsBaseUrl: requireEnv(import.meta.env.VITE_SESSIONS_BASE_URL, 'VITE_SESSIONS_BASE_URL'),
   googleClientId: requireEnv(import.meta.env.VITE_GOOGLE_CLIENT_ID, 'VITE_GOOGLE_CLIENT_ID'),
   storagePrefix: requireEnv(import.meta.env.VITE_STORAGE_PREFIX, 'VITE_STORAGE_PREFIX'),
 };

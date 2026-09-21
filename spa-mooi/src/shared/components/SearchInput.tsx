@@ -11,7 +11,7 @@ interface SearchInputProps {
 export const SearchInput = ({ value, onChange, placeholder, className }: SearchInputProps) => (
   <div
     className={cn(
-      'flex h-10 w-full items-center gap-2 rounded-xl border border-line bg-surface-2 px-3 transition focus-within:border-brand/50',
+      'flex h-11 w-full items-center gap-2.5 rounded-[10px] bg-surface-2 px-3.5 transition focus-within:bg-surface focus-within:ring-2 focus-within:ring-ink',
       className,
     )}
   >
@@ -22,7 +22,7 @@ export const SearchInput = ({ value, onChange, placeholder, className }: SearchI
       onChange={(event) => onChange(event.target.value)}
       placeholder={placeholder}
       aria-label={placeholder}
-      className="h-full w-full min-w-0 bg-transparent text-sm text-ink placeholder:text-ink-subtle focus:outline-none"
+      className="h-full w-full min-w-0 bg-transparent text-sm font-medium text-ink placeholder:text-ink-subtle focus:outline-none"
     />
   </div>
 );

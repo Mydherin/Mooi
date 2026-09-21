@@ -3,67 +3,77 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --canvas: #f6f7f9;
+  --canvas: #ffffff;
   --surface: #ffffff;
-  --surface-2: #f1f2f6;
-  --surface-3: #e7e9ef;
+  --surface-2: #f6f6f6;
+  --surface-3: #eeeeee;
 
-  --line: rgba(11, 12, 16, 0.09);
-  --line-strong: rgba(11, 12, 16, 0.18);
+  --line: #e2e2e2;
+  --line-strong: #cbcbcb;
 
-  --ink: #0b0c10;
-  --ink-muted: #5a5f6b;
-  --ink-subtle: #878d99;
+  --ink: #000000;
+  --ink-muted: #545454;
+  --ink-subtle: #757575;
 
-  --brand: #5b45f0;
-  --brand-strong: #4a35d9;
-  --brand-soft: color-mix(in oklab, #5b45f0 10%, transparent);
+  --brand: #276ef1;
+  --brand-strong: #1e54b7;
+  --brand-soft: #eff3fe;
   --brand-ink: #ffffff;
 
-  --contrast: #0b0c10;
+  --contrast: #000000;
   --contrast-ink: #ffffff;
 
-  --success: #0e9f6e;
-  --warning: #b45309;
-  --danger: #dc2743;
-  --info: #1d6fd8;
+  --success: #03703c;
+  --warning: #674d1b;
+  --danger: #ab1300;
+  --info: #1e54b7;
 
-  --success-soft: color-mix(in oklab, #0e9f6e 10%, transparent);
-  --warning-soft: color-mix(in oklab, #b45309 10%, transparent);
-  --danger-soft: color-mix(in oklab, #dc2743 10%, transparent);
-  --info-soft: color-mix(in oklab, #1d6fd8 10%, transparent);
+  --success-dot: #06c167;
+  --warning-dot: #ffc043;
+  --danger-dot: #e11900;
+  --info-dot: #276ef1;
+
+  --success-soft: #e6f2ed;
+  --warning-soft: #fffaf0;
+  --danger-soft: #ffefed;
+  --info-soft: #eff3fe;
 }
 
 .dark {
-  --canvas: #08090c;
-  --surface: #0e1014;
-  --surface-2: #14161c;
-  --surface-3: #1c1f27;
+  --canvas: #000000;
+  --surface: #121212;
+  --surface-2: #1c1c1c;
+  --surface-3: #272727;
 
-  --line: rgba(255, 255, 255, 0.08);
-  --line-strong: rgba(255, 255, 255, 0.16);
+  --line: #2e2e2e;
+  --line-strong: #454545;
 
-  --ink: #f4f5f7;
-  --ink-muted: #a1a5b0;
-  --ink-subtle: #6e7380;
+  --ink: #f6f6f6;
+  --ink-muted: #b4b4b4;
+  --ink-subtle: #8f8f8f;
 
-  --brand: #8b7bff;
-  --brand-strong: #a99cff;
-  --brand-soft: color-mix(in oklab, #8b7bff 16%, transparent);
-  --brand-ink: #120c2e;
+  --brand: #a0bff8;
+  --brand-strong: #c7d9fb;
+  --brand-soft: color-mix(in oklab, #276ef1 22%, transparent);
+  --brand-ink: #0b1c3d;
 
-  --contrast: #f5f6f8;
-  --contrast-ink: #0a0b0e;
+  --contrast: #f6f6f6;
+  --contrast-ink: #000000;
 
-  --success: #3ddc97;
-  --warning: #f4bf5f;
-  --danger: #ff7a90;
-  --info: #6cb8ff;
+  --success: #5fd99a;
+  --warning: #ffc043;
+  --danger: #ff8c7a;
+  --info: #a0bff8;
 
-  --success-soft: color-mix(in oklab, #3ddc97 14%, transparent);
-  --warning-soft: color-mix(in oklab, #f4bf5f 14%, transparent);
-  --danger-soft: color-mix(in oklab, #ff7a90 14%, transparent);
-  --info-soft: color-mix(in oklab, #6cb8ff 14%, transparent);
+  --success-dot: #06c167;
+  --warning-dot: #ffc043;
+  --danger-dot: #e11900;
+  --info-dot: #276ef1;
+
+  --success-soft: color-mix(in oklab, #06c167 18%, transparent);
+  --warning-soft: color-mix(in oklab, #ffc043 18%, transparent);
+  --danger-soft: color-mix(in oklab, #e11900 22%, transparent);
+  --info-soft: color-mix(in oklab, #276ef1 22%, transparent);
 }
 
 @theme inline {
@@ -92,6 +102,11 @@
   --color-danger: var(--danger);
   --color-info: var(--info);
 
+  --color-success-dot: var(--success-dot);
+  --color-warning-dot: var(--warning-dot);
+  --color-danger-dot: var(--danger-dot);
+  --color-info-dot: var(--info-dot);
+
   --color-success-soft: var(--success-soft);
   --color-warning-soft: var(--warning-soft);
   --color-danger-soft: var(--danger-soft);
@@ -101,7 +116,7 @@
 }
 
 @theme {
-  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
   --animate-float-slow: float 20s ease-in-out infinite;
@@ -166,16 +181,31 @@
 
 @layer base {
   html {
+    color-scheme: light;
+  }
+
+  html.dark { color-scheme: dark; }
+
+  html {
     scroll-behavior: smooth;
     -webkit-tap-highlight-color: transparent;
   }
 
   body {
+    margin: 0;
+    min-width: 320px;
     background-color: var(--canvas);
     color: var(--ink);
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
   }
+
+  button, a, input, textarea, select { touch-action: manipulation; }
+  button:not(:disabled), [role="tab"] { cursor: pointer; }
+  input, textarea, select { min-width: 0; }
+  :focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+  :disabled { cursor: not-allowed; }
+  h1, h2, h3 { overflow-wrap: anywhere; }
 
   ::selection {
     background-color: color-mix(in oklab, var(--brand) 35%, transparent);
@@ -207,4 +237,9 @@
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* Keep editable controls readable and prevent automatic zoom on mobile Safari. */
+@media (max-width: 639px) {
+  input, textarea, select { font-size: 16px; }
 }

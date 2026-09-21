@@ -17,15 +17,18 @@ export const AppNavItem = ({ link, onNavigate }: AppNavItemProps) => {
       onClick={onNavigate}
       className={({ isActive }) =>
         cn(
-          'flex h-10 items-center gap-3 rounded-xl px-3 text-sm font-medium transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand',
-          isActive
-            ? 'bg-brand-soft text-brand'
-            : 'text-ink-muted hover:bg-surface-2 hover:text-ink',
+          'flex h-11 items-center gap-3 rounded-[10px] px-3 text-sm font-bold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand',
+          isActive ? 'bg-surface-2 text-ink' : 'text-ink-muted hover:bg-surface-2 hover:text-ink',
         )
       }
     >
       <Icon className="size-4.5 shrink-0" />
       {link.label}
+      {link.adminOnly ? (
+        <span className="ml-auto text-[9px] font-extrabold tracking-[0.08em] text-ink-subtle uppercase">
+          Admin only
+        </span>
+      ) : null}
     </NavLink>
   );
 };

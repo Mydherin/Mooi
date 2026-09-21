@@ -20,36 +20,6 @@ This is a monorepository which contains a whole application with different techn
 
 - The application in dev must be handled only through the root `Makefile`. Use `make dev-start`, `make dev-stop`, `make dev-status` and `make dev-clean` for the whole application, and their `dev-<command>-<artifact-name>` variants for a single artifact. Never run a package manager, a build tool, docker or docker compose directly to start, stop, inspect or clean the application in dev
 
-# Workflow
-
-**PLAN.md**
-
-After understand the user request, analyze it and find a proper solution, you must create a `PLAN.md` before starting to implement it
-
-**PLAN.md Self-contained**
-
-`PLAN.md` file must be totally self-contained. It means that an agent could continue the implementation from a cold start (no previous context) without reading additional files to get context. All implementation details are in the `PLAN.md` and you just need to read files before editing but not to discovery or understand the context since PLAN.md must have all necessary information
-
-**PLAN.md Tasks Progress**
-
-The user request must be split in small technical tasks, all that the user request needs. Technical tasks must have a similar size. After finish each task, it must be marked as completed in `PLAN.md`.
-
-**PLAN.md Metadata**
-
-`PLAN.md` always must contain a single description about the file and it must highlight its self-contained feature to avoid that the agent read additional files instead of going through the implementation directly
-
-**PLAN.md Chunks**
-
-You must afford 5 technicals tasks with non stop, after that you must ask about continuing
-
-**PLAN.md Question**
-
-Before starting the `PLAN.md` implementation you must ask to the user about implementing the plan
-
-**Makefile Support**
-
-If an artifact is created, deleted or modified and the change affects how it runs in dev, you must update the `Makefile` support in the same change, so `make dev-start`, `make dev-stop`, `make dev-status` and `make dev-clean` keep working for the whole application and for each artifact
-
 # Tech Aspects
 
 ## spa-mooi
@@ -125,8 +95,73 @@ Features will have duplicate code and logic since it is not possible import logi
 
 Each transversal aspect should be totally self-contained. Only relevant infrastructure topics should be considered as transversal aspect. You do not consider business logic as transversal aspect
 
-## Supported Agents Providers
+## mic-sessions
 
-### Claude
+### Microservice Stack
 
-The main ai instruction file for Claude is `CLAUDE.md` which must be placed at project root level.
+- It uses Python 3.13 as programming language
+
+- It uses `uv` as package manager, with idiomatic Python packaging (`pyproject.toml`, `uv.lock`, `.python-version`, `src/mic_sessions/` layout). Never invoke `uv` directly to run the application, only the root `Makefile`
+
+- It uses FastAPI with uvicorn as web framework
+
+- It exposes REST for commands and SSE (Server-Sent Events) for the live agent stream
+
+- You must use `pydantic-settings` to config the application through .env file with no external dependencies
+
+- Agent providers are integrated only through their official SDK, starting with `claude-agent-sdk`
+
+### Microservice Guidelines
+
+- Follow the same `Project Architecture` rules as `mic-mooi`, adapted to Python files
+
+#### Project Architecture
+
+The architecture has the following structure:
+
+- `features/` -> Features package in which all features are stored
+- `features/<feature-name>.py` -> A single file where all aspects and feature logic is implemented
+- `shared/` -> It is the package where any transversal aspect lives like `env`, `logging`, `auth`...
+- `shared/<transversal-aspect>.py` -> A single file that contains the whole implementation of any transversal aspect
+
+Features in this architecture is totally self-contained in its single file.
+
+From features you could only import transversal aspects.
+
+Features will have duplicate code and logic since it is not possible import logic from another feature.
+
+Each transversal aspect should be totally self-contained. Only relevant infrastructure topics should be considered as transversal aspect. You do not consider business logic as transversal aspect
+
+# Workflow
+
+**PLAN.md**
+
+After understand the user request, analyze it and find a proper solution, you must create a `PLAN.md` before starting to implement it
+
+**PLAN.md Self-contained**
+
+`PLAN.md` file must be totally self-contained. It means that an agent could continue the implementation from a cold start (no previous context) without reading additional files to get context. All implementation details are in the `PLAN.md` and you just need to read files before editing but not to discovery or understand the context since PLAN.md must have all necessary information
+
+**PLAN.md Tasks Progress**
+
+The user request must be split in small technical tasks, all that the user request needs. Technical tasks must have a similar size. After finish each task, it must be marked as completed in `PLAN.md`.
+
+**PLAN.md Metadata**
+
+`PLAN.md` always must contain a single description about the file and it must highlight its self-contained feature to avoid that the agent read additional files instead of going through the implementation directly
+
+**PLAN.md Single Responsibility**
+
+You must afford one technical task with non stop, after that you must ask about continuing
+
+**PLAN.md Task Effort**
+
+Before stopping when you finished the preivous task you must say how is the cognitive effort for the next task according to complexity and dimmension
+
+**PLAN.md Question**
+
+Before starting the `PLAN.md` implementation you must ask to the user about implementing the plan
+
+**Makefile Support**
+
+If an artifact is created, deleted or modified and the change affects how it runs in dev, you must update the `Makefile` support in the same change, so `make dev-start`, `make dev-stop`, `make dev-status` and `make dev-clean` keep working for the whole application and for each artifact

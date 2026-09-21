@@ -15,8 +15,8 @@ export const DeployTargetRow = ({ target, selected, onSelect }: DeployTargetRowP
     aria-checked={selected}
     onClick={() => onSelect(target.id)}
     className={cn(
-      'flex w-full items-center gap-3 rounded-xl border px-4 py-3 text-left transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand',
-      selected ? 'border-brand/40 bg-brand-soft' : 'border-line bg-surface hover:border-line-strong',
+      'flex w-full items-center gap-3 rounded-[10px] border px-4 py-3 text-left transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand',
+      selected ? 'border-ink bg-surface-2' : 'border-line bg-surface hover:border-line-strong',
     )}
   >
     <span

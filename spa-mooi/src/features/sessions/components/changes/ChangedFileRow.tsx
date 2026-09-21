@@ -5,19 +5,21 @@ import { cn } from '@/shared/utils/cn';
 interface ChangedFileRowProps {
   file: ChangedFile;
   selected: boolean;
-  onSelect: (id: string) => void;
+  onSelect: (path: string) => void;
 }
 
 const letters: Record<ChangeKind, string> = {
   added: 'A',
   modified: 'M',
   deleted: 'D',
+  renamed: 'R',
 };
 
 const letterStyles: Record<ChangeKind, string> = {
   added: 'bg-success-soft text-success',
   modified: 'bg-info-soft text-info',
   deleted: 'bg-danger-soft text-danger',
+  renamed: 'bg-warning-soft text-warning',
 };
 
 export const ChangedFileRow = ({ file, selected, onSelect }: ChangedFileRowProps) => {
@@ -29,29 +31,29 @@ export const ChangedFileRow = ({ file, selected, onSelect }: ChangedFileRowProps
     <li>
       <button
         type="button"
-        onClick={() => onSelect(file.id)}
+        onClick={() => onSelect(file.path)}
         aria-pressed={selected}
         className={cn(
-          'flex w-full items-center gap-2.5 px-3 py-2 text-left transition focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand',
-          selected ? 'bg-brand-soft text-brand' : 'hover:bg-surface-2',
+          'flex w-full items-center gap-2.5 rounded-[8px] px-2.5 py-2 text-left transition focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand',
+          selected ? 'bg-surface-3 text-ink' : 'hover:bg-surface-2',
         )}
       >
         <span
           className={cn(
             'flex size-5 shrink-0 items-center justify-center rounded font-mono text-[11px] font-semibold',
-            letterStyles[file.kind],
+            letterStyles[file.change],
           )}
         >
-          {letters[file.kind]}
+          {letters[file.change]}
         </span>
 
         <span className="min-w-0 flex-1 truncate font-mono text-xs">
           <span className="text-ink-subtle">{directory}</span>
-          <span className={selected ? 'text-brand' : 'text-ink'}>{filename}</span>
+          <span className="font-medium text-ink">{filename}</span>
         </span>
 
-        <span className="shrink-0 font-mono text-[11px] text-success">+{file.added}</span>
-        <span className="shrink-0 font-mono text-[11px] text-danger">−{file.removed}</span>
+        <span className="shrink-0 font-mono text-[10px] font-medium text-success">+{file.added}</span>
+        <span className="shrink-0 font-mono text-[10px] font-medium text-danger">−{file.removed}</span>
       </button>
     </li>
   );

@@ -1,0 +1,22 @@
+databaseChangeLog:
+  - changeSet:
+      id: 010-promote-mydherin-admin
+      author: mooi
+      changes:
+        - sql:
+            comment: >-
+              One-time promotion of the existing mydherin account to admin.
+              Matches on the email local part, not username, since username is a
+              modifiable display field (e.g. "Mydherin Wizard") and the count guard
+              skips the update rather than promoting an ambiguous match.
+            sql: |-
+              UPDATE players
+              SET role = 'admin'
+              WHERE lower(split_part(email, '@', 1)) = 'mydherin'
+                AND (SELECT count(*) FROM players WHERE lower(split_part(email, '@', 1)) = 'mydherin') = 1
+      rollback:
+        - sql:
+            sql: |-
+              UPDATE players
+              SET role = 'member'
+              WHERE lower(split_part(email, '@', 1)) = 'mydherin'

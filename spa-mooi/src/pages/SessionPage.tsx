@@ -1,117 +1,129 @@
-import { useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Compass } from 'lucide-react';
+import { projectPath } from '@/app/paths';
 import { ROUTES } from '@/app/routes';
 import { useProjects } from '@/features/projects/hooks/useProjects';
 import { findProject } from '@/features/projects/lib/findProject';
-import { ChangesPanel } from '@/features/sessions/components/changes/ChangesPanel';
 import { ChatPanel } from '@/features/sessions/components/chat/ChatPanel';
-import { PreviewPanel } from '@/features/sessions/components/preview/PreviewPanel';
+import { SessionWorkspace } from '@/features/sessions/components/SessionWorkspace';
 import { WorkspaceHeader } from '@/features/sessions/components/WorkspaceHeader';
-import { WorkspacePaneSwitcher } from '@/features/sessions/components/WorkspacePaneSwitcher';
-import { chatMessages } from '@/features/sessions/data/chatMessages';
-import { findSession } from '@/features/sessions/lib/findSession';
-import type { ChatMessage } from '@/features/sessions/types/ChatMessage';
-import type { WorkspacePane } from '@/features/sessions/types/WorkspacePane';
+import { useProjectSessions } from '@/features/sessions/hooks/useProjectSessions';
+import { useSession } from '@/features/sessions/hooks/useSession';
+import { useSessionStream } from '@/features/sessions/hooks/useSessionStream';
+import { Card } from '@/shared/components/Card';
 import { EmptyState } from '@/shared/components/EmptyState';
-import { SegmentedControl } from '@/shared/components/SegmentedControl';
-import type { SegmentItem } from '@/shared/types/SegmentItem';
 import { buttonStyles } from '@/shared/styles/buttonStyles';
-import { cn } from '@/shared/utils/cn';
-import { useWorkspaceStore } from '@/stores/workspaceStore';
-
-const stageItems: SegmentItem[] = [
-  { id: 'preview', label: 'Preview' },
-  { id: 'changes', label: 'Changes' },
-];
+import { useSessionsStore } from '@/stores/sessionsStore';
 
 export const SessionPage = () => {
   const { projectId, sessionId } = useParams();
-  const { projects } = useProjects();
+  const navigate = useNavigate();
+  const { projects, status: projectsStatus } = useProjects();
   const project = findProject(projects, projectId);
-  const session = findSession(projectId, sessionId);
-  const activePane = useWorkspaceStore((state) => state.activePane);
-  const setActivePane = useWorkspaceStore((state) => state.setActivePane);
-  const [stageTab, setStageTab] = useState<WorkspacePane>('preview');
-  const [messages, setMessages] = useState<ChatMessage[]>(chatMessages);
+  const {
+    session,
+    loading: sessionLoading,
+    error: sessionError,
+    busy,
+    actionError,
+    send,
+    interrupt,
+    allowPermission,
+    denyPermission,
+    answer,
+    modelOptions,
+    modelLoading,
+    modelError,
+    updateConfiguration,
+  } = useSession(sessionId);
+  useSessionStream(sessionId);
+  const { close, busy: closing } = useProjectSessions(projectId);
+  const transcript = useSessionsStore((state) => (sessionId ? state.byId[sessionId] : undefined));
 
   if (!project || !session) {
+    const stillLoading = projectsStatus === 'loading' || projectsStatus === 'idle' || sessionLoading;
+
+    if (stillLoading) {
+      return (
+        <div className="flex h-full min-h-0 flex-col gap-4 px-4 py-6 lg:px-6">
+          <Card className="h-16 shrink-0 animate-pulse-soft" />
+          <Card className="min-h-0 flex-1 animate-pulse-soft" />
+        </div>
+      );
+    }
+
     return (
       <div className="px-4 py-8 lg:px-6">
         <EmptyState
           icon={Compass}
           title="Session not found"
-          description="This session is not part of your workspace."
+          description={sessionError ?? 'This session is not part of your workspace.'}
         >
-          <Link to={ROUTES.projects} className={buttonStyles('secondary', 'md')}>
-            Back to projects
+          <Link
+            to={project ? projectPath(project.id) : ROUTES.projects}
+            className={buttonStyles('secondary', 'md')}
+          >
+            Back to {project ? 'project' : 'projects'}
           </Link>
         </EmptyState>
       </div>
     );
   }
 
-  const stagePane = activePane === 'chat' ? stageTab : activePane;
+  const isTerminal = session.status === 'failed' || session.status === 'closed';
+  const entries = transcript?.entries ?? [];
+  const pending = transcript?.pending ?? [];
+  const streamState = transcript?.streamState ?? 'closed';
 
-  const handleSend = (text: string) => {
-    const time = new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-
-    setMessages((current) => [
-      ...current,
-      { id: `local-${current.length}-user`, role: 'user', author: 'You', time, text },
-      {
-        id: `local-${current.length}-system`,
-        role: 'system',
-        author: 'Mooi',
-        time,
-        text: 'The agent provider is not connected in this preview.',
-      },
-    ]);
-  };
-
-  const handleStageChange = (id: string) => {
-    const pane = id as WorkspacePane;
-
-    setStageTab(pane);
-
-    if (activePane !== 'chat') {
-      setActivePane(pane);
-    }
+  const handleClose = () => {
+    void close(session.id).then((closed) => {
+      if (closed) {
+        navigate(projectPath(project.id), { replace: true });
+      }
+    });
   };
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <WorkspaceHeader project={project} session={session} />
+      <WorkspaceHeader
+        project={project}
+        session={session}
+        onClose={handleClose}
+        closeBusy={closing}
+      />
 
-      <div className="shrink-0 border-b border-line px-4 py-2 lg:hidden">
-        <WorkspacePaneSwitcher />
-      </div>
-
-      <div className="grid min-h-0 flex-1 grid-rows-[1fr] lg:grid-cols-[minmax(360px,36%)_1fr]">
-        <div
-          className={cn(
-            'min-w-0 min-h-0 flex-col border-line lg:flex lg:border-r',
-            activePane === 'chat' ? 'flex' : 'hidden',
-          )}
-        >
-          <ChatPanel messages={messages} onSend={handleSend} />
-        </div>
-
-        <div
-          className={cn(
-            'min-w-0 min-h-0 flex-col lg:flex',
-            activePane === 'chat' ? 'hidden' : 'flex',
-          )}
-        >
-          <div className="hidden h-12 shrink-0 items-center border-b border-line px-4 lg:flex">
-            <SegmentedControl items={stageItems} value={stagePane} onChange={handleStageChange} />
-          </div>
-
-          <div className="min-h-0 flex-1">
-            {stagePane === 'preview' ? <PreviewPanel /> : <ChangesPanel />}
+      {isTerminal ? (
+        <div role="status" className="max-h-[30dvh] shrink-0 overflow-y-auto border-b border-line bg-surface-2 px-4 py-3 sm:px-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0 flex-1 basis-48">
+              <p className="text-sm font-extrabold text-ink">{session.status === 'failed' ? 'This session failed' : 'This session is closed'}</p>
+              <p className="mt-1 break-words text-sm text-ink-muted">{session.detail ?? 'Your conversation is available below. Start a new session to continue.'}</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Link to={projectPath(project.id)} className={buttonStyles('secondary', 'sm')}>Back to project</Link>
+            </div>
           </div>
         </div>
-      </div>
+      ) : null}
+      <SessionWorkspace key={session.id} sessionId={session.id}>
+        <ChatPanel
+          session={session}
+          entries={entries}
+          pending={pending}
+          streamState={streamState}
+          busy={busy}
+          modelOptions={modelOptions}
+          modelLoading={modelLoading}
+          modelError={modelError}
+          actionError={actionError}
+          onSend={send}
+          onInterrupt={interrupt}
+          onConfigurationChange={(configuration) => void updateConfiguration(configuration)}
+          onAllowPermission={(requestId, updatedInput) => void allowPermission(requestId, updatedInput)}
+          onDenyPermission={(requestId, message) => void denyPermission(requestId, message)}
+          onAnswerQuestion={(requestId, answers) => void answer(requestId, answers)}
+        />
+      </SessionWorkspace>
     </div>
   );
 };

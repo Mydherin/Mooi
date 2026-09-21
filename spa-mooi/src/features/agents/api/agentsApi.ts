@@ -1,0 +1,93 @@
+import { authenticatedFetch } from '@/features/auth/lib/authenticatedFetch';
+import type { AgentAuthorizationResponse } from '@/features/agents/types/AgentAuthorizationResponse';
+import type { AgentConnection } from '@/features/agents/types/AgentConnection';
+import type { AgentConnectionsResponse } from '@/features/agents/types/AgentConnectionsResponse';
+import type { AgentProvider } from '@/features/agents/types/AgentProvider';
+import type { AgentProvidersResponse } from '@/features/agents/types/AgentProvidersResponse';
+import { apiErrorMessage } from '@/shared/utils/apiErrorMessage';
+
+const providersPath = () => '/me/agents/providers';
+const connectionsPath = () => '/me/agents/connections';
+const authorizationPath = (provider: string) => `/me/agents/${provider}/authorization`;
+const connectionPath = (provider: string) => `/me/agents/${provider}/connection`;
+
+export const fetchAgentProviders = async (): Promise<AgentProvider[]> => {
+  const response = await authenticatedFetch(providersPath());
+
+  if (!response.ok) {
+    throw new Error(await apiErrorMessage(response, 'Could not load the agent providers.'));
+  }
+
+  const body = (await response.json()) as AgentProvidersResponse;
+
+  return body.providers;
+};
+
+export const fetchAgentConnections = async (): Promise<AgentConnection[]> => {
+  const response = await authenticatedFetch(connectionsPath());
+
+  if (!response.ok) {
+    throw new Error(await apiErrorMessage(response, 'Could not load your agent connections.'));
+  }
+
+  const body = (await response.json()) as AgentConnectionsResponse;
+
+  return body.connections;
+};
+
+/**
+ * Opens the flow. The API answers with a ready-made URL carrying a state it signed for this
+ * caller and provider, so nothing here has to know a client id or protect the round trip itself.
+ * `409` means OAuth is not configured for this provider — the caller falls back to a pasted token.
+ */
+export const startAgentAuthorization = async (provider: string): Promise<AgentAuthorizationResponse> => {
+  const response = await authenticatedFetch(authorizationPath(provider), { method: 'POST' });
+
+  if (!response.ok) {
+    throw new Error(await apiErrorMessage(response, 'Could not start the authorization.'));
+  }
+
+  return (await response.json()) as AgentAuthorizationResponse;
+};
+
+/** Redeems the authorization code. Sent with the caller's own token, which is what binds the link. */
+export const completeAgentAuthorization = async (
+  provider: string,
+  code: string,
+  state: string,
+): Promise<AgentConnection> => {
+  const response = await authenticatedFetch(connectionPath(provider), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code, state }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await apiErrorMessage(response, 'Could not link this provider.'));
+  }
+
+  return (await response.json()) as AgentConnection;
+};
+
+/** Links a provider from a token pasted by the player (e.g. `claude setup-token`), never OAuth. */
+export const connectAgentToken = async (provider: string, token: string): Promise<AgentConnection> => {
+  const response = await authenticatedFetch(connectionPath(provider), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await apiErrorMessage(response, 'Could not link this provider.'));
+  }
+
+  return (await response.json()) as AgentConnection;
+};
+
+export const disconnectAgent = async (provider: string): Promise<void> => {
+  const response = await authenticatedFetch(connectionPath(provider), { method: 'DELETE' });
+
+  if (!response.ok) {
+    throw new Error(await apiErrorMessage(response, 'Could not disconnect this provider.'));
+  }
+};

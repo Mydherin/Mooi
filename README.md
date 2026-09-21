@@ -6,6 +6,7 @@ Monorepository. Each artifact lives in its own root-level directory.
 | --- | --- |
 | `spa-mooi` | Vite + React + TypeScript SPA (UI) |
 | `mic-mooi` | Spring Boot microservice (API) |
+| `mic-sessions` | FastAPI microservice (real-time agent sessions) |
 | `compose.dev.yml` | Postgres + pgAdmin data layer (dev) |
 
 ## Requirements
@@ -13,7 +14,9 @@ Monorepository. Each artifact lives in its own root-level directory.
 - GNU Make >= 4 (macOS ships 3.81 — install with `brew install make`, exposed as `gmake`; the root `Makefile` delegates to it automatically)
 - [Bun](https://bun.sh) >= 1.3 (falls back to npm)
 - Java 25
-- Docker Engine + Docker Compose V2
+- [uv](https://docs.astral.sh/uv/) (Python package manager for `mic-sessions`)
+- `git` CLI (one independent clone per agent session)
+- Docker Engine + Docker Compose V2 (Postgres and pgAdmin only)
 
 Maven is **not** required: `mic-mooi` ships the Maven Wrapper (`mvnw`) and the first
 `make dev-start` downloads the pinned distribution into `~/.m2/wrapper`.
@@ -23,6 +26,8 @@ Maven is **not** required: `mic-mooi` ships the Maven Wrapper (`mvnw`) and the f
 ```bash
 cp .env.example .env
 cp mic-mooi/.env.example mic-mooi/.env
+cp mic-sessions/.env.example mic-sessions/.env
+cp spa-mooi/.env.example spa-mooi/.env
 ```
 
 Configuration lives in each artifact's `.env`, plus the root `.env` for the data layer and the dev
@@ -72,6 +77,75 @@ openssl rand -base64 32
 
 The SPA needs no GitHub variable: it asks the API for ready-made authorize and install URLs.
 
+### Agent providers
+
+Links a player's own Claude subscription so `mic-sessions` can run agent sessions on their behalf.
+Credentials are stored by `mic-mooi` and handed to `mic-sessions` server-to-server; the browser
+never sees a raw token.
+
+1. Generate a shared secret and set it as `SERVICE_TOKEN` in **both** `mic-mooi/.env` and
+   `mic-sessions/.env` (identical value, >= 32 bytes) — it guards the endpoints that hand a
+   third-party credential to `mic-sessions`:
+
+```bash
+openssl rand -base64 32
+```
+
+2. Copy `mic-mooi/.env`'s `JWT_SECRET` into `mic-sessions/.env` as well: `mic-sessions` verifies
+   access tokens locally with the same signing key, no network hop required for that check.
+3. Two credential modes are supported, both stored the same way and both mapped to the same
+   downstream env var (`CLAUDE_CODE_OAUTH_TOKEN`):
+   - **Setup token** (works out of the box): the player runs `claude setup-token` and pastes the
+     printed `sk-ant-oat…` token on the account screen.
+   - **OAuth2 (PKCE)**: fully env-driven (`AGENT_CLAUDE_CLIENT_ID`, `AGENT_CLAUDE_AUTHORIZE_URI`,
+     `AGENT_CLAUDE_TOKEN_URI`, `AGENT_CLAUDE_SCOPES` in `mic-mooi/.env`) and ships **empty** on
+     purpose: per the Claude Agent SDK docs, offering claude.ai login or its rate limits from a
+     third-party product requires prior Anthropic approval. Fill these in only once that approval is
+     in hand — until then, use the setup-token mode above.
+4. **Anthropic API keys (`sk-ant-api…`) are not a supported credential** — this is "bring your Claude
+   subscription", not "bring your API billing".
+
+### Agent session runtime
+
+Run `mic-sessions` with one process and one worker. `make dev-start-mic-sessions` installs
+Python 3.13 and the pinned Claude Agent SDK through uv, checks its bundled local CLI, then
+starts the service. A global Claude installation and an agent Docker image are not required.
+Git and the host tools required by your repositories must be installed locally.
+
+Set `VITE_SESSIONS_BASE_URL` in `spa-mooi/.env` to `http://localhost:44913`.
+Configure `mic-sessions/.env` using its example:
+
+| Variable | Purpose |
+| --- | --- |
+| `WORKSPACE_ROOT` | Writable storage; each session clones into `sessions/<UUID>/repository` |
+| `GIT_BINARY`, `GIT_TIMEOUT_SECONDS` | Git executable and command timeout |
+| `MAX_SESSIONS`, `MAX_SESSIONS_PER_PLAYER` | Concurrent session limits |
+| `SESSION_IDLE_TIMEOUT_MINUTES` | Inactivity expiry; active turns/questions are retained |
+| `AGENT_CLAUDE_MODELS` | JSON model-to-effort allowlist; use models available to your account |
+| `AGENT_CLAUDE_MODEL`, `AGENT_CLAUDE_EFFORT` | Defaults for new sessions |
+| `AGENT_CLAUDE_DISALLOWED_TOOLS` | Comma-separated tool exclusions |
+| `EVENT_LOG_LIMIT`, `EVENT_LOG_BYTES` | Per-session retained event limits |
+
+Adding a repository does not clone it. A new session checks out its requested remote branch,
+or creates a branch from the remote default branch. Sessions may use the same branch name
+independently. Closing, expiry and graceful shutdown stop the runtime before removing its clone.
+Session conversations are held in memory and cannot survive a service restart. Startup removes
+only marked session leftovers; legacy repositories and unowned directories are preserved.
+`dev-clean` preserves workspace storage; the next start reconciles owned leftovers, including
+when `WORKSPACE_ROOT` points outside the artifact directory.
+
+Claude runs locally with the service user's permissions. Its working directory and private
+per-runtime configuration directory do not restrict access to the host. Run the service under an
+account whose access is appropriate for the repositories, hooks and tools you enable.
+
+Commit native project configuration to the repository: `CLAUDE.md`, `.claude/rules/`,
+`.claude/skills/`, `.claude/commands/`, `.claude/agents/`, project settings/hooks and `.mcp.json`.
+Project and local settings are enabled. Install required hook/MCP executables and provide their
+credentials on the host; native MCP approvals still apply. A root `.claude-plugin/plugin.json`
+loads that repository as a local plugin. Marketplace plugins require installation and availability
+in the CLI's runtime state; the service does not copy the user's global Claude configuration or
+install plugin dependencies automatically.
+
 ## Dev entrypoint
 
 The whole application in dev is driven only through the root `Makefile`. It starts, stops, inspects
@@ -104,7 +178,7 @@ Every artifact gets the same set of commands, scoped to it and to what it needs:
 | `make dev-clean-<artifact>` | Stop `<artifact>` and remove its dev state |
 | `make dev-logs-<artifact>` | Tail the logs of `<artifact>` |
 
-Current artifacts: `spa-mooi`, `mic-mooi` (e.g. `make dev-start-mic-mooi`).
+Current artifacts: `spa-mooi`, `mic-mooi`, `mic-sessions` (e.g. `make dev-start-mic-mooi`).
 
 ### Dev ports
 
@@ -116,6 +190,7 @@ values. The `.env` files carry the same numbers as a fallback for non-`make` usa
 | --- | --- | --- |
 | `spa-mooi` | `28471` | `http://localhost:28471` |
 | `mic-mooi` | `39615` | `http://localhost:39615` |
+| `mic-sessions` | `44913` | `http://localhost:44913` |
 | `postgres` | `54983` | `localhost:54983` |
 | `pgadmin` | `51247` | `http://localhost:51247` |
 
@@ -147,14 +222,6 @@ Change a port in `make/ports.mk`; the cross-artifact wiring (`VITE_API_BASE_URL`
 ```
 
 Both are dev-only, git ignored, and fully removed by `make dev-clean`.
-
-### Adding an artifact
-
-Any directory matching `<kind>-<name>` with a `dev.mk` fragment is picked up automatically and gets
-the full command set above. `dev.mk` is the contract: it declares `ARTIFACT_NAME`, `ARTIFACT_KIND`,
-`ARTIFACT_PORT`, `ARTIFACT_URL`, `ARTIFACT_HEALTH`, `ARTIFACT_SERVICES`, `ARTIFACT_NEEDS`, and the
-`start`/`stop`/`status`/`clean` lifecycle bodies. See `spa-mooi/dev.mk` and `mic-mooi/dev.mk` for
-reference implementations.
 
 ## Configuration
 
@@ -203,6 +270,7 @@ All variables must be prefixed with `VITE_`.
 | `VITE_DOCS_URL` | Docs link |
 | `VITE_CONTACT_EMAIL` | Contact email |
 | `VITE_API_BASE_URL` | mic-mooi base URL |
+| `VITE_SESSIONS_BASE_URL` | mic-sessions base URL |
 | `VITE_GOOGLE_CLIENT_ID` | Google OAuth2 client id |
 | `VITE_STORAGE_PREFIX` | Local storage key prefix |
 
@@ -245,29 +313,3 @@ the root `.env`.
 | `LOG_LEVEL_APP` | Application log level |
 | `LOG_LEVEL_AUTH` | Auth log level |
 | `LOG_LEVEL_GITHUB` | GitHub integration log level |
-
-### mic-mooi endpoints
-
-| Endpoint | Description |
-| --- | --- |
-| `GET /api/landing/highlights` | List landing highlights |
-| `GET /api/landing/highlights/{slug}` | Get a highlight by slug |
-| `POST /api/landing/highlights` | Create a highlight |
-| `GET /api/heartbeats` | List recent heartbeats |
-| `GET /api/heartbeats/latest` | Get the latest heartbeat |
-| `POST /auth/google` | Sign in or sign up with a Google ID token |
-| `POST /auth/refresh` | Rotate the refresh token, mint a new access token |
-| `POST /auth/logout` | Revoke the session behind a refresh token |
-| `POST /auth/logout-all` | Revoke every session of the caller |
-| `GET /me` | Current player (requires a live session) |
-| `POST /me/github/authorization` | Start the GitHub link, returns an authorize URL |
-| `POST /me/github/connection` | Redeem the GitHub authorization code |
-| `GET /me/github/connection` | Current GitHub connection, or `null` |
-| `DELETE /me/github/connection` | Unlink the GitHub account |
-| `GET /me/github/repositories` | Repositories the linked GitHub account reaches |
-| `GET /me/projects` | Repositories added to the caller's workspace |
-| `POST /me/projects` | Add a repository by `owner/repository` |
-| `DELETE /me/projects/{projectId}` | Remove a repository from the workspace |
-| `GET /admin/ping` | Admin-only probe |
-| `GET /health` | Liveness probe |
-| `GET /actuator/health` | Health check |

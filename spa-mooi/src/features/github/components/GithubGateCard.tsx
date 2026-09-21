@@ -30,7 +30,7 @@ export const GithubGateCard = ({ title, description }: GithubGateCardProps) => {
           <GithubMark className="size-6" />
         </span>
 
-        <h2 className="mt-6 text-lg font-semibold tracking-tight text-balance text-ink sm:text-xl">
+        <h2 className="mt-6 text-lg font-extrabold tracking-[-0.02em] text-balance text-ink sm:text-xl">
           {title}
         </h2>
         <p className="mt-2.5 text-sm leading-relaxed text-ink-muted">{description}</p>

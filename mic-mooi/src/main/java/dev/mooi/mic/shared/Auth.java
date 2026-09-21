@@ -111,11 +111,11 @@ public class Auth {
     }
 
     @Bean
-    WebMvcConfigurer authWebMvcConfigurer(Tokens tokens, ObjectProvider<SessionGuard> sessionGuard) {
+    WebMvcConfigurer authWebMvcConfigurer(Tokens tokens, Settings settings, ObjectProvider<SessionGuard> sessionGuard) {
         return new WebMvcConfigurer() {
             @Override
             public void addInterceptors(InterceptorRegistry registry) {
-                registry.addInterceptor(new AuthInterceptor(tokens, sessionGuard)).addPathPatterns("/**");
+                registry.addInterceptor(new AuthInterceptor(tokens, settings, sessionGuard)).addPathPatterns("/**");
             }
 
             @Override
@@ -194,6 +194,16 @@ public class Auth {
         Role value();
     }
 
+    /**
+     * Marks a handler as reachable only by another internal service, in addition to whatever player
+     * guard already applies. Used on the handful of endpoints that hand out a raw third-party
+     * credential: a browser holding a valid access token is not enough to read one.
+     */
+    @Retention(RetentionPolicy.RUNTIME)
+    @Target({ElementType.METHOD, ElementType.TYPE})
+    public @interface ServiceCall {
+    }
+
     // --- configuration ---
 
     /**
@@ -218,6 +228,12 @@ public class Auth {
         private final Duration sessionMaxLifetime;
         private final Duration replayGrace;
         private final Set<String> adminEmails;
+        /**
+         * Shared secret required of any {@link ServiceCall} handler. Left unvalidated here on
+         * purpose: a service that never uses {@code @ServiceCall} must still boot without it, so the
+         * check happens lazily, in {@link AuthInterceptor}, on the first call that needs it.
+         */
+        private final String serviceToken;
 
         Settings(@Value("${app.auth.google-client-id:}") String googleClientId,
                  @Value("${app.auth.google-jwks-uri}") String googleJwksUri,
@@ -226,7 +242,8 @@ public class Auth {
                  @Value("${app.auth.refresh-token-expires-in}") String refreshTokenExpiresIn,
                  @Value("${app.auth.session-max-lifetime}") String sessionMaxLifetime,
                  @Value("${app.auth.replay-grace-seconds}") long replayGraceSeconds,
-                 @Value("${app.auth.admin-emails:}") String adminEmails) {
+                 @Value("${app.auth.admin-emails:}") String adminEmails,
+                 @Value("${app.service.token:}") String serviceToken) {
             if (googleClientId == null || googleClientId.isBlank()) {
                 throw new IllegalStateException("GOOGLE_CLIENT_ID must be set");
             }
@@ -247,6 +264,7 @@ public class Auth {
                     .map(email -> email.strip().toLowerCase(Locale.ROOT))
                     .filter(email -> !email.isEmpty())
                     .collect(Collectors.toUnmodifiableSet());
+            this.serviceToken = serviceToken == null ? "" : serviceToken.strip();
         }
 
         /**
@@ -459,8 +477,11 @@ public class Auth {
 
         private static final String MISSING_BEARER = "Missing bearer token";
         private static final String SESSION_NOT_ACTIVE = "Session is no longer active";
+        private static final String SERVICE_TOKEN_HEADER = "X-Service-Token";
+        private static final String SERVICE_TOKEN_REQUIRED = "Service token required";
 
         private final Tokens tokens;
+        private final Settings settings;
         private final ObjectProvider<SessionGuard> sessionGuard;
 
         @Override
@@ -481,11 +502,29 @@ public class Auth {
                         player.role().wire());
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Insufficient role");
             }
+            if (annotation(handlerMethod, ServiceCall.class) != null) {
+                requireServiceToken(request, player);
+            }
 
             request.setAttribute(PRINCIPAL_ATTRIBUTE, new Principal(player, claims.sessionId()));
             MDC.put(PLAYER_ID_KEY, player.id().toString());
             MDC.put(SESSION_ID_KEY, claims.sessionId().toString());
             return true;
+        }
+
+        /**
+         * A blank configured token refuses every call rather than accepting one: an unset
+         * {@code SERVICE_TOKEN} must fail the calls that need it, not silently open them.
+         */
+        private void requireServiceToken(HttpServletRequest request, AuthenticatedPlayer player) {
+            byte[] expected = settings.getServiceToken().getBytes(StandardCharsets.UTF_8);
+            String header = request.getHeader(SERVICE_TOKEN_HEADER);
+            byte[] provided = (header == null ? "" : header).getBytes(StandardCharsets.UTF_8);
+            if (expected.length == 0 || !MessageDigest.isEqual(expected, provided)) {
+                LOG.info("Player {} was refused {} (missing or invalid service token)", player.id(),
+                        request.getRequestURI());
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, SERVICE_TOKEN_REQUIRED);
+            }
         }
 
         @Override

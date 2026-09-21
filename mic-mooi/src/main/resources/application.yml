@@ -46,6 +46,7 @@ logging:
     dev.mooi.mic: ${LOG_LEVEL_APP:INFO}
     auth: ${LOG_LEVEL_AUTH:INFO}
     github: ${LOG_LEVEL_GITHUB:INFO}
+    agents: ${LOG_LEVEL_AGENTS:INFO}
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%X{correlationId:-}] [%X{playerId:-}] %logger{36} - %msg%n"
 
@@ -55,6 +56,8 @@ app:
     allowed-origins: ${CORS_ORIGIN:http://localhost:28471}
   crypto:
     secrets-key: ${SECRETS_KEY:}
+  service:
+    token: ${SERVICE_TOKEN:}
   auth:
     google-client-id: ${GOOGLE_CLIENT_ID:}
     google-jwks-uri: ${GOOGLE_JWKS_URI:https://www.googleapis.com/oauth2/v3/certs}
@@ -76,3 +79,14 @@ app:
     state-expires-in: ${GITHUB_STATE_EXPIRES_IN:10m}
     token-refresh-skew: ${GITHUB_TOKEN_REFRESH_SKEW:5m}
     request-timeout-ms: ${GITHUB_REQUEST_TIMEOUT_MS:10000}
+  agents:
+    state-expires-in: ${AGENT_STATE_EXPIRES_IN:10m}
+    token-refresh-skew: ${AGENT_TOKEN_REFRESH_SKEW:5m}
+    request-timeout-ms: ${AGENT_REQUEST_TIMEOUT_MS:10000}
+    claude:
+      enabled: ${AGENT_CLAUDE_ENABLED:true}
+      client-id: ${AGENT_CLAUDE_CLIENT_ID:}
+      authorize-uri: ${AGENT_CLAUDE_AUTHORIZE_URI:}
+      token-uri: ${AGENT_CLAUDE_TOKEN_URI:}
+      scopes: ${AGENT_CLAUDE_SCOPES:}
+      redirect-uri: ${AGENT_CLAUDE_REDIRECT_URI:}

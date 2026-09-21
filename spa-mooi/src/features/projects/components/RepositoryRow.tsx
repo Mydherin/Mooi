@@ -1,7 +1,8 @@
-import { Globe, Lock, Plus, Star } from 'lucide-react';
+import { Check } from 'lucide-react';
 import type { GithubRepository } from '@/features/github/types/GithubRepository';
-import { Badge } from '@/shared/components/Badge';
 import { Button } from '@/shared/components/Button';
+import { Initials } from '@/shared/components/Initials';
+import { cn } from '@/shared/utils/cn';
 import { formatDate } from '@/shared/utils/formatDate';
 
 interface RepositoryRowProps {
@@ -12,37 +13,42 @@ interface RepositoryRowProps {
 }
 
 export const RepositoryRow = ({ repository, added, busy, onAdd }: RepositoryRowProps) => {
-  const VisibilityIcon = repository.isPrivate ? Lock : Globe;
+  const shortName = repository.name || repository.fullName.split('/')[1] || repository.fullName;
+  const meta = [
+    repository.description,
+    repository.language,
+    repository.pushedAt ? `updated ${formatDate(repository.pushedAt)}` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
 
   return (
-    <li className="flex items-center gap-3 py-3">
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-surface-2 text-ink-subtle">
-        <VisibilityIcon className="size-4" />
-      </span>
+    <li
+      className={cn(
+        'flex items-center gap-3 rounded-[10px] px-2.5 py-2.5 transition',
+        added ? 'bg-surface-2' : 'hover:bg-surface-2',
+      )}
+    >
+      <Initials value={shortName} size="md" />
 
       <div className="min-w-0 flex-1">
-        <p className="truncate font-mono text-sm text-ink">{repository.fullName}</p>
-
-        {repository.description ? (
-          <p className="mt-0.5 truncate text-xs text-ink-muted">{repository.description}</p>
-        ) : null}
-
-        <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-subtle">
-          {repository.language ? <span>{repository.language}</span> : null}
-          <span className="flex items-center gap-1">
-            <Star className="size-3.5" />
-            {repository.stars}
+        <p className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-sm font-extrabold text-ink">{shortName}</span>
+          <span className="shrink-0 text-[9px] font-extrabold tracking-[0.06em] text-ink-subtle uppercase">
+            {repository.isPrivate ? 'Private' : 'Public'}
           </span>
-          {repository.pushedAt ? <span>Updated {formatDate(repository.pushedAt)}</span> : null}
         </p>
+        {meta ? <p className="mt-0.5 truncate text-[11px] text-ink-subtle">{meta}</p> : null}
       </div>
 
       <span className="shrink-0">
         {added ? (
-          <Badge tone="success">Added</Badge>
+          <span className="inline-flex items-center gap-1.5 rounded-[10px] bg-success-soft px-3 py-2 text-[13px] font-bold text-success">
+            <Check className="size-3.5" />
+            In your workspace
+          </span>
         ) : (
           <Button variant="brand" size="sm" onClick={onAdd} disabled={busy}>
-            <Plus className="size-4" />
             Add
           </Button>
         )}

@@ -46,7 +46,7 @@ export const Avatar = ({ src, name, size = 'md' }: AvatarProps) => {
     <span
       aria-hidden
       className={cn(
-        'flex shrink-0 items-center justify-center rounded-full bg-brand-soft font-semibold text-brand',
+        'flex shrink-0 items-center justify-center rounded-full bg-surface-2 font-extrabold text-ink-muted',
         sizes[size],
       )}
     >

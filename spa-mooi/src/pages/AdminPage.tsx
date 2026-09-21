@@ -32,22 +32,22 @@ export const AdminPage = () => {
   }, []);
 
   return (
-    <div className="mx-auto w-full max-w-2xl px-4 py-6 lg:px-6 lg:py-8">
-      <h1 className="text-2xl font-semibold tracking-tight text-ink sm:text-3xl">Admin</h1>
+    <div className="mx-auto w-full max-w-6xl px-5 py-7 sm:px-8 lg:px-10 lg:py-10">
+      <h1 className="text-[32px] font-extrabold tracking-[-0.045em] text-ink sm:text-[38px]">Admin</h1>
       <p className="mt-1.5 text-sm text-ink-muted">
-        Server-verified role. This screen only reflects what the API allows.
+        Manage and check access to your workspace.
       </p>
 
-      <Card className="mt-6 p-6">
-        <span className="flex size-11 items-center justify-center rounded-xl bg-brand-soft text-brand">
+      <Card className="mt-6 p-5 sm:p-6">
+        <span className="flex size-11 items-center justify-center rounded-[10px] bg-surface-2 text-ink-muted">
           <ShieldCheck className="size-5" />
         </span>
 
-        <p className="mt-5 font-mono text-xs text-ink-subtle">GET /admin/ping</p>
+        <p className="mt-5 font-mono text-xs text-ink-subtle">Workspace access</p>
 
         <p
           data-state={state}
-          className="mt-3 inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium data-[state=error]:border-danger/30 data-[state=error]:bg-danger-soft data-[state=error]:text-danger data-[state=loading]:border-line data-[state=loading]:bg-surface-2 data-[state=loading]:text-ink-subtle data-[state=ok]:border-success/30 data-[state=ok]:bg-success-soft data-[state=ok]:text-success"
+          className="mt-3 inline-flex items-center gap-2 rounded-[10px] border px-3 py-2 text-sm font-bold data-[state=error]:border-danger/30 data-[state=error]:bg-danger-soft data-[state=error]:text-danger data-[state=loading]:border-line data-[state=loading]:bg-surface-2 data-[state=loading]:text-ink-subtle data-[state=ok]:border-success/30 data-[state=ok]:bg-success-soft data-[state=ok]:text-success"
         >
           {state === 'loading' && (
             <>
@@ -58,13 +58,13 @@ export const AdminPage = () => {
           {state === 'ok' && (
             <>
               <CircleCheck className="size-4" />
-              ok
+              Administrator access verified
             </>
           )}
           {state === 'error' && (
             <>
               <CircleAlert className="size-4" />
-              denied
+              Access could not be verified
             </>
           )}
         </p>

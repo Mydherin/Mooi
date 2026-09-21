@@ -7,14 +7,16 @@ import { ProjectGrid } from '@/features/projects/components/ProjectGrid';
 import { ProjectsHeader } from '@/features/projects/components/ProjectsHeader';
 import { useProjects } from '@/features/projects/hooks/useProjects';
 import { Button } from '@/shared/components/Button';
-import { Card } from '@/shared/components/Card';
 import { EmptyState } from '@/shared/components/EmptyState';
-import { SearchInput } from '@/shared/components/SearchInput';
+import { Eyebrow } from '@/shared/components/Eyebrow';
 
 const Skeleton = () => (
   <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
     {[0, 1, 2].map((card) => (
-      <Card key={card} className="h-[190px] animate-pulse-soft" />
+      <div
+        key={card}
+        className="h-[196px] animate-pulse-soft rounded-[14px] border border-line bg-surface-2"
+      />
     ))}
   </div>
 );
@@ -48,7 +50,7 @@ export const ProjectsPage = () => {
 
   if (resolved && !linked) {
     return (
-      <div className="mx-auto w-full max-w-7xl px-4 py-6 lg:px-6 lg:py-8">
+      <div className="mx-auto w-full max-w-6xl px-5 py-7 sm:px-8 lg:px-10 lg:py-10">
         <GithubGateCard
           title="Connect GitHub to add projects"
           description="Mooi builds on your repositories. Link your GitHub account and import the ones you want to work on."
@@ -58,22 +60,23 @@ export const ProjectsPage = () => {
   }
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 py-6 lg:px-6 lg:py-8">
+    <div className="mx-auto w-full max-w-6xl px-5 py-7 sm:px-8 lg:px-10 lg:py-10">
       <ProjectsHeader
         onAdd={() => setDialogOpen(true)}
         onRefresh={reload}
         busy={status === 'loading'}
         canAdd={linked}
+        query={query}
+        onQueryChange={setQuery}
+        showSearch={projects.length > 0}
       />
 
-      {projects.length > 0 ? (
-        <div className="mt-6">
-          <SearchInput
-            value={query}
-            onChange={setQuery}
-            placeholder="Search projects"
-            className="sm:max-w-xs"
-          />
+      {visibleProjects.length > 0 ? (
+        <div className="mt-8 flex items-center justify-between gap-3 border-b border-line pb-2.5">
+          <Eyebrow>All projects</Eyebrow>
+          <span className="text-[11px] font-bold text-ink-subtle">
+            {projects.length} {projects.length === 1 ? 'project' : 'projects'}
+          </span>
         </div>
       ) : null}
 
@@ -81,7 +84,7 @@ export const ProjectsPage = () => {
         {status === 'loading' && projects.length === 0 ? <Skeleton /> : null}
 
         {status === 'error' ? (
-          <div className="flex flex-col gap-3 rounded-2xl border border-danger/40 bg-danger-soft px-5 py-4 sm:flex-row sm:items-center">
+          <div className="flex flex-col gap-3 rounded-[14px] border border-danger/30 bg-danger-soft px-4 py-3.5 sm:flex-row sm:items-center">
             <p className="min-w-0 flex-1 text-sm text-danger">{error}</p>
             <span className="shrink-0">
               <Button variant="secondary" size="sm" onClick={reload}>
@@ -117,7 +120,13 @@ export const ProjectsPage = () => {
           </EmptyState>
         ) : null}
 
-        {visibleProjects.length > 0 ? <ProjectGrid projects={visibleProjects} /> : null}
+        {visibleProjects.length > 0 ? (
+          <ProjectGrid
+            projects={visibleProjects}
+            onAdd={() => setDialogOpen(true)}
+            canAdd={linked}
+          />
+        ) : null}
       </div>
 
       <AddProjectDialog open={isDialogOpen} onClose={() => setDialogOpen(false)} />
