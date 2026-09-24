@@ -5,7 +5,7 @@
 # it is synthesized directly from $(ARTIFACTS).
 
 GLOBAL_TARGETS := dev-start dev-stop dev-status dev-clean
-SUPPORT_TARGETS := dev-logs help
+SUPPORT_TARGETS := dev-logs dev-preflight-mic-sessions help
 
 # help-desc(target): the ## comment text following `target:` in any
 # included makefile, or empty when the target carries none.

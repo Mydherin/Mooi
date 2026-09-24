@@ -1,7 +1,6 @@
 import { env } from '@/config/env';
 import { getAccessToken } from '@/features/auth/lib/accessTokenProvider';
 import type { SessionEvent } from '@/features/sessions/types/SessionEvent';
-import type { SessionEventType } from '@/features/sessions/types/SessionEventType';
 
 export type SessionStreamState = 'open' | 'reconnecting' | 'closed';
 
@@ -42,7 +41,7 @@ const parseFrame = (frame: string): SessionEvent | null => {
 
   const { seq, at, ...data } = JSON.parse(dataLine) as { seq: number; at: string; [key: string]: unknown };
 
-  return { seq, at, type: type as SessionEventType, data };
+  return { seq, at, type, data } as SessionEvent;
 };
 
 /**

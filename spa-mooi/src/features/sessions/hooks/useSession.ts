@@ -158,7 +158,8 @@ export const useSession = (sessionId: string | undefined): UseSession => {
 
   const send = useCallback(
     (text: string) => {
-      if (!sessionId || useSessionsStore.getState().sessions.find((candidate) => candidate.id === sessionId)?.status !== 'ready') return Promise.resolve(false);
+      const current = useSessionsStore.getState().sessions.find((candidate) => candidate.id === sessionId);
+      if (!sessionId || current?.status !== 'ready' || current.deployment.state === 'starting') return Promise.resolve(false);
       return runAction(() => sendSessionMessage(sessionId, text));
     },
     [sessionId, runAction],
@@ -192,7 +193,7 @@ export const useSession = (sessionId: string | undefined): UseSession => {
   const updateConfiguration = useCallback(
     (configuration: SessionConfiguration) => {
       const current = useSessionsStore.getState().sessions.find((candidate) => candidate.id === sessionId);
-      if (!sessionId || !current || loading || modelLoading || modelError || current.status === 'closed' || current.status === 'failed') return Promise.resolve(false);
+      if (!sessionId || !current || loading || modelLoading || modelError || current.status === 'closed' || current.status === 'failed' || current.deployment.state === 'starting') return Promise.resolve(false);
       return runAction(async () => {
         const updated = await updateSessionConfiguration(sessionId, configuration);
         useSessionsStore.getState().upsertSession(updated);

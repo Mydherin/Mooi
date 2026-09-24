@@ -1,8 +1,9 @@
-import type { SessionEventType } from '@/features/sessions/types/SessionEventType';
+import type { DeploymentEvent } from './DeploymentEvent';
+import type { SessionEventType } from './SessionEventType';
 
-export interface SessionEvent {
+export type SessionEvent = DeploymentEvent | {
   seq: number;
   at: string;
-  type: SessionEventType;
+  type: Exclude<SessionEventType, 'deployment.updated' | 'deployment.progress' | 'deployment.activity'>;
   data: Record<string, unknown>;
-}
+};

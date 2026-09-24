@@ -1,24 +1,43 @@
-import { useState } from 'react';
-import { Rocket } from 'lucide-react';
-import { DeployDialog } from '@/features/sessions/components/deploy/DeployDialog';
+import { useSessionsStore } from '@/stores/sessionsStore';
+import { LoaderCircle, Rocket, Square } from 'lucide-react';
+import { useDeployment } from '@/features/sessions/hooks/useDeployment';
 import type { Session } from '@/features/sessions/types/Session';
 import { Button } from '@/shared/components/Button';
+import { DeployLogsButton } from './DeployLogsButton';
 
-interface DeployButtonProps {
-  session: Session;
-}
-
-export const DeployButton = ({ session }: DeployButtonProps) => {
-  const [open, setOpen] = useState(false);
+export const DeployButton = ({ session, disabled = false }: { session: Session; disabled?: boolean }) => {
+  const { deployment, progress, busy, error, start, stop } = useDeployment(session.id);
+  if (!deployment) return null;
+  const { state, cleanupRequired, result } = deployment;
+  const canStop = state === 'starting' || state === 'running' || (state === 'failed' && cleanupRequired);
+  const stopping = state === 'stopping';
+  const label = stopping ? 'Stopping…' : state === 'starting' ? 'Deploying…' : canStop ? 'Stop' : state === 'failed' ? 'Retry' : 'Deploy';
+  const blocked = disabled || busy || stopping || session.status === 'closed'
+    || (!canStop && (session.status !== 'ready' || Boolean(session.pending)));
+  const message = error ?? result?.reason?.message;
+  const logsOpen = useSessionsStore((store) => store.byId[session.id]?.deploymentLogsOpen ?? false);
+  const hasActivity = useSessionsStore((store) => Boolean(store.byId[session.id]?.deploymentActivity.length));
 
   return (
-    <>
-      <Button variant="brand" size="sm" onClick={() => setOpen(true)}>
-        <Rocket className="size-4" />
-        Deploy
+    <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+      <div className="inline-flex min-w-0 items-stretch">
+      <Button variant={canStop ? 'secondary' : 'brand'} size="sm" disabled={blocked} className={deployment.operationId || hasActivity ? 'rounded-r-none' : undefined}
+        ariaLabel={state === 'starting' ? 'Stop deployment (cancel)' : `${label} deployment`}
+        onClick={() => void (canStop ? stop() : start())}>
+        {busy || stopping || state === 'starting' ? <LoaderCircle className="size-4 animate-spin" />
+          : canStop ? <Square className="size-4" /> : <Rocket className="size-4" />}
+        {label}
+        {state === 'starting' ? <span className="text-xs">· Stop</span> : null}
       </Button>
-
-      <DeployDialog open={open} onClose={() => setOpen(false)} branch={session.branch} />
-    </>
+      {deployment.operationId || hasActivity ? <DeployLogsButton open={logsOpen} active={state === 'starting' || state === 'stopping'}
+        onClick={() => useSessionsStore.getState().toggleDeploymentLogs(session.id)} /> : null}
+      </div>
+      <div className="basis-full text-right text-xs [overflow-wrap:anywhere]" aria-live="polite" aria-atomic="true">
+        {message ? <p className="text-danger">{message}</p>
+          : progress ? <p className="text-ink-muted">{progress.message}</p>
+          : state === 'starting' ? <p className="text-ink-muted">Preparing your application…</p>
+          : stopping ? <p className="text-ink-muted">Stopping the application…</p> : null}
+      </div>
+    </div>
   );
 };

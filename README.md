@@ -16,7 +16,7 @@ Monorepository. Each artifact lives in its own root-level directory.
 - Java 25
 - [uv](https://docs.astral.sh/uv/) (Python package manager for `mic-sessions`)
 - `git` CLI (one independent clone per agent session)
-- Docker Engine + Docker Compose V2 (Postgres and pgAdmin only)
+- Docker Engine + Docker Compose V2 (data layer and session deployments)
 
 Maven is **not** required: `mic-mooi` ships the Maven Wrapper (`mvnw`) and the first
 `make dev-start` downloads the pinned distribution into `~/.m2/wrapper`.
@@ -146,6 +146,49 @@ loads that repository as a local plugin. Marketplace plugins require installatio
 in the CLI's runtime state; the service does not copy the user's global Claude configuration or
 install plugin dependencies automatically.
 
+### Session deployments
+
+Install Docker CLI with Compose v2 where `mic-sessions` runs and grant its service user access
+to the configured host Unix socket. Verify with `make dev-preflight-mic-sessions`.
+Deploy uses the session provider with fixed `claude-sonnet-5` / `high`; the linked account must
+have access to that model. Chat model settings do not configure Deploy.
+
+Set these values in `mic-sessions/.env`:
+
+| Variable | Purpose |
+| --- | --- |
+| `DOCKER_BINARY`, `DOCKER_HOST` | CLI executable and explicit host socket URI, e.g. `unix:///var/run/docker.sock` |
+| `DOCKER_CLI_PLUGIN_DIR` | Optional absolute Compose/buildx plugin directory; Docker Desktop macOS: `/Applications/Docker.app/Contents/Resources/cli-plugins` |
+| `PREVIEW_PUBLIC_HOST` | Server DNS/IP reachable from users' browsers; no scheme, port or path |
+| `PREVIEW_SCHEME` | `http` or `https`; HTTPS requires valid TLS at the app endpoint |
+| `PREVIEW_BIND_ADDRESS` | Daemon host interface publishing ports, e.g. `0.0.0.0` for external access |
+| `PREVIEW_PROBE_HOST` | Daemon host address reachable from `mic-sessions` for readiness checks |
+| `PREVIEW_PORT_RANGE` | Empty for engine allocation, or inclusive range such as `49152-49251` |
+| `MAX_DEPLOYMENTS` | Concurrent deployment limit (default 4, no queue) |
+| `DEPLOYMENT_*_TIMEOUT_SECONDS`, `DOCKER_*_TIMEOUT_SECONDS` | Operation limits; see `.env.example` |
+| `SESSION_ACTIVITY_INTERVAL_SECONDS` | Preview activity coalescing interval; default 60 seconds |
+
+The example's loopback addresses are for local development. For external browsers, configure
+public/probe hosts separately and allow the published port range through existing ingress and
+firewall rules. An HTTPS Mooi page needs an HTTPS app endpoint; changing `PREVIEW_SCHEME`
+does not provision TLS. The app must allow embedding through its CSP/X-Frame-Options headers.
+Published ports are accessible outside Mooi; the iframe does not provide exclusive access.
+
+If Mooi runs in a container/pod, mount the host Docker socket and provide the CLI/Compose there.
+Apps run as sibling containers on that engine. Build contexts are sent from the session checkout;
+matching checkout paths on the daemon host are unnecessary. Apps must use built images and
+named data volumes, without host bind mounts or access to Mooi's socket/credentials. This setup
+does not sandbox hostile repositories. Mooi containerization and a preview proxy are not included.
+
+Keep `WORKSPACE_ROOT` on durable, private, writable storage, including `deployments/` and its
+installation identity. Run one `mic-sessions` process/worker; multiworker/multinode coordination
+is unsupported. Stop preserves app data volumes; session closure/expiry and startup recovery
+remove only owned resources. Failed cleanup preserves manifests/checkouts for retry; restore
+Docker access and use `make dev-stop-mic-sessions` before cleaning the development environment.
+Do not delete deployment records manually while resources remain. Conversations do not survive
+restart. The default inactivity expiry is 180 minutes; a visible, focused Preview sends activity
+every 60 seconds. Hidden previews and automatic health checks do not prevent expiry.
+
 ## Dev entrypoint
 
 The whole application in dev is driven only through the root `Makefile`. It starts, stops, inspects
@@ -202,6 +245,7 @@ Change a port in `make/ports.mk`; the cross-artifact wiring (`VITE_API_BASE_URL`
 | Command | Description |
 | --- | --- |
 | `make dev-logs` | Tail all artifact logs |
+| `make dev-preflight-mic-sessions` | Verify deployment CLI, Compose and configured daemon |
 | `make help` | Show this help |
 
 ### Flags

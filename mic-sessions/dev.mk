@@ -22,11 +22,52 @@ require_tool git "install Git"
   cd "$$ARTIFACT_DIR"
   uv run python -c 'from importlib.resources import files; import subprocess; subprocess.run([str(files("claude_agent_sdk") / "_bundled" / "claude"), "--version"], check=True, timeout=20)'
 )
+# Docker is optional for chat; the explicit preflight target fails when unavailable.
+if ! (cd "$$ARTIFACT_DIR" && PYTHONPATH=src .venv/bin/python -m mic_sessions.shared.docker preflight); then
+  ui_warn "Deploy unavailable: check DOCKER_HOST and Docker Compose; chat can still start"
+fi
+# Boot cleans orphaned deployments sequentially before HTTP becomes ready.
+__sessions_boot_budget="$$(cd "$$ARTIFACT_DIR" && PYTHONPATH=src .venv/bin/python -c 'from mic_sessions.shared.env import get_settings; s=get_settings(); count=sum(1 for p in (s.workspace_root / "deployments").glob("*") if not p.name.startswith(".")); print(count * s.deployment_stop_timeout_seconds + 30)')" || return 1
+if [ "$$DEV_HEALTH_TIMEOUT" -lt "$$__sessions_boot_budget" ]; then
+  DEV_HEALTH_TIMEOUT="$$__sessions_boot_budget"
+fi
 artifact_spawn "uv run uvicorn mic_sessions.main:app --host 0.0.0.0 --port $$ARTIFACT_PORT"
 endef
 
 define stop
+# Allow sequential session rollback + stop + final cleanup before escalating to KILL.
+# Read the same .env settings as the service; this does not start the application.
+if [ -x "$$ARTIFACT_DIR/.venv/bin/python" ]; then
+  __sessions_stop_budget="$$(cd "$$ARTIFACT_DIR" && PYTHONPATH=src .venv/bin/python -c 'from mic_sessions.shared.env import Settings; s=Settings(); print(s.max_sessions * (5 * s.deployment_stop_timeout_seconds + 30) + 30)')" || return 1
+  if [ "$$DEV_STOP_TIMEOUT" -lt "$$__sessions_stop_budget" ]; then
+    DEV_STOP_TIMEOUT="$$__sessions_stop_budget"
+  fi
+fi
+__sessions_previous_pid="$$(artifact_pid)"
 artifact_stop
+# A forced stop can return before the process group has exited. Never race cleanup
+# against an SDK/Docker child still running in that group.
+if [ -n "$$__sessions_previous_pid" ]; then
+  for __sessions_wait in 1 2 3 4 5; do
+    if ! kill -0 "-$$__sessions_previous_pid" 2>/dev/null && ! proc_alive "$$__sessions_previous_pid"; then break; fi
+    sleep 1
+  done
+  if kill -0 "-$$__sessions_previous_pid" 2>/dev/null || proc_alive "$$__sessions_previous_pid"; then
+    printf '%s\n' "mic-sessions process group is still active; preserving deployment records" >&2
+    exit 1
+  fi
+fi
+# Also recover manifests after an earlier crash or forced termination. Use uv only
+# if the runtime is absent, and preserve it when cleanup fails so retry is possible.
+(
+  cd "$$ARTIFACT_DIR"
+  if [ -x .venv/bin/python ]; then
+    PYTHONPATH=src .venv/bin/python -m mic_sessions.shared.docker cleanup
+  else
+    require_tool uv "install uv: https://docs.astral.sh/uv/"
+    PYTHONPATH=src uv run --locked python -m mic_sessions.shared.docker cleanup
+  fi
+) || exit 1
 endef
 
 define status

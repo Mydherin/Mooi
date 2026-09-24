@@ -1,3 +1,4 @@
+import { mergeDeployment } from './mergeDeployment';
 import type { Session } from '@/features/sessions/types/Session';
 import type { SessionEvent } from '@/features/sessions/types/SessionEvent';
 import type { SessionStatus } from '@/features/sessions/types/SessionStatus';
@@ -11,8 +12,15 @@ import type { SessionStatus } from '@/features/sessions/types/SessionStatus';
  */
 export const applySessionToSession = (session: Session, event: SessionEvent): Session => {
   const { type, data, at, seq } = event;
-  if (type === 'session.sync') return seq >= session.lastSeq ? data.session as unknown as Session : session;
+  if (type === 'session.sync') {
+    const incoming = data.session as unknown as Session;
+    return seq >= session.lastSeq ? { ...incoming, deployment: mergeDeployment(session.deployment, incoming.deployment) } : session;
+  }
   if (seq <= session.lastSeq || type === 'history.reset') return session;
+  if (type === 'deployment.updated') {
+    return { ...session, lastSeq: seq, deployment: mergeDeployment(session.deployment, data) };
+  }
+  if (type === 'deployment.progress' || type === 'deployment.activity') return { ...session, lastSeq: seq };
   const patch: Partial<Session> = { updatedAt: at, lastSeq: seq };
 
   if (type === 'session.status') {

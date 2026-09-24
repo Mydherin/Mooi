@@ -5,6 +5,12 @@ import type { SessionStreamState } from '@/features/sessions/lib/openSessionStre
 import type { TranscriptEntry } from '@/features/sessions/types/TranscriptEntry';
 
 export interface SessionTranscriptState {
+  deploymentActivity: import('./DeploymentActivity').DeploymentActivity[];
+  deploymentActivityOperationId: string | null;
+  pane: import('./WorkspacePane').WorkspacePane;
+  deploymentLogsOpen: boolean;
+  deploymentProgress: import('./DeploymentProgress').DeploymentProgress | null;
+  previewOpenedOperationId: string | null;
   entries: TranscriptEntry[];
   pending: SessionPendingRequest[];
   changes: ChangesSummary | null;

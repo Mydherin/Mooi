@@ -7,6 +7,11 @@ import type { SessionTranscriptState } from '@/features/sessions/types/SessionTr
 export interface SessionsState {
   sessions: Session[];
   byId: Record<string, SessionTranscriptState>;
+  setDeployment: (sessionId: string, snapshot: import('@/features/sessions/types/DeploymentSnapshot').DeploymentSnapshot) => void;
+  markPreviewOpened: (sessionId: string, operationId: string) => void;
+  setPane: (sessionId: string, pane: import('@/features/sessions/types/WorkspacePane').WorkspacePane) => void;
+  setDeploymentLogsOpen: (sessionId: string, open: boolean) => void;
+  toggleDeploymentLogs: (sessionId: string) => void;
   setSessions: (sessions: Session[]) => void;
   upsertSession: (session: Session) => void;
   removeSession: (sessionId: string) => void;

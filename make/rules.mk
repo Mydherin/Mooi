@@ -53,7 +53,7 @@ endef
 # then removes the artifact's generated dev state.
 define artifact-clean-block
 $(call artifact-env-block,$(1))
-artifact_stop
+$($(1)_STOP)
 $($(1)_CLEAN)
 endef
 

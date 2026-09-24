@@ -23,7 +23,9 @@ from mic_sessions.shared.logging import CorrelationIdMiddleware, configure_loggi
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     settings.workspace_root.mkdir(parents=True, exist_ok=True)
-    await workspaces.get_workspaces().reconcile()
+    preserved = await sessions.reconcile_deployments()
+    if preserved is not None:
+        await workspaces.get_workspaces().reconcile(preserve=preserved)
     await web.open_http_client()
     sessions.start_reaper()
     try:

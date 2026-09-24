@@ -9,10 +9,10 @@ from __future__ import annotations
 import asyncio
 import base64
 import difflib
-import shutil
 import logging
 import os
 import re
+import shutil
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -183,6 +183,7 @@ class Workspaces:
             except asyncio.CancelledError:
                 cancelled = True
             except Exception:
+                LOG.debug("Background operation encountered an exception", exc_info=True)
                 break
         try:
             task.result()
@@ -202,8 +203,9 @@ class Workspaces:
         await self._remove_directory(directory)
         LOG.info("Workspace %s removed", session_id)
 
-    async def reconcile(self) -> None:
-        """Before serving requests, remove marked leftovers (single process owner only)."""
+    async def reconcile(self, *, preserve: set[UUID] | None = None) -> None:
+        """Remove marked leftovers except sessions whose deployment cleanup failed at boot."""
+        preserved = preserve or set()
         sessions = self.root / "sessions"
         if sessions.is_symlink():
             raise RuntimeError("Managed sessions root cannot be a symlink")
@@ -214,7 +216,8 @@ class Workspaces:
                 session_id = UUID(directory.name)
             except ValueError:
                 continue
-            if str(session_id) != directory.name or directory.is_symlink() or not directory.is_dir():
+            if (session_id in preserved or str(session_id) != directory.name
+                    or directory.is_symlink() or not directory.is_dir()):
                 continue
             marker = directory / ".mooi-session"
             if marker.is_file() and not marker.is_symlink() and marker.read_text() == str(session_id):

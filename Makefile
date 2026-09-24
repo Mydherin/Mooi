@@ -151,6 +151,13 @@ dev-clean: ## Stop everything and remove all dev state
 	rm -rf $(DEV_DIR)
 	ui_ok "clean complete"
 
+.PHONY: dev-preflight-mic-sessions
+dev-preflight-mic-sessions: ## Check configured Docker engine and Compose for session previews
+	@$(SHELL_LIB)
+	require_tool uv "install uv: https://docs.astral.sh/uv/"
+	cd mic-sessions
+	PYTHONPATH=src uv run --locked python -m mic_sessions.shared.docker preflight
+
 dev-logs: ## Tail all artifact logs
 	@$(SHELL_LIB)
 	__found=0

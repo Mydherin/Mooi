@@ -1,3 +1,4 @@
+import type { DeploymentSnapshot } from '@/features/sessions/types/DeploymentSnapshot';
 import type { SessionConfiguration } from '@/features/sessions/types/SessionConfiguration';
 import type { SessionProvider } from '@/features/sessions/types/SessionProvider';
 import { sessionsFetch } from '@/features/sessions/lib/sessionsFetch';
@@ -163,4 +164,27 @@ export const fetchSessionProviders = async (): Promise<SessionProvider[]> => {
   const response = await sessionsFetch('/sessions/providers');
   if (!response.ok) throw new Error(await apiErrorMessage(response, 'Could not load session models.'));
   return ((await response.json()) as { providers: SessionProvider[] }).providers;
+};
+
+export const fetchDeployment = async (sessionId: string): Promise<DeploymentSnapshot> => {
+  const response = await sessionsFetch(`${sessionPath(sessionId)}/deployment`);
+  if (!response.ok) throw new Error(await apiErrorMessage(response, 'Could not load the deployment.'));
+  return (await response.json()) as DeploymentSnapshot;
+};
+
+export const startDeployment = async (sessionId: string): Promise<DeploymentSnapshot> => {
+  const response = await sessionsFetch(`${sessionPath(sessionId)}/deployment/start`, { method: 'POST' });
+  if (!response.ok) throw new Error(await apiErrorMessage(response, 'Could not start the deployment.'));
+  return (await response.json()) as DeploymentSnapshot;
+};
+
+export const stopDeployment = async (sessionId: string): Promise<DeploymentSnapshot> => {
+  const response = await sessionsFetch(`${sessionPath(sessionId)}/deployment/stop`, { method: 'POST' });
+  if (!response.ok) throw new Error(await apiErrorMessage(response, 'Could not stop the deployment.'));
+  return (await response.json()) as DeploymentSnapshot;
+};
+
+export const sendSessionActivity = async (sessionId: string, signal?: AbortSignal): Promise<void> => {
+  const response = await sessionsFetch(`${sessionPath(sessionId)}/activity`, { method: 'POST', signal });
+  if (!response.ok) throw new Error(await apiErrorMessage(response, 'Could not renew session activity.'));
 };

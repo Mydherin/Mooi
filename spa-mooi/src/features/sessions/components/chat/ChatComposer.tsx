@@ -8,6 +8,7 @@ import { Button } from '@/shared/components/Button';
 interface ChatComposerProps {
   status: SessionStatus;
   busy: boolean;
+  deploying?: boolean;
   model: string;
   effort: string | null;
   modelOptions: SessionProvider['models'];
@@ -29,6 +30,7 @@ const hints: Partial<Record<SessionStatus, string>> = {
 export const ChatComposer = ({
   status,
   busy,
+  deploying = false,
   model,
   effort,
   modelOptions,
@@ -43,14 +45,14 @@ export const ChatComposer = ({
   const [value, setValue] = useState('');
 
   const effortOptions = modelOptions.find((option) => option.id === model)?.efforts ?? [];
-  const configurationDisabled = busy || status === 'closed' || status === 'failed' || modelLoading || Boolean(modelError);
+  const configurationDisabled = deploying || busy || status === 'closed' || status === 'failed' || modelLoading || Boolean(modelError);
 
   const changeModel = (nextModel: string) => {
     const supported = modelOptions.find((option) => option.id === nextModel)?.efforts ?? [];
     onConfigurationChange({ model: nextModel, effort: effort && supported.includes(effort) ? effort : null });
   };
 
-  const hint = hints[status] ?? null;
+  const hint = hints[status] ?? (deploying ? 'Deployment in progress. Your draft is saved; chat resumes when it finishes.' : null);
   const blocked = hint !== null;
   const activeTurn = status === 'working' || status === 'waiting';
 

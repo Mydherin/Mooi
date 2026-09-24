@@ -1,3 +1,4 @@
+import { DeployButton } from './deploy/DeployButton';
 import { Link } from 'react-router-dom';
 import { ChevronLeft, GitBranch } from 'lucide-react';
 import { projectPath } from '@/app/paths';
@@ -34,6 +35,8 @@ export const WorkspaceHeader = ({
       <GitBranch className="size-3 shrink-0" />
       <span className="truncate">{session.branch}</span>
     </span>
+
+    <div className="max-w-[45%] min-w-0"><DeployButton key={session.id} session={session} disabled={closeBusy} /></div>
 
     <button
       type="button"

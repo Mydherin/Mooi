@@ -83,6 +83,7 @@ export const ChatPanel = ({
     <ChatComposer
       key={`composer-${session.id}`}
       status={session.status}
+      deploying={session.deployment.state === 'starting'}
       busy={busy}
       model={session.model}
       effort={session.effort ?? null}

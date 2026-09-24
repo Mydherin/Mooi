@@ -16,6 +16,12 @@ import type { TranscriptStep } from '@/features/sessions/types/TranscriptStep';
  * `openSessionStream` itself, not here.
  */
 export const emptyTranscriptState = (): SessionTranscriptState => ({
+  deploymentActivity: [],
+  deploymentActivityOperationId: null,
+  pane: 'conversation',
+  deploymentLogsOpen: false,
+  deploymentProgress: null,
+  previewOpenedOperationId: null,
   entries: [],
   pending: [],
   changes: null,
@@ -167,7 +173,7 @@ const withResolvedStep = (
 export const applySessionEvent = (state: SessionTranscriptState, event: SessionEvent): SessionTranscriptState => {
   const { seq, at, type, data } = event;
   if (type === 'history.reset') {
-    return { ...emptyTranscriptState(), streamState: state.streamState, lastSeq: seq,
+    return { ...emptyTranscriptState(), pane: state.pane, deploymentLogsOpen: state.deploymentLogsOpen, previewOpenedOperationId: state.previewOpenedOperationId, streamState: state.streamState, lastSeq: seq,
       entries: [{ id: `gap-${seq}`, kind: 'error', at, text: String(data.message) }] };
   }
   if (type === 'session.sync') {

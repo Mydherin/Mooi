@@ -2,7 +2,7 @@
 
 Provider-neutral contracts: the session feature depends on the `AgentRuntime` protocol, on the
 domain events built here, and on the `PROVIDERS` factory — never on a vendor
-SDK. `claude_agent_sdk` is imported **only** by `ClaudeAgentRuntime`, and a second provider's SDK
+SDK. `claude_agent_sdk` is imported **only** by the Claude adapters in this module, and a second provider's SDK
 must be confined to its own adapter exactly the same way.
 
 Adding a provider:
@@ -22,31 +22,31 @@ Nothing outside this module changes.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import shutil
 import subprocess
-import time
+import sys
 import tempfile
+import time
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-import json
-from typing import Any, ClassVar, Protocol, TypedDict, runtime_checkable
+from typing import Any, ClassVar, Literal, Protocol, TypedDict, runtime_checkable
 from uuid import UUID, uuid4
 
-# The single import of a vendor SDK in the whole service: it belongs to `ClaudeAgentRuntime`
-# alone, and a second provider's SDK must stay confined to its own adapter the same way.
+# The single import of a vendor SDK in the whole service belongs to the Claude adapters, and a second provider's SDK must stay confined to its own adapter the same way.
 from claude_agent_sdk import (
     AssistantMessage,
     ClaudeAgentOptions,
     ClaudeSDKClient,
+    ConversationResetMessage,
     PermissionResult,
     PermissionResultAllow,
     PermissionResultDeny,
     ResultMessage,
-    ConversationResetMessage,
     StreamEvent,
     SystemMessage,
     TextBlock,
@@ -55,8 +55,11 @@ from claude_agent_sdk import (
     ToolResultBlock,
     ToolUseBlock,
     UserMessage,
+    create_sdk_mcp_server,
+    tool,
 )
 
+from mic_sessions.shared.docker import redact_deployment_output
 from mic_sessions.shared.env import get_settings
 from mic_sessions.shared.mooi import Credential
 from mic_sessions.shared.web import ApiException
@@ -838,11 +841,371 @@ class ClaudeAgentRuntime:
 
 
 @dataclass(frozen=True)
+class StructuredProgress:
+    """Public-safe operation progress, never a conversational event or raw SDK output."""
+
+    phase: str
+    message: str
+
+    def __post_init__(self) -> None:
+        if not self.phase.strip() or len(self.phase) > 80 or not self.message.strip() or len(self.message) > 500:
+            raise ValueError('Invalid structured operation progress')
+
+
+@dataclass(frozen=True)
+class StructuredActivity:
+    """One bounded step of the operation, for the session owner to watch it live.
+
+    The adapter bounds every field here; how many of these an operation may publish, and their
+    redaction policy, belong to the domain emitter that receives them.
+    """
+
+    kind: Literal['assistant', 'thinking', 'tool', 'tool_result', 'log', 'notice']
+    title: str
+    detail: str | None = None
+    status: Literal['running', 'done', 'failed'] | None = None
+    tool_id: str | None = None
+    source: Literal['agent', 'tool'] = 'agent'
+    level: Literal['debug', 'info', 'warning', 'error', 'success'] = 'info'
+    mutates_workspace: bool = False
+
+    def __post_init__(self) -> None:
+        if self.kind not in ('assistant', 'thinking', 'tool', 'tool_result', 'log', 'notice'):
+            raise ValueError('Invalid structured operation activity kind')
+        if not self.title.strip() or len(self.title) > 120:
+            raise ValueError('Invalid structured operation activity title')
+        if self.detail is not None and len(self.detail) > 4000:
+            raise ValueError('Structured operation activity detail exceeds its limit')
+        if self.status is not None and self.status not in ('running', 'done', 'failed'):
+            raise ValueError('Invalid structured operation activity status')
+        if self.tool_id is not None and (not self.tool_id.strip() or len(self.tool_id) > 64):
+            raise ValueError('Invalid structured operation activity tool identity')
+        if self.source not in ('agent', 'tool'):
+            raise ValueError('Invalid structured operation activity source')
+        if self.level not in ('debug', 'info', 'warning', 'error', 'success'):
+            raise ValueError('Invalid structured operation activity level')
+
+
+StructuredProgressCallback = Callable[[StructuredProgress], Awaitable[None]]
+StructuredActivityCallback = Callable[[StructuredActivity], Awaitable[None]]
+StructuredToolCallback = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
+
+
+@dataclass(frozen=True)
+class StructuredTool:
+    """Host-managed capability. Adapter bridges it through the provider's official SDK.
+
+    The host validates input and owns resource mutations; no arbitrary command API.
+    """
+
+    name: str
+    description: str
+    input_schema: dict[str, Any] = field(repr=False)
+    execute: StructuredToolCallback = field(repr=False)
+
+
+@dataclass(frozen=True)
+class StructuredOperation:
+    """Fresh one-shot context; no chat runtime, history, resume, model or effort selection.
+
+    Schema and tool definitions are owned by the caller and must not be mutated during
+    execution. The caller validates the returned object against its strict domain model.
+    """
+
+    credential: Credential = field(repr=False)
+    cwd: Path = field(repr=False)
+    prompt: str = field(repr=False)
+    output_schema: dict[str, Any] = field(repr=False)
+    progress: StructuredProgressCallback = field(repr=False)
+    activity: StructuredActivityCallback = field(repr=False)
+    tools: tuple[StructuredTool, ...] = field(default=(), repr=False)
+
+    def __post_init__(self) -> None:
+        if not self.cwd.is_absolute() or not self.prompt.strip():
+            raise ValueError('Structured operation requires an absolute workspace and prompt')
+        if not callable(self.progress) or not callable(self.activity):
+            raise TypeError('Structured operation requires progress and activity callbacks')
+        if self.output_schema.get('type') != 'object':
+            raise ValueError('Structured operation requires an object JSON schema')
+        if len({tool.name for tool in self.tools}) != len(self.tools):
+            raise ValueError('Structured operation tool names must be unique')
+
+
+class StructuredOperationError(Exception):
+    """Typed, public-safe failure; adapters must not expose SDK output or credentials."""
+
+    def __init__(self, code: Literal['provider_unavailable', 'model_unavailable',
+                                   'invalid_agent_output', 'timeout', 'cancelled'], message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+class StructuredExecutor(Protocol):
+    """Own and release a fresh client/temporary state on success, error and cancellation.
+
+    Return only the SDK structured object, never JSON extracted from assistant text.
+    Propagate asyncio.CancelledError after releasing resources. Do not emit chat events.
+    """
+
+    async def __call__(self, operation: StructuredOperation) -> dict[str, Any]: ...
+
+
+# This policy is intentionally independent of conversational configuration and environment.
+_STRUCTURED_MODEL = "claude-opus-5-5"
+# Deployment preparation is mechanical configuration work, not open-ended reasoning.
+_STRUCTURED_EFFORT = "medium"
+_STRUCTURED_FILE_TOOLS = ("Read", "Glob", "Grep", "Edit", "MultiEdit", "Write")
+_STRUCTURED_ACTIVITY_LIMIT = 4000
+
+
+def _structured_detail(value: Any) -> str | None:
+    """Bound any block payload to the activity contract; the domain emitter redacts further."""
+    text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, default=str)
+    text = text.strip()
+    return text[:_STRUCTURED_ACTIVITY_LIMIT] if text else None
+
+
+def _structured_tool_detail(name: str, input_data: Any) -> str | None:
+    """Only the identifying argument of a tool call, never its whole input."""
+    value = None
+    if isinstance(input_data, dict):
+        value = next((input_data[key] for key in ("file_path", "path", "pattern", "command")
+                      if isinstance(input_data.get(key), str) and input_data[key].strip()), None)
+    return _structured_detail(value if value is not None else name)
+
+
+def _managed_tool_payload(content: Any, depth: int = 0) -> dict[str, Any] | None:
+    """Extract only the public result of a managed tool from SDK content wrappers."""
+    if depth > 8:
+        return None
+    if isinstance(content, str):
+        try:
+            return _managed_tool_payload(json.loads(content), depth + 1)
+        except (TypeError, ValueError):
+            return None
+    if isinstance(content, list):
+        return next((payload for block in content
+                     if (payload := _managed_tool_payload(block, depth + 1)) is not None), None)
+    if isinstance(content, dict):
+        if isinstance(content.get("success"), bool):
+            return content
+        return _managed_tool_payload(content.get("content") or content.get("text"), depth + 1)
+    return _managed_tool_payload(getattr(content, "content", None) or getattr(content, "text", None), depth + 1)
+
+
+def _structured_result_summary(name: str, content: Any, is_error: bool) -> str:
+    """Describe a tool outcome without echoing file contents or tool inputs."""
+    if name.startswith("mcp__deployment__"):
+        payload = _managed_tool_payload(content)
+        if payload and payload.get("success") is False:
+            reason = payload.get("reason")
+            if isinstance(reason, dict) and isinstance(reason.get("code"), str) and isinstance(reason.get("message"), str):
+                return f"{reason['code']}: {reason['message']}"[:500]
+        return "failed" if is_error else "done"
+    if is_error:
+        return "failed"
+    if name in ("Read", "Glob", "Grep"):
+        if isinstance(content, str):
+            count = len(content.splitlines())
+            noun = "line" if count == 1 else "lines"
+            return f"{count} {noun} found" if name != "Read" else f"{count} {noun} read"
+        if isinstance(content, list):
+            return f"{len(content)} results"
+    return "done"
+
+
+def _structured_mcp_tools(operation: StructuredOperation) -> list[Any]:
+    def bridge(capability: StructuredTool) -> Any:
+        async def invoke(arguments: dict[str, Any]) -> dict[str, Any]:
+            # Domain callbacks validate arguments and return only public-safe evidence.
+            try:
+                result = await capability.execute(arguments)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                LOG.debug("Background operation encountered an exception", exc_info=True)
+                return {"content": [{"type": "text", "text": "Managed deployment tool failed"}], "isError": True}
+            return {"content": [{"type": "text", "text": json.dumps(result)}],
+                    "isError": result.get("success") is False}
+        return tool(capability.name, capability.description, capability.input_schema)(invoke)
+    return [bridge(capability) for capability in operation.tools]
+
+
+def _structured_result(message: ResultMessage) -> dict[str, Any]:
+    details = " ".join(message.errors or []).lower()
+    inaccessible_model = "model" in details and any(
+        marker in details for marker in ("not found", "does not exist", "not available", "access", "not supported"))
+    if message.api_error_status == 404 or inaccessible_model:
+        raise StructuredOperationError("model_unavailable", "The deployment model is unavailable")
+    if message.api_error_status is not None:
+        raise StructuredOperationError("provider_unavailable", "The deployment provider rejected the request")
+    if message.is_error or message.subtype != "success":
+        code = ("invalid_agent_output" if message.subtype == "error_max_structured_output_retries"
+                else "provider_unavailable")
+        raise StructuredOperationError(code, "The deployment agent could not complete its structured response")
+    if not isinstance(message.structured_output, dict):
+        raise StructuredOperationError("invalid_agent_output", "The deployment agent returned no structured object")
+    return message.structured_output
+
+
+async def _execute_claude_structured(operation: StructuredOperation) -> dict[str, Any]:
+    """Fresh SDK client and private transcript; never touches a chat runtime or its config.
+
+    File tools plus explicit host capabilities are the entire tool surface. In particular,
+    shell, interactive questions, background tasks and repository MCP/plugins are absent.
+    This limits accidental side effects; it is not a sandbox for hostile repositories.
+    """
+    names = [f"mcp__deployment__{capability.name}" for capability in operation.tools]
+
+    async def permit(name: str, arguments: dict[str, Any], context: ToolPermissionContext) -> PermissionResult:
+        if name in names or name == "StructuredOutput":
+            return PermissionResultAllow(updated_input=arguments)
+        if name in _STRUCTURED_FILE_TOOLS:
+            candidate = arguments.get("file_path", arguments.get("path", "."))
+            if isinstance(candidate, str):
+                path = (operation.cwd / candidate).resolve()
+                root = operation.cwd.resolve()
+                if path.is_relative_to(root):
+                    relative = path.relative_to(root)
+                    if name in ("Edit", "MultiEdit", "Write") and (
+                        ".git" in relative.parts or path.name in ("AGENTS.md", "CLAUDE.md")
+                        or path.name == ".env" or path.name.startswith(".env.")
+                    ):
+                        return PermissionResultDeny(message="Do not modify repository instructions or credentials")
+                    if name in ("Edit", "MultiEdit", "Write") and (
+                        "src" in relative.parts
+                        or path.name in ("pom.xml", "build.gradle", "build.gradle.kts", "package.json",
+                                         "pyproject.toml", "go.mod", "Cargo.toml", "application.yaml",
+                                         "application.yml")
+                    ):
+                        return PermissionResultDeny(message="Deployment cannot modify application source or manifests")
+                    return PermissionResultAllow(updated_input=arguments)
+        return PermissionResultDeny(message="This deployment operation cannot ask questions or use this tool. "
+                                    "Return an actionable failure if configuration or permissions are missing.")
+
+    with tempfile.TemporaryDirectory(prefix="mooi-deployment-claude-") as directory:
+        options = ClaudeAgentOptions(
+            cwd=str(operation.cwd), model=_STRUCTURED_MODEL, effort=_STRUCTURED_EFFORT, fallback_model=None,
+            resume=None, continue_conversation=False, session_store=_InMemoryTranscriptStore(),
+            session_store_flush="eager", setting_sources=[], skills=[], plugins=[],
+            settings=json.dumps({"disableAllHooks": True}), strict_mcp_config=True,
+            tools=list(_STRUCTURED_FILE_TOOLS), permission_mode="default", can_use_tool=permit,
+            mcp_servers={"deployment": create_sdk_mcp_server(
+                name="deployment", version="1.0.0", tools=_structured_mcp_tools(operation))},
+            output_format={"type": "json_schema", "schema": operation.output_schema},
+            env={"CLAUDE_CONFIG_DIR": directory, "CLAUDE_CODE_OAUTH_TOKEN": operation.credential.token,
+                 "ANTHROPIC_API_KEY": "", "ANTHROPIC_AUTH_TOKEN": "", "ANTHROPIC_BASE_URL": "",
+                 "CLAUDE_CODE_USE_BEDROCK": "0", "CLAUDE_CODE_USE_VERTEX": "0",
+                 "CLAUDE_CODE_USE_FOUNDRY": "0"},
+            system_prompt={"type": "preset", "preset": "claude_code", "append":
+                           "Execute only the requested deployment preparation. Read repository instructions. "
+                           "Never ask the user questions; report missing configuration as a structured failure. "
+                           "Use only managed deployment tools to operate Docker. Never commit or push."},
+            stderr=lambda line: None,
+        )
+        client = ClaudeSDKClient(options=options)
+
+        async def publish(activity: StructuredActivity) -> None:
+            # Watching the operation must never be able to fail it.
+            try:
+                await operation.activity(activity)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                LOG.debug("Background operation encountered an exception", exc_info=True)
+
+        async def publish_blocks(message: Any) -> None:
+            if isinstance(message, AssistantMessage):
+                for block in message.content:
+                    if isinstance(block, TextBlock):
+                        detail = _structured_detail(block.text)
+                        if detail:
+                            await publish(StructuredActivity("assistant", "Agent", detail))
+                    elif isinstance(block, ThinkingBlock):
+                        detail = _structured_detail(block.thinking)
+                        if detail:
+                            await publish(StructuredActivity("thinking", "Thinking", detail))
+                    elif isinstance(block, ToolUseBlock):
+                        mutates = block.name in ("Edit", "MultiEdit", "Write")
+                        await publish(StructuredActivity(
+                            "tool", block.name[:120] or "Tool", _structured_tool_detail(block.name, block.input),
+                            status="running", tool_id=str(block.id)[:64] or None, source="tool",
+                            mutates_workspace=mutates))
+                        tool_context[str(block.id)] = (block.name, mutates)
+                return
+            content = getattr(message, "content", None)
+            if isinstance(message, UserMessage) and isinstance(content, list):
+                for block in content:
+                    if isinstance(block, ToolResultBlock):
+                        name, mutates = tool_context.get(str(block.tool_use_id), ("Tool", False))
+                        payload = _managed_tool_payload(block.content) if name.startswith("mcp__deployment__") else None
+                        failed = bool(block.is_error or (payload and payload.get("success") is False))
+                        await publish(StructuredActivity(
+                            "tool_result", name[:120],
+                            _structured_result_summary(name, block.content, failed),
+                            status="failed" if failed else "done",
+                            tool_id=str(block.tool_use_id)[:64] or None, source="tool",
+                            level="error" if failed else "success", mutates_workspace=mutates))
+
+        tool_context: dict[str, tuple[str, bool]] = {}
+        try:
+            await operation.progress(StructuredProgress("preparing", "Preparing deployment configuration"))
+            await client.connect()
+            await client.query(operation.prompt)
+            async for message in client.receive_response():
+                if isinstance(message, (AssistantMessage, UserMessage)) and not getattr(message, "error", None):
+                    await publish_blocks(message)
+                if isinstance(message, AssistantMessage) and message.error:
+                    # The SDK exposes typed errors, never publish assistant text or diagnostics.
+                    raw_details = " ".join(block.text for block in message.content if isinstance(block, TextBlock))
+                    details = raw_details.lower()
+                    LOG.warning(
+                        "Deployment provider rejected model %s (%s): %s",
+                        _STRUCTURED_MODEL, message.error,
+                        redact_deployment_output(raw_details[:1000], (operation.credential.token,)),
+                    )
+                    unavailable = message.error == "invalid_request" and "model" in details and any(
+                        marker in details for marker in ("not found", "does not exist", "not available", "access", "not supported"))
+                    code = "model_unavailable" if unavailable else "provider_unavailable"
+                    raise StructuredOperationError(code, "The deployment provider could not use the requested model")
+                if isinstance(message, ResultMessage):
+                    return _structured_result(message)
+            raise StructuredOperationError("invalid_agent_output", "The deployment agent ended without a result")
+        except (asyncio.CancelledError, StructuredOperationError):
+            raise
+        except TimeoutError:
+            raise StructuredOperationError("timeout", "The deployment agent timed out") from None
+        except Exception:
+            LOG.debug("Background operation encountered an exception", exc_info=True)
+            raise StructuredOperationError("provider_unavailable", "The deployment provider is unavailable") from None
+        finally:
+            # Disconnect in the same task that connected: the SDK owns task-local cancel scopes.
+            # Repeated external cancellation must not skip client teardown or private-dir removal.
+            cancelled = False
+            failure_pending = sys.exception() is not None
+            while True:
+                try:
+                    await client.disconnect()
+                    break
+                except asyncio.CancelledError:
+                    cancelled = True
+                except Exception:
+                    LOG.debug("Background operation encountered an exception", exc_info=True)
+                    if not failure_pending and not cancelled:
+                        raise StructuredOperationError("provider_unavailable",
+                                                       "The deployment client could not close cleanly") from None
+                    break
+            if cancelled:
+                raise asyncio.CancelledError
+
+
+@dataclass(frozen=True)
 class ProviderDescriptor:
     id: str
     label: str
     capabilities: AgentCapabilities
     runtime_class: type[AgentRuntime]
+    structured_executor: StructuredExecutor | None = None
 
     def configuration(self) -> dict[str, Any]:
         return self.runtime_class.configuration()
@@ -852,7 +1215,8 @@ class ProviderDescriptor:
 
 
 PROVIDERS: dict[str, ProviderDescriptor] = {
-    "claude": ProviderDescriptor("claude", "Claude", CLAUDE_CAPABILITIES, ClaudeAgentRuntime),
+    "claude": ProviderDescriptor("claude", "Claude", CLAUDE_CAPABILITIES, ClaudeAgentRuntime,
+                                 structured_executor=_execute_claude_structured),
 }
 
 
@@ -873,3 +1237,14 @@ def create_runtime(
     config: AgentConfig,
 ) -> AgentRuntime:
     return describe(provider).runtime_class(credential, workspace, branch, emit, ask, config)
+
+
+async def execute_structured(provider: str, operation: StructuredOperation) -> dict[str, Any]:
+    """Dispatch only to an explicitly registered one-shot adapter; never fall back to chat."""
+    descriptor = PROVIDERS.get(provider)
+    if descriptor is None or descriptor.structured_executor is None:
+        raise StructuredOperationError('provider_unavailable', 'Provider does not support structured operations')
+    result = await descriptor.structured_executor(operation)
+    if not isinstance(result, dict):
+        raise StructuredOperationError('invalid_agent_output', 'Provider returned an invalid structured result')
+    return result

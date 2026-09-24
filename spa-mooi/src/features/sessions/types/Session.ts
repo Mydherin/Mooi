@@ -1,3 +1,4 @@
+import type { DeploymentSnapshot } from './DeploymentSnapshot';
 import type { AgentCapabilities } from '@/features/sessions/types/AgentCapabilities';
 import type { PendingRequest } from '@/features/sessions/types/PendingRequest';
 import type { SessionStatus } from '@/features/sessions/types/SessionStatus';
@@ -20,4 +21,5 @@ export interface Session {
   lastSeq: number;
   pending: PendingRequest | null;
   capabilities: AgentCapabilities;
+  deployment: DeploymentSnapshot;
 }

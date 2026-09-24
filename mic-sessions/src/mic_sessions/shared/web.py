@@ -7,7 +7,7 @@ Owns CORS for the SPA origin and the single error contract returned by every end
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from http import HTTPStatus
 
 import httpx
@@ -49,33 +49,33 @@ class ApiException(Exception):
         self.message = message
 
     @classmethod
-    def bad_request(cls, message: str) -> "ApiException":
+    def bad_request(cls, message: str) -> ApiException:
         return cls(status.HTTP_400_BAD_REQUEST, message)
 
     @classmethod
-    def unauthorized(cls, message: str = "Unauthorized") -> "ApiException":
+    def unauthorized(cls, message: str = "Unauthorized") -> ApiException:
         return cls(status.HTTP_401_UNAUTHORIZED, message)
 
     @classmethod
-    def forbidden(cls, message: str = "Forbidden") -> "ApiException":
+    def forbidden(cls, message: str = "Forbidden") -> ApiException:
         return cls(status.HTTP_403_FORBIDDEN, message)
 
     @classmethod
-    def not_found(cls, message: str = "Not found") -> "ApiException":
+    def not_found(cls, message: str = "Not found") -> ApiException:
         return cls(status.HTTP_404_NOT_FOUND, message)
 
     @classmethod
-    def conflict(cls, message: str) -> "ApiException":
+    def conflict(cls, message: str) -> ApiException:
         return cls(status.HTTP_409_CONFLICT, message)
 
     @classmethod
-    def bad_gateway(cls, message: str = "Upstream service failure") -> "ApiException":
+    def bad_gateway(cls, message: str = "Upstream service failure") -> ApiException:
         return cls(status.HTTP_502_BAD_GATEWAY, message)
 
 
 def _build(status_code: int, message: str, request: Request, issues: list[FieldIssue] | None = None) -> JSONResponse:
     body = ApiError(
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         status=status_code,
         error=HTTPStatus(status_code).phrase,
         message=message,

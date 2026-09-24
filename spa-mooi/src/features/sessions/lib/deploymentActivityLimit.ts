@@ -1,0 +1,1 @@
+export const DEPLOYMENT_ACTIVITY_LIMIT = 400;

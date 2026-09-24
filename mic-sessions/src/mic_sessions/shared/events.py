@@ -16,7 +16,7 @@ import json
 import logging
 from collections import deque
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from mic_sessions.shared.env import get_settings
@@ -47,7 +47,7 @@ class EventLog:
 
     def append(self, type_: str, data: dict[str, Any]) -> Event:
         self._seq += 1
-        event = Event(seq=self._seq, at=datetime.now(timezone.utc), type=type_, data=data)
+        event = Event(seq=self._seq, at=datetime.now(UTC), type=type_, data=data)
         size = len(json.dumps(data, ensure_ascii=False, default=str).encode()) + 128
         if len(self._events) == self._events.maxlen:
             self._bytes -= self._sizes.popleft()
