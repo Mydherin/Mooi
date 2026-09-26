@@ -39,8 +39,8 @@ const randomSuffix = (): string => Math.random().toString(36).slice(2, 8);
 const defaultEffortFor = (provider: SessionProvider | undefined, model: string): string => {
   const entry = provider?.models.find((candidate) => candidate.id === model);
   if (!entry?.efforts.length) return '';
+  if (model === provider?.defaultModel && provider.defaultEffort && entry.efforts.includes(provider.defaultEffort)) return provider.defaultEffort;
   if (entry.defaultEffort && entry.efforts.includes(entry.defaultEffort)) return entry.defaultEffort;
-  if (provider?.defaultEffort && entry.efforts.includes(provider.defaultEffort)) return provider.defaultEffort;
   return entry.efforts[0];
 };
 
@@ -184,6 +184,10 @@ export const NewSessionDialog = ({
               setModel(value);
               setEffort(defaultEffortFor(selectedProvider, value));
             }} onEffortChange={setEffort} />
+          {selectedProvider && !selectedProvider.unavailable && !selectedProvider.defaultModel && selectedProvider.models.length > 0 && !model &&
+            <p role="status" className="rounded-xl border border-warning/30 bg-warning-soft px-3 py-2 text-xs text-ink">
+              The configured default model is unavailable. Select a model to continue.
+            </p>}
           {catalogError ? <p role="alert" className="text-sm text-danger">{catalogError}</p> :
             !selectedProvider ? <p role="status" className="text-xs text-ink-muted">Loading models…</p> : null}
 

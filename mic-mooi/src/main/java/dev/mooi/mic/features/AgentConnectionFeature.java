@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -103,6 +104,13 @@ public class AgentConnectionFeature {
     public AgentConnectionPayload rename(@PathVariable UUID connectionId,
             @Valid @RequestBody RenameRequest request, Auth.Principal principal) {
         return agentConnectionService.rename(principal.player().id(), connectionId, request.name());
+    }
+
+    @PutMapping("/admin/agents/connections/{connectionId}/models")
+    @Auth.RequireRole(Auth.Role.ADMIN)
+    public AgentConnectionPayload setDefaultModels(@PathVariable UUID connectionId,
+            @Valid @RequestBody DefaultModelsRequest request, Auth.Principal principal) {
+        return agentConnectionService.setDefaultModels(principal.player().id(), connectionId, request);
     }
 
     /** A browser holding a valid access token is not enough here: only another internal service may call this. */
@@ -225,7 +233,8 @@ public class AgentConnectionFeature {
             }
             return new CredentialPayload(agentProvider.id(), connection.getMode(),
                     secretBox.decrypt(connection.getAccessToken()), connection.getAccessTokenExpiresAt(),
-                    connection.getCredentialId());
+                    connection.getCredentialId(), connection.getSessionModel(), connection.getSessionEffort(),
+                    connection.getDeploymentModel(), connection.getDeploymentEffort());
         }
 
         /**
@@ -282,6 +291,32 @@ public class AgentConnectionFeature {
                     .orElseThrow(Agents.AgentsException::reauthorize);
             connection.setName(cleanName(name));
             return toPayload(agentConnectionRepository.save(connection));
+        }
+
+        @Transactional
+        public AgentConnectionPayload setDefaultModels(UUID playerId, UUID connectionId, DefaultModelsRequest request) {
+            AgentConnection connection = agentConnectionRepository.findByPlayerIdAndId(playerId, connectionId)
+                    .orElseThrow(Agents.AgentsException::reauthorize);
+            connection.setSessionModel(cleanModel(request.sessionModel()));
+            connection.setSessionEffort(cleanEffort(request.sessionEffort()));
+            connection.setDeploymentModel(cleanModel(request.deploymentModel()));
+            connection.setDeploymentEffort(cleanEffort(request.deploymentEffort()));
+            return toPayload(agentConnectionRepository.save(connection));
+        }
+
+        private String cleanEffort(String value) {
+            if (value == null || value.isBlank()) return null;
+            String cleaned = value.strip();
+            if (cleaned.length() > 32) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid effort");
+            return cleaned;
+        }
+
+        private String cleanModel(String value) {
+            if (value == null || value.isBlank()) return null;
+            String cleaned = value.strip();
+            if (cleaned.length() > 120 || cleaned.equalsIgnoreCase("default"))
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid model");
+            return cleaned;
         }
 
         /** Creates a separate account link for every completed authorization. */
@@ -368,7 +403,8 @@ public class AgentConnectionFeature {
                     .orElse(connection.getProvider());
             return new AgentConnectionPayload(connection.getId(), connection.getProvider(), label, connection.getName(), connection.getMode(),
                     connection.getAccountLabel(), connection.getScope(), connection.getConnectedAt(),
-                    connection.getAccessTokenExpiresAt(), connection.isStale());
+                    connection.getAccessTokenExpiresAt(), connection.isStale(), connection.getSessionModel(),
+                    connection.getSessionEffort(), connection.getDeploymentModel(), connection.getDeploymentEffort());
         }
     }
 
@@ -404,6 +440,18 @@ public class AgentConnectionFeature {
 
         @Column(name = "name", length = 100)
         private String name;
+
+        @Column(name = "session_model", length = 120)
+        private String sessionModel;
+
+        @Column(name = "session_effort", length = 32)
+        private String sessionEffort;
+
+        @Column(name = "deployment_model", length = 120)
+        private String deploymentModel;
+
+        @Column(name = "deployment_effort", length = 32)
+        private String deploymentEffort;
 
         /**
          * AES-256-GCM ciphertext produced by {@code Crypto.SecretBox}, never a usable credential.
@@ -459,7 +507,8 @@ public class AgentConnectionFeature {
      */
     public record AgentConnectionPayload(UUID id, String provider, String label, String name, String mode, String accountLabel,
                                          String scope, OffsetDateTime connectedAt, OffsetDateTime expiresAt,
-                                         boolean stale) {
+                                         boolean stale, String sessionModel, String sessionEffort,
+                                         String deploymentModel, String deploymentEffort) {
     }
 
     /** Where the browser sends the player to authorize. Nothing else is needed to complete the callback. */
@@ -470,7 +519,9 @@ public class AgentConnectionFeature {
      * A usable credential, handed only to another internal service. The single place, across every
      * payload in this feature, where a raw token is ever serialized.
      */
-    public record CredentialPayload(String provider, String mode, String token, OffsetDateTime expiresAt, UUID connectionId) {
+    public record CredentialPayload(String provider, String mode, String token, OffsetDateTime expiresAt, UUID connectionId,
+                                    String sessionModel, String sessionEffort, String deploymentModel,
+                                    String deploymentEffort) {
     }
 
     /** One provider this application knows how to link, and whether OAuth is actually usable for it. */
@@ -495,5 +546,9 @@ public class AgentConnectionFeature {
     }
 
     public record RenameRequest(@NotBlank String name) {
+    }
+
+    public record DefaultModelsRequest(String sessionModel, String sessionEffort,
+                                       String deploymentModel, String deploymentEffort) {
     }
 }

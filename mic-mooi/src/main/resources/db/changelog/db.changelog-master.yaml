@@ -27,3 +27,7 @@ databaseChangeLog:
       file: db/changelog/changes/013-multiple-agent-connections.yaml
   - include:
       file: db/changelog/changes/014-agent-connections-player-connected-index.yaml
+  - include:
+      file: db/changelog/changes/015-agent-default-models.yaml
+  - include:
+      file: db/changelog/changes/016-agent-default-efforts.yaml

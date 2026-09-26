@@ -431,9 +431,9 @@ class ClaudeAgentRuntime:
     _catalogs: ClassVar[dict[str, tuple[float, dict[str, Any]]]] = {}
 
     @classmethod
-    async def load_configuration(cls, credential: Credential) -> None:
+    async def load_configuration(cls, credential: Credential, refresh: bool = False) -> None:
         cached = cls._catalogs.get(credential.connection_id or '')
-        if cached and cached[0] > time.monotonic():
+        if not refresh and cached and cached[0] > time.monotonic():
             cls._catalog.set(cached[1])
             return
         with tempfile.TemporaryDirectory(prefix="mooi-claude-models-") as config_dir:
@@ -990,10 +990,10 @@ class CodexAgentRuntime:
             "id": "codex", "label": "Codex", "models": [], "defaultModel": "", "defaultEffort": None}
 
     @classmethod
-    async def load_configuration(cls, credential: Credential):
+    async def load_configuration(cls, credential: Credential, refresh: bool = False):
         from mic_sessions.shared import codex
         try:
-            cls._catalog.set(await codex.models(credential))
+            cls._catalog.set(await codex.models(credential, refresh=refresh))
         except Exception:
             raise ApiException(502, "Could not load Codex models. Check your connection and try again.") from None
 
@@ -1005,7 +1005,8 @@ class CodexAgentRuntime:
         if entry is None:
             raise ApiException.bad_request("Unsupported Codex model; refresh the model list")
         supported = entry["efforts"]
-        value = effort if effort is not None else entry.get("defaultEffort")
+        preferred = catalog.get("defaultEffort") if chosen == catalog["defaultModel"] else None
+        value = effort if effort is not None else preferred if preferred in supported else entry.get("defaultEffort")
         if value is not None and value not in supported:
             raise ApiException.bad_request("Unsupported effort for this model")
         return AgentConfig(chosen, value)
@@ -1302,13 +1303,15 @@ class StructuredTool:
 
 @dataclass(frozen=True)
 class StructuredOperation:
-    """Fresh one-shot context; no chat runtime, history, resume, model or effort selection.
+    """Fresh one-shot context; no chat runtime, history or resume.
 
     Schema and tool definitions are owned by the caller and must not be mutated during
     execution. The caller validates the returned object against its strict domain model.
     """
 
     credential: Credential = field(repr=False)
+    model: str
+    effort: str | None
     cwd: Path = field(repr=False)
     prompt: str = field(repr=False)
     output_schema: dict[str, Any] = field(repr=False)
@@ -1346,10 +1349,7 @@ class StructuredExecutor(Protocol):
     async def __call__(self, operation: StructuredOperation) -> dict[str, Any]: ...
 
 
-# This policy is intentionally independent of conversational configuration and environment.
-_STRUCTURED_MODEL = "claude-opus-5-5"
 # Deployment preparation is mechanical configuration work, not open-ended reasoning.
-_STRUCTURED_EFFORT = "medium"
 _STRUCTURED_FILE_TOOLS = ("Read", "Glob", "Grep", "Edit", "MultiEdit", "Write")
 _STRUCTURED_ACTIVITY_LIMIT = 4000
 
@@ -1481,7 +1481,7 @@ async def _execute_claude_structured(operation: StructuredOperation) -> dict[str
 
     with tempfile.TemporaryDirectory(prefix="mooi-deployment-claude-") as directory:
         options = ClaudeAgentOptions(
-            cwd=str(operation.cwd), model=_STRUCTURED_MODEL, effort=_STRUCTURED_EFFORT, fallback_model=None,
+            cwd=str(operation.cwd), model=operation.model, effort=operation.effort, fallback_model=None,
             resume=None, continue_conversation=False, session_store=_InMemoryTranscriptStore(),
             session_store_flush="eager", setting_sources=[], skills=[], plugins=[],
             settings=json.dumps({"disableAllHooks": True}), strict_mcp_config=True,
@@ -1557,7 +1557,7 @@ async def _execute_claude_structured(operation: StructuredOperation) -> dict[str
                     details = raw_details.lower()
                     LOG.warning(
                         "Deployment provider rejected model %s (%s): %s",
-                        _STRUCTURED_MODEL, message.error,
+                        operation.model, message.error,
                         redact_deployment_output(raw_details[:1000], (operation.credential.token,)),
                     )
                     unavailable = message.error == "invalid_request" and "model" in details and any(
@@ -1687,7 +1687,7 @@ async def _execute_codex_structured(operation: StructuredOperation) -> dict[str,
                 await operation.progress(StructuredProgress("preparing", "Preparing deployment configuration"))
                 thread = await client.call("thread_start", {
                     "cwd": str(working_directory), "approvalPolicy": "never", "sandbox": "read-only",
-                    "ephemeral": True, "dynamicTools": specs,
+                    "ephemeral": True, "dynamicTools": specs, "model": operation.model,
                     "developerInstructions": "Use only the provided tools. Their paths are relative to the repository. "
                     "Read root AGENTS.md/CLAUDE.md and applicable repository instructions with mooi_read_file. "
                     "Read files with mooi_read_file; "
@@ -1695,7 +1695,8 @@ async def _execute_codex_structured(operation: StructuredOperation) -> dict[str,
                     "Never ask questions. Finish by calling mooi_submit_result with the required object. "
                     "If configuration is missing, submit a structured failure.",
                 })
-                turn = await client.call("turn_start", thread.thread.id, operation.prompt, {"effort": "medium"})
+                turn_options = {"effort": operation.effort} if operation.effort else {}
+                turn = await client.call("turn_start", thread.thread.id, operation.prompt, turn_options)
                 async for method, payload in client.notifications(turn.turn.id):
                     if method == "turn/completed" and payload["turn"]["status"] != "completed":
                         raise StructuredOperationError("provider_unavailable", "Codex could not complete the operation")
@@ -1726,14 +1727,25 @@ class ProviderDescriptor:
     runtime_class: type[AgentRuntime]
     structured_executor: StructuredExecutor | None = None
 
-    async def prepare(self, caller, connection_id: str) -> None:
+    async def prepare(self, caller, connection_id: str, refresh: bool = False) -> None:
         loader = getattr(self.runtime_class, "load_configuration", None)
         if loader:
             from mic_sessions.shared.mooi import fetch_agent_credential
             credential = await fetch_agent_credential(caller, connection_id)
             if credential.provider != self.id:
                 raise ApiException.bad_request("The selected account belongs to another provider")
-            await loader(credential)
+            await loader(credential, refresh=refresh)
+            catalog = self.configuration()
+            selected = (credential.session_model if credential.session_model and any(
+                model["id"] == credential.session_model for model in catalog["models"]
+            ) else "" if credential.session_model else catalog["defaultModel"])
+            entry = next((model for model in catalog["models"] if model["id"] == selected), None)
+            efforts = entry["efforts"] if entry else []
+            preferred_effort = next((value for value in (
+                credential.session_effort, entry.get("defaultEffort") if entry else None,
+                catalog["defaultEffort"], *efforts) if value and value in efforts), None)
+            self.runtime_class._catalog.set({**catalog, "providerDefaultModel": catalog["defaultModel"],
+                                             "defaultModel": selected, "defaultEffort": preferred_effort})
 
     def configuration(self) -> dict[str, Any]:
         return self.runtime_class.configuration()

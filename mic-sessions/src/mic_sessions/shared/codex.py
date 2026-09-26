@@ -230,9 +230,9 @@ async def connected(account: Account, cwd: Path, handler=None, *, structured=Fal
                 raise
 
 
-async def models(credential: Credential) -> dict[str, Any]:
+async def models(credential: Credential, refresh: bool = False) -> dict[str, Any]:
     cached = _catalogs.get(credential.connection_id)
-    if cached and cached[0] > time.monotonic():
+    if not refresh and cached and cached[0] > time.monotonic():
         return cached[1]
     account = acquire(credential)
     try:

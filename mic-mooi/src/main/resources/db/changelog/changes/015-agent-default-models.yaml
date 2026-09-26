@@ -1,0 +1,14 @@
+databaseChangeLog:
+  - changeSet:
+      id: 015-agent-default-models
+      author: mooi
+      changes:
+        - addColumn:
+            tableName: agent_connections
+            columns:
+              - column:
+                  name: session_model
+                  type: varchar(120)
+              - column:
+                  name: deployment_model
+                  type: varchar(120)

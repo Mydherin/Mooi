@@ -5,6 +5,7 @@ import { ROUTES } from '@/app/routes';
 import { authenticatedFetch } from '@/features/auth/lib/authenticatedFetch';
 import { Card } from '@/shared/components/Card';
 import { buttonStyles } from '@/shared/styles/buttonStyles';
+import { AdminModelDefaults } from '@/features/agents/components/AdminModelDefaults';
 
 type PingState = 'loading' | 'ok' | 'error';
 
@@ -69,6 +70,8 @@ export const AdminPage = () => {
           )}
         </p>
       </Card>
+
+      {state === 'ok' && <AdminModelDefaults />}
 
       <Link to={ROUTES.projects} className={buttonStyles('ghost', 'sm', 'mt-6 -ml-3.5')}>
         <ArrowLeft className="size-4" />

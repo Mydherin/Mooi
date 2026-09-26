@@ -162,8 +162,8 @@ export const fetchFileDiff = async (sessionId: string, path: string): Promise<Fi
   return (await response.json()) as FileDiffPayload;
 };
 
-export const fetchSessionProvider = async (provider: string, connectionId: string): Promise<SessionProvider> => {
-  const response = await sessionsFetch(`/sessions/providers/${encodeURIComponent(provider)}?connectionId=${encodeURIComponent(connectionId)}`);
+export const fetchSessionProvider = async (provider: string, connectionId: string, refresh = false): Promise<SessionProvider> => {
+  const response = await sessionsFetch(`/sessions/providers/${encodeURIComponent(provider)}?connectionId=${encodeURIComponent(connectionId)}${refresh ? '&refresh=true' : ''}`);
   if (!response.ok) throw new Error(await apiErrorMessage(response, 'Could not load session models.'));
   return (await response.json()) as SessionProvider;
 };

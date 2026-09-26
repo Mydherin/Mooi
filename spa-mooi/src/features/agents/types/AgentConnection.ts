@@ -18,4 +18,8 @@ export interface AgentConnection {
   connectedAt: string;
   expiresAt: string | null;
   stale: boolean;
+  sessionModel: string | null;
+  sessionEffort: string | null;
+  deploymentModel: string | null;
+  deploymentEffort: string | null;
 }

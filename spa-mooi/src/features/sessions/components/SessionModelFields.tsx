@@ -17,6 +17,7 @@ export const SessionModelFields = ({ provider, model, effort, onModelChange, onE
     <label className="flex min-w-0 flex-col gap-2">
       <span className="text-xs font-medium text-ink-muted">Model</span>
       <select aria-label="Session model" className={style} value={model} onChange={(event) => onModelChange(event.target.value)}>
+        <option value="" disabled>Select a model</option>
         {provider.models.map((entry) => <option key={entry.id} value={entry.id}>{entry.label}</option>)}
       </select>
     </label>

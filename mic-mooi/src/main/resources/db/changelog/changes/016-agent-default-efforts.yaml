@@ -1,0 +1,14 @@
+databaseChangeLog:
+  - changeSet:
+      id: 016-agent-default-efforts
+      author: mooi
+      changes:
+        - addColumn:
+            tableName: agent_connections
+            columns:
+              - column:
+                  name: session_effort
+                  type: varchar(32)
+              - column:
+                  name: deployment_effort
+                  type: varchar(32)

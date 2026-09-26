@@ -992,9 +992,9 @@ async def _provision(session: Session, caller: Caller, project: mooi.Project) ->
 
 @router.get("/sessions/providers/{provider}")
 async def session_provider(provider: str, connectionId: UUID,
-                           caller: Annotated[Caller, Depends(current_caller)]) -> dict[str, Any]:
+                           caller: Annotated[Caller, Depends(current_caller)], refresh: bool = False) -> dict[str, Any]:
     descriptor = describe(provider)
-    await descriptor.prepare(caller, str(connectionId))
+    await descriptor.prepare(caller, str(connectionId), refresh=refresh)
     return descriptor.configuration()
 
 
@@ -2173,8 +2173,28 @@ async def _run_deployment_start(session: Session, caller: Caller, operation_id: 
                 except Exception:
                     LOG.debug("Background operation encountered an exception", exc_info=True)
                     raise StructuredOperationError("provider_unavailable", "Provider credential unavailable") from None
+                try:
+                    loader = getattr(describe(session.provider).runtime_class, "load_configuration")
+                    await loader(credential, refresh=True)
+                    catalog = describe(session.provider).configuration()
+                    available = {entry["id"] for entry in catalog["models"]}
+                    deployment_model = (credential.deployment_model if credential.deployment_model in available
+                                        else catalog["defaultModel"])
+                    if not deployment_model:
+                        raise StructuredOperationError("model_unavailable", "No deployment model available")
+                    model_entry = next(entry for entry in catalog["models"] if entry["id"] == deployment_model)
+                    efforts = model_entry.get("efforts") or []
+                    requested_effort = (credential.deployment_effort if not credential.deployment_model
+                                        or credential.deployment_model == deployment_model else None)
+                    deployment_effort = next((value for value in (
+                        requested_effort, model_entry.get("defaultEffort"), catalog.get("defaultEffort"),
+                        "medium", *efforts) if value and value in efforts), None)
+                except StructuredOperationError:
+                    raise
+                except Exception:
+                    raise StructuredOperationError("provider_unavailable", "Could not load deployment models") from None
                 result = await _execute_deployment_agent(session.provider, StructuredOperation(
-                    credential=credential, cwd=session.workspace,
+                    credential=credential, model=deployment_model, effort=deployment_effort, cwd=session.workspace,
                     prompt=_deployment_prompt(candidates)
                     + (f"\nPrevious managed attempt failed: {direct_error}. Diagnose and fix it."
                        if direct_error else ""),

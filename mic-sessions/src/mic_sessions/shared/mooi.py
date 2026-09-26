@@ -44,6 +44,10 @@ class Credential:
     expires_at: datetime | None
     connection_id: str | None = None
     save: Callable[[str], Awaitable[None]] | None = field(default=None, repr=False)
+    session_model: str | None = None
+    session_effort: str | None = None
+    deployment_model: str | None = None
+    deployment_effort: str | None = None
 
 
 def _bearer(caller: Caller) -> dict[str, str]:
@@ -132,6 +136,10 @@ async def fetch_agent_credential(caller: Caller, connection_id: str) -> Credenti
         mode=body["mode"],
         token=body["token"],
         connection_id=body.get("connectionId"),
+        session_model=body.get("sessionModel"),
+        session_effort=body.get("sessionEffort"),
+        deployment_model=body.get("deploymentModel"),
+        deployment_effort=body.get("deploymentEffort"),
         save=save if body["provider"] == "codex" else None,
         expires_at=datetime.fromisoformat(expires_at) if expires_at else None,
     )
