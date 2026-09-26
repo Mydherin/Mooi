@@ -5,6 +5,7 @@ import { sessionsFetch } from '@/features/sessions/lib/sessionsFetch';
 import type { ChangesSummary } from '@/features/sessions/types/ChangesSummary';
 import type { CreateSessionRequest } from '@/features/sessions/types/CreateSessionRequest';
 import type { FileDiffPayload } from '@/features/sessions/types/FileDiffPayload';
+import type { MergeResult } from '@/features/sessions/types/MergeResult';
 import type { SendMessageResponse } from '@/features/sessions/types/SendMessageResponse';
 import type { Session } from '@/features/sessions/types/Session';
 import type { SessionsResponse } from '@/features/sessions/types/SessionsResponse';
@@ -195,4 +196,26 @@ export const fetchWorkspaces = async (projectId: string): Promise<WorkspaceOverv
   const response = await sessionsFetch(workspacesPath(projectId));
   if (!response.ok) throw new Error(await apiErrorMessage(response, 'Could not load the workspaces.'));
   return (await response.json()) as WorkspaceOverview;
+};
+
+export const checkMerge = async (sessionId: string): Promise<MergeResult> => {
+  const response = await sessionsFetch(`${sessionPath(sessionId)}/merge/check`, { method: 'POST' });
+  if (!response.ok) throw new Error(await apiErrorMessage(response, 'Could not check the merge.'));
+  return (await response.json()) as MergeResult;
+};
+
+export const mergeSession = async (sessionId: string, message: string): Promise<MergeResult> => {
+  const response = await sessionsFetch(`${sessionPath(sessionId)}/merge`, {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify({ message }),
+  });
+  if (!response.ok) throw new Error(await apiErrorMessage(response, 'Could not merge this session.'));
+  return (await response.json()) as MergeResult;
+};
+
+export const resolveMergeConflicts = async (sessionId: string): Promise<SendMessageResponse> => {
+  const response = await sessionsFetch(`${sessionPath(sessionId)}/merge/resolve`, { method: 'POST' });
+  if (!response.ok) throw new Error(await apiErrorMessage(response, 'Could not start resolving the conflicts.'));
+  return (await response.json()) as SendMessageResponse;
 };

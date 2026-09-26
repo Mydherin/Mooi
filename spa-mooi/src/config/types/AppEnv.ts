@@ -8,6 +8,7 @@ export interface AppEnv {
   contactEmail: string;
   apiBaseUrl: string;
   sessionsBaseUrl: string;
+  sessionsRefreshMs: number;
   googleClientId: string;
   storagePrefix: string;
 }

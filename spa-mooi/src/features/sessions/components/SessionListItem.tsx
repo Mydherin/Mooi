@@ -17,7 +17,7 @@ export const SessionListItem = ({ session }: SessionListItemProps) => (
       className="flex items-center gap-3 px-1 py-3.5 transition hover:bg-surface-2 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand sm:gap-4 sm:px-2.5"
     >
       <span className="w-[108px] shrink-0">
-        <SessionStatusBadge status={session.status} />
+        <SessionStatusBadge status={session.status} deployment={session.deployment.state} />
       </span>
 
       <div className="min-w-0 flex-1">

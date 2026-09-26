@@ -699,10 +699,12 @@ class ClaudeAgentRuntime:
                 "CLAUDE_CODE_USE_VERTEX": "0",
                 "CLAUDE_CODE_USE_FOUNDRY": "0",
             },
-            # Keep interactive questions routed through the callback; ordinary tools are
-            # approved immediately there, without creating pending session requests.
+            # Full access: every tool is approved in the callback without creating a pending
+            # request, and no project setting can re-enable the bash sandbox. Only the agent's
+            # own questions reach the player.
             permission_mode="default",
             can_use_tool=self._can_use_tool,
+            sandbox={"enabled": False},
             include_partial_messages=True,
             # Native project discovery; cwd and these settings are not a host
             # filesystem boundary. Hooks and tools run as the service user.
@@ -974,8 +976,29 @@ class ClaudeAgentRuntime:
         )
 
 
-CODEX_CAPABILITIES = AgentCapabilities(streaming=True, thinking=True, permissions=True,
-                                      questions=True, interrupt=True)
+CODEX_CAPABILITIES = AgentCapabilities(streaming=True, thinking=True, questions=True, interrupt=True)
+
+# Full access, like the Claude adapter: Codex never asks for approvals and runs unsandboxed
+# inside the session's own clone. Only the agent's own questions reach the player.
+_CODEX_ACCESS = {"approvalPolicy": "never", "sandbox": "danger-full-access"}
+_CODEX_FILE_TOOLS = {"add": "Write", "delete": "Edit", "update": "Edit"}
+
+
+def _codex_file_steps(item: dict[str, Any]) -> list[tuple[str, str, dict[str, Any]]]:
+    """One `(id, tool, input)` per file of a Codex `fileChange` item, shaped like the Claude file
+    tools (`file_path`) so every provider renders an edit as its file name, never as `Edit`."""
+    identity = item.get("id") or uuid4().hex
+    steps = []
+    for index, change in enumerate(item.get("changes") or []):
+        path = change.get("path") if isinstance(change, dict) else None
+        if not isinstance(path, str) or not path:
+            continue
+        kind = change.get("kind") if isinstance(change.get("kind"), dict) else {}
+        operation = kind.get("type") if kind.get("type") in _CODEX_FILE_TOOLS else "update"
+        steps.append((f"{identity}:{index}", _CODEX_FILE_TOOLS[operation],
+                      {"file_path": kind.get("move_path") or path, "operation": operation,
+                       "diff": change.get("diff") or ""}))
+    return steps
 
 
 class CodexAgentRuntime:
@@ -1023,6 +1046,7 @@ class CodexAgentRuntime:
         self._loop = asyncio.get_running_loop()
         self._interrupted = False
         self._closing = False
+        self._file_steps: set[str] = set()
 
     async def _publish(self, event):
         await self._emit(event["type"], event["data"])
@@ -1166,9 +1190,7 @@ class CodexAgentRuntime:
         try:
             async with codex.connected(self._account, self._workspace, self._answer) as client:
                 self._client = client
-                params = {"cwd": str(self._workspace), "model": self._config.model,
-                          "approvalPolicy": "on-request", "approvalsReviewer": "user",
-                          "sandbox": "workspace-write"}
+                params = {"cwd": str(self._workspace), "model": self._config.model, **_CODEX_ACCESS}
                 thread = (await client.call("thread_resume", self._thread_id, params) if self._thread_id
                           else await client.call("thread_start", params))
                 self._thread_id = thread.thread.id
@@ -1225,8 +1247,10 @@ class CodexAgentRuntime:
                 await self._publish(assistant_message(identity, item.get("text", "")))
             elif kind == "reasoning" and done:
                 await self._publish(thinking_message(identity, "\n".join(item.get("summary") or item.get("content") or [])))
+            elif kind == "fileChange":
+                await self._file_change(item, done)
             elif kind not in ("agentMessage", "reasoning", "userMessage", "contextCompaction"):
-                name = {"commandExecution": "Bash", "fileChange": "Edit", "webSearch": "WebSearch"}.get(kind, kind or "Tool")
+                name = {"commandExecution": "Bash", "webSearch": "WebSearch"}.get(kind, kind or "Tool")
                 if not done:
                     await self._publish(tool_use(identity, name, _tool_title(name, item), item))
                 else:
@@ -1235,6 +1259,23 @@ class CodexAgentRuntime:
                                                    _result_summary(item.get("aggregatedOutput") or item)))
         elif method == "error" and not payload.get("willRetry"):
             await self._publish(agent_error("Codex reported an error. Retry or reconnect your account."))
+
+    async def _file_change(self, item, done):
+        """One step per changed file. The file list may only be complete once the patch applied, so a
+        file first seen on completion still gets its `tool.use` before its result."""
+        steps = _codex_file_steps(item)
+        failed = item.get("status") in ("failed", "declined")
+        for identity, name, input_data in steps:
+            if identity not in self._file_steps:
+                self._file_steps.add(identity)
+                await self._publish(tool_use(identity, name, _tool_title(name, input_data), input_data))
+            if done:
+                self._file_steps.discard(identity)
+                await self._publish(tool_result(identity, failed, _result_summary(input_data["diff"] or item.get("status") or "")))
+        if not steps and done:
+            identity = item.get("id") or uuid4().hex
+            await self._publish(tool_use(identity, "Edit", "File changes", {}))
+            await self._publish(tool_result(identity, failed, _result_summary(item)))
 
 
 @dataclass(frozen=True)

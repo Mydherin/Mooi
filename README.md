@@ -15,7 +15,7 @@ Monorepository. Each artifact lives in its own root-level directory.
 - [Bun](https://bun.sh) >= 1.3 (falls back to npm)
 - Java 25
 - [uv](https://docs.astral.sh/uv/) (Python package manager for `mic-sessions`)
-- `git` CLI (one independent clone per agent session)
+- `git` CLI >= 2.38 (one independent clone per agent session; `merge-tree --write-tree` backs Merge)
 - Docker Engine + Docker Compose V2 (data layer and session deployments)
 
 Maven is **not** required: `mic-mooi` ships the Maven Wrapper (`mvnw`) and the first
@@ -54,8 +54,9 @@ Links a GitHub account to an existing player. It never signs anyone in — sign-
 2. Enable **Expire user authorization tokens**: it is the only setup that issues refresh tokens,
    which is what keeps the link alive without asking the player to authorize again.
 3. Enable **Request user authorization (OAuth) during installation**, and grant **Repository
-   permissions → Metadata: Read-only** and **Contents: Read-only**: this is what lets an
-   installation be redeemed as a login and lets the app list the repositories it was granted.
+   permissions → Metadata: Read-only** and **Contents: Read and write**: this is what lets an
+   installation be redeemed as a login, list the repositories it was granted and push session
+   merges. Existing installations must accept the updated permissions on GitHub.
 4. Callback URL: `http://localhost:28471/account/github/callback` (pinned SPA dev port; `make`
    exports the matching `GITHUB_REDIRECT_URI` automatically).
 5. Generate a client secret, then set in `mic-mooi/.env`: `GITHUB_CLIENT_ID`,
@@ -143,9 +144,10 @@ Codex uses a private account directory and does not inherit the host's Codex log
 API keys. Turns sharing one Codex connection are serialized to coordinate refresh-token rotation.
 The current launcher supports macOS and Linux. Model availability still depends on the linked account.
 
-Claude runs locally with the service user's permissions. Its working directory and private
-per-runtime configuration directory do not restrict access to the host. Run the service under an
-account whose access is appropriate for the repositories, hooks and tools you enable.
+Both agents run in full access: tools and commands never ask for approval and are not sandboxed;
+only the agent's own questions reach the player. They run locally with the service user's
+permissions, and their working directory does not restrict access to the host. Run the service
+under an account whose access is appropriate for the repositories, hooks and tools you enable.
 
 Commit native project configuration to the repository: `CLAUDE.md`, `.claude/rules/`,
 `.claude/skills/`, `.claude/commands/`, `.claude/agents/`, project settings/hooks and `.mcp.json`.
@@ -154,6 +156,20 @@ credentials on the host; native MCP approvals still apply. A root `.claude-plugi
 loads that repository as a local plugin. Marketplace plugins require installation and availability
 in the CLI's runtime state; the service does not copy the user's global Claude configuration or
 install plugin dependencies automatically.
+
+### Session merges
+
+**Merge** appears in a session header once its workspace has changes. It fetches the project's
+default branch and dry-runs the merge in memory; the checkout is never touched.
+
+- No conflicts: asks for a mandatory commit title, squashes the session's changes onto the default
+  branch as one commit authored by the linked GitHub account (noreply address) and pushes it —
+  never forced. The session branch then continues from that commit.
+- Conflicts: the control becomes **Resolve conflicts**. It clears the conversation, restarts the
+  agent and sends it a prompt to merge the default branch in, preserving both sides' features.
+  Merge again once the agent has committed the result.
+
+Branch protection rules on the default branch still apply to the push.
 
 ### Session deployments
 
@@ -330,6 +346,7 @@ All variables must be prefixed with `VITE_`.
 | `VITE_CONTACT_EMAIL` | Contact email |
 | `VITE_API_BASE_URL` | mic-mooi base URL |
 | `VITE_SESSIONS_BASE_URL` | mic-sessions base URL |
+| `VITE_SESSIONS_REFRESH_SECONDS` | Live session status refresh interval |
 | `VITE_GOOGLE_CLIENT_ID` | Google OAuth2 client id |
 | `VITE_STORAGE_PREFIX` | Local storage key prefix |
 

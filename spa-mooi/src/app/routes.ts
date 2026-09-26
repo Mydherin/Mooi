@@ -8,6 +8,7 @@ export const ROUTES = {
   projects: '/projects',
   project: '/projects/:projectId',
   session: '/projects/:projectId/sessions/:sessionId',
+  sessions: '/sessions',
   account: '/account',
   githubCallback: '/account/github/callback',
   agentCallback: '/account/agents/:provider/callback',

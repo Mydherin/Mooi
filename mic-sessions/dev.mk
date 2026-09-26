@@ -8,6 +8,9 @@ ARTIFACT_URL := http://localhost:$(ARTIFACT_PORT)
 ARTIFACT_HEALTH := $(ARTIFACT_URL)/health
 ARTIFACT_SERVICES :=
 ARTIFACT_NEEDS := mic-mooi
+# Open SSE streams never end on their own: cut them after this many seconds so the
+# lifespan cleanup (sessions, runtimes, deployments) starts right away.
+SESSIONS_GRACEFUL_SHUTDOWN_SECONDS ?= 5
 
 # mic-sessions/shared/env.py loads mic-sessions/.env then the root .env by
 # itself, so its configuration does not need to be exported here.
@@ -31,14 +34,15 @@ __sessions_boot_budget="$$(cd "$$ARTIFACT_DIR" && PYTHONPATH=src .venv/bin/pytho
 if [ "$$DEV_HEALTH_TIMEOUT" -lt "$$__sessions_boot_budget" ]; then
   DEV_HEALTH_TIMEOUT="$$__sessions_boot_budget"
 fi
-artifact_spawn "uv run uvicorn mic_sessions.main:app --host 0.0.0.0 --port $$ARTIFACT_PORT"
+artifact_spawn "uv run uvicorn mic_sessions.main:app --host 0.0.0.0 --port $$ARTIFACT_PORT --timeout-graceful-shutdown $(SESSIONS_GRACEFUL_SHUTDOWN_SECONDS)"
 endef
 
 define stop
-# Allow sequential session rollback + stop + final cleanup before escalating to KILL.
+# Budget the real pending work, not the worst case: connection cut-off, one stop per
+# deployment actually on disk, plus a fixed margin for sessions. KILL after that.
 # Read the same .env settings as the service; this does not start the application.
 if [ -x "$$ARTIFACT_DIR/.venv/bin/python" ]; then
-  __sessions_stop_budget="$$(cd "$$ARTIFACT_DIR" && PYTHONPATH=src .venv/bin/python -c 'from mic_sessions.shared.env import Settings; s=Settings(); print(s.max_sessions * (5 * s.deployment_stop_timeout_seconds + 30) + 30)')" || return 1
+  __sessions_stop_budget="$$(cd "$$ARTIFACT_DIR" && PYTHONPATH=src .venv/bin/python -c 'from mic_sessions.shared.env import Settings; s=Settings(); count=sum(1 for p in (s.workspace_root / "deployments").glob("*") if not p.name.startswith(".")); print($(SESSIONS_GRACEFUL_SHUTDOWN_SECONDS) + count * s.deployment_stop_timeout_seconds + 30)')" || return 1
   if [ "$$DEV_STOP_TIMEOUT" -lt "$$__sessions_stop_budget" ]; then
     DEV_STOP_TIMEOUT="$$__sessions_stop_budget"
   fi

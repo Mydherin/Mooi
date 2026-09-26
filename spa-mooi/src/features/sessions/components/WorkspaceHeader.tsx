@@ -1,9 +1,10 @@
-import { DeployButton } from './deploy/DeployButton';
 import { Link } from 'react-router-dom';
 import { ChevronLeft, GitBranch } from 'lucide-react';
 import { projectPath } from '@/app/paths';
 import type { Project } from '@/features/projects/types/Project';
 import type { Session } from '@/features/sessions/types/Session';
+import { DeployButton } from '@/features/sessions/components/deploy/DeployButton';
+import { MergeButton } from '@/features/sessions/components/merge/MergeButton';
 import { SessionActionsMenu } from '@/features/sessions/components/SessionActionsMenu';
 import { WorkspacePathLabel } from '@/features/sessions/components/WorkspacePathLabel';
 import { Tooltip } from '@/shared/components/Tooltip';
@@ -18,7 +19,7 @@ interface WorkspaceHeaderProps {
 
 /**
  * The branch is the session's name, so it gets every pixel the controls do not need: icon-only
- * deploy on phones, secondary actions (close included) folded into one menu, and up to two lines
+ * merge and deploy on phones, secondary actions (close included) folded into one menu, and up to two lines
  * for long branch names before truncating.
  */
 export const WorkspaceHeader = ({
@@ -51,7 +52,8 @@ export const WorkspaceHeader = ({
       <WorkspacePathLabel path={session.workspacePath} className="mt-0.5" focusable />
     </div>
 
-    <div className="flex shrink-0 items-center gap-1 sm:max-w-[45%] sm:shrink sm:gap-2">
+    <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+      <MergeButton key={`merge-${session.id}`} session={session} disabled={closeBusy} />
       {deployEnabled ? <DeployButton key={session.id} session={session} disabled={closeBusy} /> : null}
       <SessionActionsMenu session={session} onClose={onClose} closeBusy={closeBusy} />
     </div>

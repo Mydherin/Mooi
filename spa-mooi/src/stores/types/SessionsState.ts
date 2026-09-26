@@ -13,6 +13,8 @@ export interface SessionsState {
   setDeploymentLogsOpen: (sessionId: string, open: boolean) => void;
   toggleDeploymentLogs: (sessionId: string) => void;
   setSessions: (sessions: Session[]) => void;
+  /** Replaces the sessions in scope (one project, or every one) with a fresh server list, dropping the ones gone. */
+  syncSessions: (sessions: Session[], projectId?: string) => void;
   upsertSession: (session: Session) => void;
   removeSession: (sessionId: string) => void;
   ensureTranscript: (sessionId: string) => void;

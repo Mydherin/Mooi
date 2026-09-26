@@ -47,6 +47,9 @@ export const applySessionToSession = (session: Session, event: SessionEvent): Se
   } else if (type === 'permission.resolved' || type === 'question.resolved') {
     patch.status = 'working';
     patch.pending = null;
+  } else if (type === 'session.cleared') {
+    patch.pending = null;
+    patch.usage = { ...session.usage, context: null };
   } else if (type === 'turn.result') {
     patch.status = 'ready';
     patch.pending = null;

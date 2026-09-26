@@ -50,6 +50,14 @@ class Credential:
     deployment_effort: str | None = None
 
 
+@dataclass(frozen=True)
+class GitIdentity:
+    """Author of the commits this service writes on the player's behalf."""
+
+    name: str
+    email: str
+
+
 def _bearer(caller: Caller) -> dict[str, str]:
     return {"Authorization": f"Bearer {caller.token}"}
 
@@ -111,6 +119,26 @@ async def fetch_github_token(caller: Caller) -> str:
         "No GitHub account linked",
     )
     return body["token"]
+
+
+async def fetch_github_identity(caller: Caller) -> GitIdentity:
+    """The linked GitHub account as a commit author, using GitHub's private noreply address so the
+    player's real email is never written into repository history."""
+    settings = get_settings()
+    body = await _get(
+        get_http_client(),
+        f"{settings.mooi_api_base_url}/me/github/connection",
+        _bearer(caller),
+        "No GitHub account linked",
+    )
+    connection = body.get("connection")
+    if not connection:
+        raise ApiException.not_found("No GitHub account linked")
+    login = connection["login"]
+    return GitIdentity(
+        name=connection.get("name") or login,
+        email=f"{connection['githubUserId']}+{login}@users.noreply.github.com",
+    )
 
 
 async def fetch_agent_credential(caller: Caller, connection_id: str) -> Credential:

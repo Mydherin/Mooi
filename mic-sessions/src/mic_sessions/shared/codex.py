@@ -126,10 +126,10 @@ class Client:
 
 
 class Account:
-    """One private SDK home and refresh lock per stored connection, shared by its conversations.
+    """One private SDK home and credential lock per stored connection.
 
-    A turn owns the lock until refreshed auth is sealed upstream. This prevents simultaneous
-    refresh-token rotations across sessions. No host Codex account/config is inherited.
+    Startup refreshes and credential persistence are serialized across conversations.
+    Turns run concurrently. No host Codex account/config is inherited.
     """
 
     def __init__(self, credential: Credential):
@@ -208,26 +208,27 @@ def release(account: Account):
 
 @asynccontextmanager
 async def connected(account: Account, cwd: Path, handler=None, *, structured=False):
-    async with account.lock:
-        client = Client(account.home, cwd, handler, structured=structured)
-        try:
+    client = Client(account.home, cwd, handler, structured=structured)
+    try:
+        async with account.lock:
             await client.start()
-            # Refresh before a potentially long turn, while the caller's Mooi token is fresh.
+            # Serialize refresh-token rotation and storage, not the entire turn.
             await client.call("account_read", {"refreshToken": True})
             await account.persist()
-            yield client
-        finally:
-            async def cleanup():
-                try:
-                    await client.close()
-                finally:
-                    await account.persist()
-            closing = asyncio.create_task(cleanup())
+        yield client
+    finally:
+        async def cleanup():
             try:
-                await asyncio.shield(closing)
-            except asyncio.CancelledError:
-                await closing
-                raise
+                await client.close()
+            finally:
+                async with account.lock:
+                    await account.persist()
+        closing = asyncio.create_task(cleanup())
+        try:
+            await asyncio.shield(closing)
+        except asyncio.CancelledError:
+            await closing
+            raise
 
 
 async def models(credential: Credential, refresh: bool = False) -> dict[str, Any]:
@@ -267,7 +268,7 @@ async def models(credential: Credential, refresh: bool = False) -> dict[str, Any
 
 
 async def quota(account: Account, client: Client) -> dict[str, Any] | None:
-    """Called under the account lock after a turn, never by a polling timer."""
+    """Read bounded account usage after a turn or at session startup."""
     from openai_codex.generated.v2_all import GetAccountRateLimitsResponse, RateLimitSnapshot
 
     if time.monotonic() - account.quota_checked_at < 60:

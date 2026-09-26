@@ -12,6 +12,7 @@ import { SessionList } from '@/features/sessions/components/SessionList';
 import { WorkspacesOverview } from '@/features/sessions/components/workspaces/WorkspacesOverview';
 import { useProjectSessions } from '@/features/sessions/hooks/useProjectSessions';
 import { useProjectWorkspaces } from '@/features/sessions/hooks/useProjectWorkspaces';
+import { useSessionsSync } from '@/features/sessions/hooks/useSessionsSync';
 import { Card } from '@/shared/components/Card';
 import { EmptyState } from '@/shared/components/EmptyState';
 import { Button } from '@/shared/components/Button';
@@ -34,12 +35,13 @@ export const ProjectPage = () => {
   const { projects, status, busy, remove } = useProjects();
   const project = findProject(projects, projectId);
   const { sessions, busy: sessionBusy, actionError, create, clearActionError } = useProjectSessions(project?.id);
+  useSessionsSync(project?.id, Boolean(project));
   const { connections } = useAgentConnections();
   const [newSessionOpen, setNewSessionOpen] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = searchParams.get('tab') === WORKSPACES_TAB ? WORKSPACES_TAB : 'sessions';
   const sessionsRevision = useMemo(
-    () => sessions.map((session) => `${session.id}:${session.status}:${session.workspacePath ?? ''}`).join('|'),
+    () => sessions.map((session) => `${session.id}:${session.status}:${session.deployment.state}:${session.workspacePath ?? ''}`).join('|'),
     [sessions],
   );
   const workspaces = useProjectWorkspaces(tab === WORKSPACES_TAB ? project?.id : undefined, sessionsRevision);

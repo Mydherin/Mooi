@@ -1,5 +1,6 @@
 import { memo } from 'react';
 import { CircleAlert } from 'lucide-react';
+import { NoticeItem } from './NoticeItem';
 import { TranscriptContent } from './TranscriptContent';
 import { ThinkingIndicator } from '@/features/sessions/components/chat/ThinkingIndicator';
 import { TurnFooter } from '@/features/sessions/components/chat/TurnFooter';
@@ -30,6 +31,10 @@ export const ChatMessageItem = memo(function ChatMessageItem({ entry, providerLa
         <span className="min-w-0 flex-1 break-words">{entry.text}</span>
       </li>
     );
+  }
+
+  if (entry.kind === 'notice') {
+    return <NoticeItem entry={entry} />;
   }
 
   if (entry.kind === 'user') {

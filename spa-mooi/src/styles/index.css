@@ -27,16 +27,19 @@
   --warning: #674d1b;
   --danger: #ab1300;
   --info: #1e54b7;
+  --accent: #5b3fa8;
 
   --success-dot: #06c167;
   --warning-dot: #ffc043;
   --danger-dot: #e11900;
   --info-dot: #276ef1;
+  --accent-dot: #7356bf;
 
   --success-soft: #e6f2ed;
   --warning-soft: #fffaf0;
   --danger-soft: #ffefed;
   --info-soft: #eff3fe;
+  --accent-soft: #f3f0fa;
 }
 
 .dark {
@@ -64,16 +67,19 @@
   --warning: #ffc043;
   --danger: #ff8c7a;
   --info: #a0bff8;
+  --accent: #c1b2eb;
 
   --success-dot: #06c167;
   --warning-dot: #ffc043;
   --danger-dot: #e11900;
   --info-dot: #276ef1;
+  --accent-dot: #7356bf;
 
   --success-soft: color-mix(in oklab, #06c167 18%, transparent);
   --warning-soft: color-mix(in oklab, #ffc043 18%, transparent);
   --danger-soft: color-mix(in oklab, #e11900 22%, transparent);
   --info-soft: color-mix(in oklab, #276ef1 22%, transparent);
+  --accent-soft: color-mix(in oklab, #7356bf 24%, transparent);
 }
 
 @theme inline {
@@ -101,16 +107,19 @@
   --color-warning: var(--warning);
   --color-danger: var(--danger);
   --color-info: var(--info);
+  --color-accent: var(--accent);
 
   --color-success-dot: var(--success-dot);
   --color-warning-dot: var(--warning-dot);
   --color-danger-dot: var(--danger-dot);
   --color-info-dot: var(--info-dot);
+  --color-accent-dot: var(--accent-dot);
 
   --color-success-soft: var(--success-soft);
   --color-warning-soft: var(--warning-soft);
   --color-danger-soft: var(--danger-soft);
   --color-info-soft: var(--info-soft);
+  --color-accent-soft: var(--accent-soft);
 
   --color-ring: var(--brand);
 }

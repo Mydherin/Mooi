@@ -38,7 +38,7 @@ export const WorkspaceCard = ({ projectId, workspace, previewsEnabled }: Workspa
           </p>
         </div>
         <span className="w-[108px] shrink-0">
-          <SessionStatusBadge status={workspace.status} />
+          <SessionStatusBadge status={workspace.status} deployment={workspace.deploymentState} />
         </span>
       </div>
 

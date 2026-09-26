@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { closeSession, createSession, fetchSessions } from '@/features/sessions/api/sessionsApi';
+import { useCallback, useMemo, useState } from 'react';
+import { closeSession, createSession } from '@/features/sessions/api/sessionsApi';
 import type { CreateSessionRequest } from '@/features/sessions/types/CreateSessionRequest';
 import type { Session } from '@/features/sessions/types/Session';
 import { useSessionsStore } from '@/stores/sessionsStore';
@@ -9,20 +9,16 @@ const NO_SESSIONS: Session[] = [];
 
 interface UseProjectSessions {
   sessions: Session[];
-  loading: boolean;
-  error: string | null;
   busy: boolean;
   actionError: string | null;
   create: (request: CreateSessionRequest) => Promise<Session | null>;
   close: (sessionId: string) => Promise<boolean>;
-  reload: () => void;
   clearActionError: () => void;
 }
 
 /**
- * A project's sessions, plus the actions that change them. Loaded per project rather than once for
- * the whole shell (unlike `useProjectsSync`): there is no screen that lists every session across
- * every project, so nothing needs them before the project screen mounts.
+ * A project's sessions as the store holds them, plus the actions that change them. Loading and
+ * keeping them live belongs to `useSessionsSync`, mounted by the screens that list them.
  */
 export const useProjectSessions = (projectId: string | undefined): UseProjectSessions => {
   /**
@@ -35,31 +31,8 @@ export const useProjectSessions = (projectId: string | undefined): UseProjectSes
     () => (projectId ? allSessions.filter((session) => session.projectId === projectId) : NO_SESSIONS),
     [allSessions, projectId],
   );
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-
-  const load = useCallback(() => {
-    if (!projectId) {
-      setLoading(false);
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-
-    fetchSessions(projectId)
-      .then((loaded) => {
-        loaded.forEach((session) => useSessionsStore.getState().upsertSession(session));
-      })
-      .catch((failure: Error) => setError(failure.message))
-      .finally(() => setLoading(false));
-  }, [projectId]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
 
   const create = useCallback(async (request: CreateSessionRequest): Promise<Session | null> => {
     setBusy(true);
@@ -100,5 +73,5 @@ export const useProjectSessions = (projectId: string | undefined): UseProjectSes
 
   const clearActionError = useCallback(() => setActionError(null), []);
 
-  return { sessions, loading, error, busy, actionError, create, close, reload: load, clearActionError };
+  return { sessions, busy, actionError, create, close, clearActionError };
 };

@@ -107,6 +107,8 @@ EVENT_SESSION_CONFIGURATION = "session.configuration"
 EVENT_DEPLOYMENT_UPDATED = "deployment.updated"
 EVENT_DEPLOYMENT_PROGRESS = "deployment.progress"
 EVENT_DEPLOYMENT_ACTIVITY = "deployment.activity"
+EVENT_SESSION_CLEARED = "session.cleared"
+EVENT_MERGE_COMPLETED = "merge.completed"
 
 # --- wire contracts ---------------------------------------------------------------------------
 
@@ -426,6 +428,20 @@ class FileDiffPayload(BaseModel):
     diff: str
 
 
+MergeState = Literal["clean", "conflicts", "up_to_date", "merged"]
+
+
+class MergeRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=200)
+
+
+class MergePayload(BaseModel):
+    state: MergeState
+    targetBranch: str
+    conflicts: list[str]
+    commit: str | None = None
+
+
 # --- in-memory session record ------------------------------------------------------------------
 
 
@@ -681,6 +697,11 @@ def record(session: Session, type_: str, data: dict[str, Any]) -> Event:
         session.pending = None
         session.interactions.clear()
         session.turn_id = None
+    elif type_ == EVENT_SESSION_CLEARED:
+        session.pending = None
+        session.interactions.clear()
+        session.turn_id = None
+        session.usage = {**session.usage, "context": None}
     elif type_ == EVENT_SESSION_CONFIGURATION:
         if data.get("model") and data["model"] != session.config.model:
             session.usage = {**session.usage, "context": None}
@@ -1168,16 +1189,21 @@ async def send_message(
             raise ApiException.bad_gateway("The agent could not apply the selected configuration") from None
         if session.status != STATUS_READY or session.closing or session.deployment.state == "starting":
             raise ApiException.conflict("The session is not ready to accept a message")
-        event = _record_event(session, message_user(uuid4().hex, body.text))
-        _record_status(session, STATUS_WORKING)
-        try:
-            await runtime.send(body.text)
-        except Exception:
-            LOG.debug("Background operation encountered an exception", exc_info=True)
-            record(session, "error", {"message": "The message could not be delivered to the agent"})
-            _record_status(session, STATUS_FAILED, "Agent transport failed")
-            raise ApiException.bad_gateway("The message could not be delivered") from None
-        return SendMessageResponse(seq=event.seq)
+        return await _deliver(session, runtime, body.text)
+
+
+async def _deliver(session: Session, runtime: AgentRuntime, text: str) -> SendMessageResponse:
+    """Records the user message and hands it to the agent; the caller holds the operation lock."""
+    event = _record_event(session, message_user(uuid4().hex, text))
+    _record_status(session, STATUS_WORKING)
+    try:
+        await runtime.send(text)
+    except Exception:
+        LOG.debug("Background operation encountered an exception", exc_info=True)
+        record(session, "error", {"message": "The message could not be delivered to the agent"})
+        _record_status(session, STATUS_FAILED, "Agent transport failed")
+        raise ApiException.bad_gateway("The message could not be delivered") from None
+    return SendMessageResponse(seq=event.seq)
 
 
 @router.patch("/sessions/{session_id}/configuration")
@@ -1291,6 +1317,116 @@ async def get_file_diff(
         diff = await workspaces.file_diff(session.workspace, session.base_commit, path)
         return FileDiffPayload(path=path, diff=diff)
 
+
+
+# --- merge into the default branch -------------------------------------------------------------
+
+
+def _require_mergeable(session: Session) -> None:
+    """Merging reads the whole working tree, so no turn, question or deployment may be mid-flight."""
+    if session.workspace == _UNSET_PATH:
+        raise ApiException.conflict("The workspace is still being prepared")
+    if (session.status != STATUS_READY or session.closing or session.pending is not None
+            or session.deployment.state == "starting"):
+        raise ApiException.conflict("Wait for the agent to finish before merging")
+
+
+def _merge_payload(preview: workspaces.MergePreview, commit: str | None = None) -> MergePayload:
+    state: MergeState = ("merged" if commit else "conflicts" if preview.conflicts
+                         else "up_to_date" if preview.up_to_date else "clean")
+    return MergePayload(state=state, targetBranch=preview.target, conflicts=preview.conflicts, commit=commit)
+
+
+def _conflict_prompt(session: Session, preview: workspaces.MergePreview) -> str:
+    target = f"origin/{preview.target}"
+    base = preview.merge_base or f"$(git merge-base HEAD {target})"
+    files = "\n".join(f"- `{path}`" for path in preview.conflicts) or "- (none reported)"
+    return f"""Resolve the merge conflicts between this branch `{session.branch}` and `{preview.target}`.
+
+`{target}` has just been fetched; do not fetch, pull, push, rebase, reset or switch branches. Both branches were last in sync at commit `{base}`.
+
+Files expected to conflict:
+{files}
+
+1. Commit any pending change on `{session.branch}` so nothing is lost.
+2. Analyze both branches since `{base}`: read `git log` and `git diff` for `{base}..HEAD` and for `{base}..{target}` to understand every feature each side added.
+3. Run `git merge --no-ff --no-commit {target}`.
+4. Resolve every conflict preserving the features of both branches, making whatever technical and functional decisions are needed so both keep working. When both sides implement the same feature, keep the most complete version using the cleanest, most maintainable and scalable approach.
+5. Make sure no conflict markers remain and the project still builds and its checks pass where practical, then commit the merge.
+6. Finish with a short summary of the decisions you took."""
+
+
+async def _reset_conversation(session: Session, caller: Caller) -> AgentRuntime:
+    """Replaces the runtime with a fresh one on the same workspace: a new conversation with no
+    context from the previous one, for every provider alike."""
+    previous = _runtime(session)
+    credential = await mooi.fetch_agent_credential(caller, str(session.connection_id))
+    await previous.close()
+    session.runtime = None
+    record(session, EVENT_SESSION_CLEARED, {})
+    runtime = create_runtime(session.provider, credential, session.workspace, session.branch,
+                             _emitter(session), _asker(session), session.config)
+    session.runtime = runtime
+    try:
+        await runtime.start()
+    except Exception:
+        LOG.exception("Session %s could not restart its agent", session.id)
+        record(session, "error", {"message": "The agent could not be restarted. Close the session and start a new one."})
+        _record_status(session, STATUS_FAILED, "Agent restart failed")
+        raise ApiException.bad_gateway("The agent could not be restarted") from None
+    return runtime
+
+
+@router.post("/sessions/{session_id}/merge/check")
+async def check_merge(session_id: UUID, caller: Annotated[Caller, Depends(current_caller)]) -> MergePayload:
+    """Dry-runs the merge against the freshly fetched default branch without touching the checkout."""
+    session = get_registry().get_for(caller, session_id)
+    token = await mooi.fetch_github_token(caller)
+    async with session.operation_lock:
+        _require_mergeable(session)
+        _touch_activity(session)
+        return _merge_payload(await workspaces.preview_merge(session.workspace, session.base_branch, token))
+
+
+@router.post("/sessions/{session_id}/merge")
+async def merge_session(
+    session_id: UUID, body: MergeRequest, caller: Annotated[Caller, Depends(current_caller)]
+) -> MergePayload:
+    """Squashes the session's work onto the default branch as one commit and pushes it. Conflicts
+    that appeared since the check are answered, not raised: the client offers resolution instead."""
+    session = get_registry().get_for(caller, session_id)
+    message = body.message.strip()
+    if not message:
+        raise ApiException.bad_request("The commit title cannot be blank")
+    token, identity = await asyncio.gather(mooi.fetch_github_token(caller), mooi.fetch_github_identity(caller))
+    async with session.operation_lock:
+        _require_mergeable(session)
+        _touch_activity(session)
+        async with session.changes_lock:
+            preview, commit = await workspaces.merge(session.workspace, session.base_branch, message, identity, token)
+        if commit is not None:
+            session.base_commit = commit
+            record(session, EVENT_MERGE_COMPLETED, {"targetBranch": preview.target, "commit": commit, "message": message})
+            _record_status(session, STATUS_READY)
+            _schedule_changes_refresh(session, debounce=False)
+        return _merge_payload(preview, commit)
+
+
+@router.post("/sessions/{session_id}/merge/resolve", status_code=status.HTTP_202_ACCEPTED)
+async def resolve_merge_conflicts(
+    session_id: UUID, caller: Annotated[Caller, Depends(current_caller)]
+) -> SendMessageResponse:
+    """Clears the conversation and asks the agent to merge the default branch in, resolving conflicts."""
+    session = get_registry().get_for(caller, session_id)
+    token, identity = await asyncio.gather(mooi.fetch_github_token(caller), mooi.fetch_github_identity(caller))
+    async with session.operation_lock:
+        _require_mergeable(session)
+        preview = await workspaces.preview_merge(session.workspace, session.base_branch, token)
+        if not preview.conflicts:
+            raise ApiException.conflict(f"There are no conflicts with {preview.target} anymore; merge it directly")
+        await workspaces.set_identity(session.workspace, identity)
+        runtime = await _reset_conversation(session, caller)
+        return await _deliver(session, runtime, _conflict_prompt(session, preview))
 
 
 # Capacity also includes orphaned/failed resources after a session leaves the registry.

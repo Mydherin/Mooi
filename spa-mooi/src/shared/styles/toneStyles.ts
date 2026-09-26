@@ -7,6 +7,7 @@ const tones: Record<Tone, string> = {
   warning: 'border-transparent bg-warning-soft text-warning',
   danger: 'border-transparent bg-danger-soft text-danger',
   info: 'border-transparent bg-info-soft text-info',
+  accent: 'border-transparent bg-accent-soft text-accent',
 };
 
 export const toneStyles = (tone: Tone): string => tones[tone];

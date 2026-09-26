@@ -16,10 +16,10 @@ import shutil
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from mic_sessions.shared.env import get_settings
-from mic_sessions.shared.mooi import Project
+from mic_sessions.shared.mooi import GitIdentity, Project
 from mic_sessions.shared.web import ApiException
 
 LOG = logging.getLogger("sessions")
@@ -27,6 +27,7 @@ LOG = logging.getLogger("sessions")
 _BRANCH_PATTERN = re.compile(r"^[A-Za-z0-9._\-/]{1,120}$")
 _CREDENTIAL_PATTERN = re.compile(r"//[^/@\s]*@")
 _NO_CREDENTIAL_HELPER = ("-c", "credential.helper=")
+_SNAPSHOT_IDENTITY = GitIdentity(name="Mooi", email="mooi@localhost")
 
 
 @dataclass(frozen=True)
@@ -48,6 +49,21 @@ class WorkspaceInspection:
 
 
 @dataclass(frozen=True)
+class MergePreview:
+    """What squashing the working tree onto the freshly fetched target would produce.
+
+    `tree` is the merged tree when `conflicts` is empty; `up_to_date` means the target already holds
+    every change, so there is nothing to publish. `merge_base` is the last commit both sides share.
+    """
+
+    target: str
+    tree: str
+    conflicts: list[str]
+    up_to_date: bool
+    merge_base: str | None
+
+
+@dataclass(frozen=True)
 class ChangedFile:
     path: str
     change: str
@@ -63,6 +79,11 @@ class ChangesSummary:
 
 
 _CHANGE_KINDS = {"A": "added", "M": "modified", "D": "deleted", "R": "renamed", "C": "renamed", "T": "modified"}
+
+
+def _identity_env(identity: GitIdentity) -> dict[str, str]:
+    return {"GIT_AUTHOR_NAME": identity.name, "GIT_AUTHOR_EMAIL": identity.email,
+            "GIT_COMMITTER_NAME": identity.name, "GIT_COMMITTER_EMAIL": identity.email}
 
 
 def _redact(text: str) -> str:
@@ -101,10 +122,11 @@ class Workspaces:
 
     # --- git ----------------------------------------------------------------------------------
 
-    async def _run(self, *args: str, cwd: Path | None = None, auth: str | None = None) -> tuple[int, str, str]:
+    async def _run(self, *args: str, cwd: Path | None = None, auth: str | None = None,
+                   extra_env: dict[str, str] | None = None) -> tuple[int, str, str]:
         """Runs one git command to completion and returns `(exit code, stdout, redacted stderr)`."""
         settings = get_settings()
-        env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+        env = {**os.environ, "GIT_TERMINAL_PROMPT": "0", **(extra_env or {})}
         if auth:
             encoded = base64.b64encode(f"x-access-token:{auth}".encode()).decode()
             env.update({"GIT_CONFIG_COUNT": "2", "GIT_CONFIG_KEY_0": "credential.helper",
@@ -133,9 +155,10 @@ class Workspaces:
             detail = detail.replace(auth, "***").replace(encoded, "***")
         return process.returncode or 0, stdout.decode("utf-8", "replace"), detail
 
-    async def _git(self, *args: str, cwd: Path | None = None, auth: str | None = None) -> str:
+    async def _git(self, *args: str, cwd: Path | None = None, auth: str | None = None,
+                   extra_env: dict[str, str] | None = None) -> str:
         """Runs one git command and returns its stdout, failing the request on a non-zero exit."""
-        code, stdout, detail = await self._run(*args, cwd=cwd, auth=auth)
+        code, stdout, detail = await self._run(*args, cwd=cwd, auth=auth, extra_env=extra_env)
         if code != 0:
             LOG.warning("git %s failed with %s: %s", args[0], code, detail or "no output")
             raise ApiException.bad_gateway(detail or "The git command failed")
@@ -245,6 +268,99 @@ class Workspaces:
             marker = directory / ".mooi-session"
             if marker.is_file() and not marker.is_symlink() and marker.read_text() == str(session_id):
                 await self.remove_workspace(session_id)
+
+    # --- merge into the target branch ----------------------------------------------------------
+
+    async def _fetch(self, workspace: Path, target: str, token: str) -> None:
+        await self.validate_branch(target)
+        await self._git(*_NO_CREDENTIAL_HELPER, "-C", str(workspace), "fetch", "--no-tags", "origin",
+                        f"+refs/heads/{target}:refs/remotes/origin/{target}", auth=token)
+
+    async def _snapshot(self, workspace: Path) -> str:
+        """Commits the working tree, untracked files included, as a dangling child of HEAD.
+
+        A throwaway index keeps the agent's own index and working tree untouched; copying the real
+        one first reuses its stat cache so unchanged files are not re-hashed.
+        """
+        if await self._git_ok("-C", str(workspace), "rev-parse", "-q", "--verify", "MERGE_HEAD"):
+            raise ApiException.conflict("A merge is in progress in the workspace; finish it in the chat first")
+        git_dir = Path((await self._git("-C", str(workspace), "rev-parse", "--absolute-git-dir")).strip())
+        index = git_dir / f"mooi-snapshot-{uuid4().hex}.index"
+        try:
+            if (git_dir / "index").is_file():
+                await asyncio.to_thread(shutil.copyfile, git_dir / "index", index)
+            env = {"GIT_INDEX_FILE": str(index), **_identity_env(_SNAPSHOT_IDENTITY)}
+            if not index.exists():
+                await self._git("-C", str(workspace), "read-tree", "HEAD", extra_env=env)
+            await self._git("-C", str(workspace), "add", "-A", extra_env=env)
+            tree = (await self._git("-C", str(workspace), "write-tree", extra_env=env)).strip()
+            return (await self._git("-C", str(workspace), "commit-tree", tree, "-p", "HEAD",
+                                    "-m", "Mooi snapshot", extra_env=env)).strip()
+        finally:
+            index.unlink(missing_ok=True)
+
+    async def set_identity(self, workspace: Path, identity: GitIdentity) -> None:
+        """Makes commits the agent writes in this clone carry the player's identity."""
+        await self._git("-C", str(workspace), "config", "user.name", identity.name)
+        await self._git("-C", str(workspace), "config", "user.email", identity.email)
+
+    async def preview_merge(self, workspace: Path, target: str, token: str) -> MergePreview:
+        """Fetches the target and merges the working tree into it in memory (`git merge-tree`),
+        never touching the checkout, so a conflict leaves the workspace exactly as it was."""
+        await self._fetch(workspace, target, token)
+        remote = f"refs/remotes/origin/{target}"
+        snapshot = await self._snapshot(workspace)
+        code, stdout, detail = await self._run(
+            "-C", str(workspace), "merge-tree", "--write-tree", "--name-only", "--no-messages", "-z",
+            snapshot, remote,
+        )
+        if code not in (0, 1):
+            LOG.warning("git merge-tree failed with %s: %s", code, detail or "no output")
+            raise ApiException.bad_gateway(detail or "The branches could not be compared")
+        fields = stdout.split("\0")
+        tree = fields[0].strip()
+        conflicts = list(dict.fromkeys(field for field in fields[1:] if field)) if code == 1 else []
+        target_tree = (await self._git("-C", str(workspace), "rev-parse", f"{remote}^{{tree}}")).strip()
+        base_code, base, _ = await self._run("-C", str(workspace), "merge-base", "HEAD", remote)
+        return MergePreview(
+            target=target,
+            tree=tree,
+            conflicts=conflicts,
+            up_to_date=not conflicts and tree == target_tree,
+            merge_base=(base.strip() or None) if base_code == 0 else None,
+        )
+
+    async def merge(
+        self, workspace: Path, target: str, message: str, identity: GitIdentity, token: str,
+    ) -> tuple[MergePreview, str | None]:
+        """Squashes the working tree onto the target as one commit and pushes it.
+
+        The push is a plain fast-forward of the fetched target: if someone pushed in between it is
+        rejected, never forced. On success the session branch is moved onto the published commit,
+        so the workspace keeps working from what the target now holds.
+        """
+        preview = await self.preview_merge(workspace, target, token)
+        if preview.conflicts or preview.up_to_date:
+            return preview, None
+        env = _identity_env(identity)
+        commit = (await self._git("-C", str(workspace), "commit-tree", preview.tree,
+                                  "-p", f"refs/remotes/origin/{target}", "-m", message, extra_env=env)).strip()
+        code, _, detail = await self._run(*_NO_CREDENTIAL_HELPER, "-C", str(workspace), "push", "--porcelain",
+                                          "origin", f"{commit}:refs/heads/{target}", auth=token)
+        if code != 0:
+            LOG.warning("git push failed with %s: %s", code, detail or "no output")
+            if "rejected" in detail or "non-fast-forward" in detail or "fetch first" in detail:
+                raise ApiException.conflict(f"{target} changed while merging. Try again.")
+            if "403" in detail or "denied" in detail.lower():
+                raise ApiException.forbidden(
+                    f"GitHub refused the push to {target}. Grant the GitHub App write access to "
+                    "repository contents and check the branch protection rules."
+                )
+            raise ApiException.bad_gateway(detail or "The merge could not be pushed")
+        await self._git("-C", str(workspace), "reset", "--hard", commit)
+        await self._git("-C", str(workspace), "update-ref", f"refs/remotes/origin/{target}", commit)
+        LOG.info("Workspace %s squashed into %s at %s", workspace, target, commit[:7])
+        return preview, commit
 
     # --- inspection ------------------------------------------------------------------------------
 
@@ -436,3 +552,17 @@ async def changes(workspace: Path, base_commit: str) -> ChangesSummary:
 
 async def file_diff(workspace: Path, base_commit: str, path: str) -> str:
     return await get_workspaces().file_diff(workspace, base_commit, path)
+
+
+async def preview_merge(workspace: Path, target: str, token: str) -> MergePreview:
+    return await get_workspaces().preview_merge(workspace, target, token)
+
+
+async def merge(
+    workspace: Path, target: str, message: str, identity: GitIdentity, token: str,
+) -> tuple[MergePreview, str | None]:
+    return await get_workspaces().merge(workspace, target, message, identity, token)
+
+
+async def set_identity(workspace: Path, identity: GitIdentity) -> None:
+    await get_workspaces().set_identity(workspace, identity)

@@ -37,6 +37,21 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
   setSessions: (sessions) => set((state) => ({ sessions: sessions.map((session) =>
     mergeSession(state.sessions.find((current) => current.id === session.id), session)) })),
 
+  syncSessions: (sessions, projectId) => set((state) => {
+    const inScope = (session: Session) => !projectId || session.projectId === projectId;
+    const incomingIds = new Set(sessions.map((session) => session.id));
+    const removed = state.sessions.filter((session) => inScope(session) && !incomingIds.has(session.id));
+    const byId = { ...state.byId };
+    removed.forEach((session) => delete byId[session.id]);
+    return {
+      byId,
+      sessions: [
+        ...sessions.map((session) => mergeSession(state.sessions.find((current) => current.id === session.id), session)),
+        ...state.sessions.filter((session) => !inScope(session)),
+      ],
+    };
+  }),
+
   setDeployment: (sessionId, snapshot) => set((state) => ({
     sessions: state.sessions.map((session) => session.id === sessionId
       ? { ...session, deployment: mergeDeployment(session.deployment, snapshot) } : session),

@@ -1,1 +1,1 @@
-export type Tone = 'neutral' | 'brand' | 'success' | 'warning' | 'danger' | 'info';
+export type Tone = 'neutral' | 'brand' | 'success' | 'warning' | 'danger' | 'info' | 'accent';

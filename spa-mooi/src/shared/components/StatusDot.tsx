@@ -13,6 +13,7 @@ const fills: Record<Tone, string> = {
   warning: 'bg-warning-dot',
   danger: 'bg-danger-dot',
   info: 'bg-info-dot',
+  accent: 'bg-accent-dot',
 };
 
 export const StatusDot = ({ tone, pulse = false }: StatusDotProps) => (

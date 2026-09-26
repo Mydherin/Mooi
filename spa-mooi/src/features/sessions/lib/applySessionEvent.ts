@@ -28,6 +28,7 @@ export const emptyTranscriptState = (): SessionTranscriptState => ({
   changesStatus: 'idle',
   changesError: null,
   changesEventSeq: 0,
+  lastMerge: null,
   lastSeq: 0,
   streamState: 'closed',
 });
@@ -190,6 +191,7 @@ export const applySessionEvent = (state: SessionTranscriptState, event: SessionE
   let changesStatus = state.changesStatus;
   let changesError = state.changesError;
   let changesEventSeq = state.changesEventSeq;
+  let lastMerge = state.lastMerge;
 
   switch (type) {
     case 'message.user': {
@@ -305,6 +307,18 @@ export const applySessionEvent = (state: SessionTranscriptState, event: SessionE
       }
       break;
     }
+    case 'session.cleared': {
+      entries = [{ id: `cleared-${seq}`, kind: 'notice', at, tone: 'info', title: 'Conversation cleared',
+        text: 'The agent starts a fresh conversation to resolve the merge conflicts.' }];
+      pending = [];
+      break;
+    }
+    case 'merge.completed': {
+      lastMerge = { targetBranch: String(data.targetBranch), commit: String(data.commit), seq };
+      entries = [...closeOpenEntry(entries), { id: `merge-${seq}`, kind: 'notice', at, tone: 'success',
+        title: `Merged into ${String(data.targetBranch)} · ${String(data.commit).slice(0, 7)}`, text: String(data.message ?? '') || null }];
+      break;
+    }
     case 'agent.activity': {
       if (data.kind === 'conversation_reset') {
         entries = withTextBlock(entries, seq, at, 'text', `activity-${seq}`,
@@ -331,6 +345,7 @@ export const applySessionEvent = (state: SessionTranscriptState, event: SessionE
     changesStatus,
     changesError,
     changesEventSeq,
+    lastMerge,
     lastSeq: seq,
   };
 };

@@ -7,6 +7,8 @@ export type SessionEventType =
   | 'session.usage'
   | 'session.sync'
   | 'history.reset'
+  | 'session.cleared'
+  | 'merge.completed'
   | 'agent.activity'
   | 'message.user'
   | 'assistant.delta'
