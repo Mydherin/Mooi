@@ -3,6 +3,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   answerPermission,
   answerQuestion,
+  clearSessionConversation,
+  compactSession,
   fetchChanges,
   fetchSession,
   fetchSessionProvider,
@@ -22,6 +24,8 @@ interface UseSession {
   actionError: string | null;
   send: (text: string) => Promise<boolean>;
   interrupt: () => Promise<boolean>;
+  compact: () => Promise<boolean>;
+  clearConversation: () => Promise<boolean>;
   allowPermission: (requestId: string, updatedInput?: Record<string, unknown>) => Promise<boolean>;
   denyPermission: (requestId: string, message?: string) => Promise<boolean>;
   answer: (requestId: string, answers: Record<string, string | string[]>, response?: string) => Promise<boolean>;
@@ -171,6 +175,18 @@ export const useSession = (sessionId: string | undefined): UseSession => {
     [sessionId, runAction],
   );
 
+  const compact = useCallback(
+    () => (sessionId && useSessionsStore.getState().sessions.some((item) => item.id === sessionId && item.status === 'ready')
+      ? runAction(() => compactSession(sessionId)) : Promise.resolve(false)),
+    [sessionId, runAction],
+  );
+
+  const clearConversation = useCallback(
+    () => (sessionId && useSessionsStore.getState().sessions.some((item) => item.id === sessionId && item.status === 'ready')
+      ? runAction(() => clearSessionConversation(sessionId)) : Promise.resolve(false)),
+    [sessionId, runAction],
+  );
+
   const allowPermission = useCallback(
     (requestId: string, updatedInput?: Record<string, unknown>) =>
       sessionId
@@ -194,7 +210,7 @@ export const useSession = (sessionId: string | undefined): UseSession => {
   const updateConfiguration = useCallback(
     (configuration: SessionConfiguration) => {
       const current = useSessionsStore.getState().sessions.find((candidate) => candidate.id === sessionId);
-      if (!sessionId || !current || loading || modelLoading || modelError || current.status === 'closed' || current.status === 'failed' || current.deployment.state === 'starting') return Promise.resolve(false);
+      if (!sessionId || !current || loading || modelLoading || modelError || current.status === 'closed' || current.status === 'failed' || current.status === 'compacting' || current.deployment.state === 'starting') return Promise.resolve(false);
       return runAction(async () => {
         const updated = await updateSessionConfiguration(sessionId, configuration);
         useSessionsStore.getState().upsertSession(updated);
@@ -213,6 +229,8 @@ export const useSession = (sessionId: string | undefined): UseSession => {
     actionError,
     send,
     interrupt,
+    compact,
+    clearConversation,
     allowPermission,
     denyPermission,
     answer,

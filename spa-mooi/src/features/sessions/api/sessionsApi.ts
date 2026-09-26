@@ -19,6 +19,8 @@ const sessionPath = (sessionId: string) => `/sessions/${sessionId}`;
 const messagesPath = (sessionId: string) => `/sessions/${sessionId}/messages`;
 const configurationPath = (sessionId: string) => `/sessions/${sessionId}/configuration`;
 const interruptPath = (sessionId: string) => `/sessions/${sessionId}/interrupt`;
+const compactPath = (sessionId: string) => `/sessions/${sessionId}/compact`;
+const clearPath = (sessionId: string) => `/sessions/${sessionId}/clear`;
 const permissionPath = (sessionId: string, requestId: string) =>
   `/sessions/${sessionId}/permissions/${requestId}`;
 const questionPath = (sessionId: string, requestId: string) => `/sessions/${sessionId}/questions/${requestId}`;
@@ -106,6 +108,16 @@ export const interruptSession = async (sessionId: string): Promise<void> => {
   if (!response.ok) {
     throw new Error(await apiErrorMessage(response, 'Could not interrupt the agent.'));
   }
+};
+
+export const compactSession = async (sessionId: string): Promise<void> => {
+  const response = await sessionsFetch(compactPath(sessionId), { method: 'POST' });
+  if (!response.ok) throw new Error(await apiErrorMessage(response, 'Could not compact the conversation.'));
+};
+
+export const clearSessionConversation = async (sessionId: string): Promise<void> => {
+  const response = await sessionsFetch(clearPath(sessionId), { method: 'POST' });
+  if (!response.ok) throw new Error(await apiErrorMessage(response, 'Could not clear the conversation.'));
 };
 
 export const answerPermission = async (

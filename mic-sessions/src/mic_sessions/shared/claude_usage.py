@@ -125,7 +125,7 @@ def _normalize(limits: dict[str, Any]) -> dict[str, Any] | None:
     return result or None
 
 
-async def quota(connection_id: str | None, token: str) -> dict[str, Any]:
+async def quota(connection_id: str | None, token: str, *, refresh: bool = False) -> dict[str, Any]:
     now = time.time()
     for key, entry in list(_snapshots.items()):
         if now - entry.checked_at > 3600 and not entry.lock.locked():
@@ -136,7 +136,7 @@ async def quota(connection_id: str | None, token: str) -> dict[str, Any]:
         await _load(key, snapshot)
         now = time.time()
         snapshot.checked_at = now
-        if now < snapshot.retry_at:
+        if now < snapshot.retry_at and (not refresh or snapshot.status is not None):
             return _result(snapshot)
         try:
             async with httpx.AsyncClient(timeout=5) as http:
@@ -190,10 +190,8 @@ async def context(client: ClaudeSDKClient) -> dict[str, Any] | None:
     """Ask the running CLI for its effective window without a model turn."""
     try:
         async with asyncio.timeout(10):
-            response = await client._query._send_control_request({
-                "subtype": "get_context_usage", "detail": "summary",
-            })
-        window = response.get("rawMaxTokens")
+            response = await client.get_context_usage()
+        window = response.get("maxTokens")
         used = response.get("totalTokens")
         if isinstance(window, int) and window > 0 and isinstance(used, int) and used >= 0:
             return {"percent": used / window * 100, "usedTokens": used,

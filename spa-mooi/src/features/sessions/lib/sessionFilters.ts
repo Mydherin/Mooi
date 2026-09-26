@@ -12,7 +12,7 @@ export const hasDeployment = (session: Session) =>
 export const SESSION_FILTERS: SessionFilter[] = [
   { id: 'all', label: 'All', icon: Layers, matches: () => true },
   { id: 'working', label: 'Working', icon: LoaderCircle,
-    matches: (session) => session.status === 'working' || session.status === 'provisioning' },
+    matches: (session) => session.status === 'working' || session.status === 'compacting' || session.status === 'provisioning' },
   { id: 'attention', label: 'Needs you', icon: BellRing,
     matches: (session) => session.status === 'waiting' || session.status === 'failed' },
   { id: 'ready', label: 'Ready', icon: CircleCheck, matches: (session) => displayOf(session) === 'ready' },

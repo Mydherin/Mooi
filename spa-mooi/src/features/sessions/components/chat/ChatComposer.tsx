@@ -3,7 +3,7 @@ import type { SessionUsage } from '@/features/sessions/types/SessionUsage';
 import type { SessionConfiguration } from '@/features/sessions/types/SessionConfiguration';
 import type { SessionProvider } from '@/features/sessions/types/SessionProvider';
 import { useLayoutEffect, useRef, useState } from 'react';
-import { ArrowUp, Square } from 'lucide-react';
+import { ArrowUp, Eraser, Layers3, Square } from 'lucide-react';
 import type { SessionStatus } from '@/features/sessions/types/SessionStatus';
 import { Button } from '@/shared/components/Button';
 
@@ -18,8 +18,11 @@ interface ChatComposerProps {
   modelLoading: boolean;
   modelError: string | null;
   canInterrupt: boolean;
+  hasConversation: boolean;
   onSend: (text: string) => Promise<boolean>;
   onInterrupt: () => Promise<boolean>;
+  onCompact: () => Promise<boolean>;
+  onClear: () => Promise<boolean>;
   onConfigurationChange: (configuration: SessionConfiguration) => void;
 }
 
@@ -28,6 +31,7 @@ const hints: Partial<Record<SessionStatus, string>> = {
   provisioning: 'Preparing the workspace…',
   failed: 'This session failed and no longer takes messages.',
   closed: 'This session is closed.',
+  compacting: 'Compacting context… Your draft is saved.',
 };
 
 export const ChatComposer = ({
@@ -41,15 +45,18 @@ export const ChatComposer = ({
   modelLoading,
   modelError,
   canInterrupt,
+  hasConversation,
   onSend,
   onInterrupt,
+  onCompact,
+  onClear,
   onConfigurationChange,
 }: ChatComposerProps) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [value, setValue] = useState('');
 
   const effortOptions = modelOptions.find((option) => option.id === model)?.efforts ?? [];
-  const configurationDisabled = deploying || busy || status === 'closed' || status === 'failed' || modelLoading || Boolean(modelError);
+  const configurationDisabled = deploying || busy || status === 'closed' || status === 'failed' || status === 'compacting' || modelLoading || Boolean(modelError);
 
   const changeModel = (nextModel: string) => {
     const option = modelOptions.find((entry) => entry.id === nextModel);
@@ -78,7 +85,7 @@ export const ChatComposer = ({
   const submit = async () => {
     const text = value.trim();
 
-    if (text.length === 0 || blocked || activeTurn || busy) {
+    if (text.length === 0 || blocked || activeTurn || busy || status !== 'ready') {
       return;
     }
 
@@ -124,7 +131,19 @@ export const ChatComposer = ({
         {activeTurn ? <p className="px-5 pb-2 text-xs text-ink-muted">Model and effort changes apply to your next message.</p> : null}
 
         <div className="flex flex-wrap items-center gap-2 px-2 pb-2">
-          <ChatUsageIndicators usage={usage} loading={status === 'provisioning'} />
+          <ChatUsageIndicators usage={usage} loading={status === 'provisioning' || status === 'compacting'} />
+          <div className="flex items-center gap-0.5 border-l border-line pl-2">
+            <Button variant="ghost" size="sm" onClick={() => void onCompact()}
+              disabled={busy || deploying || status !== 'ready' || !hasConversation}
+              ariaLabel="Compact conversation context" className="px-2 sm:px-2.5" >
+              <Layers3 className="size-4" /><span className="hidden sm:inline">Compact</span>
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => void onClear()}
+              disabled={busy || deploying || status !== 'ready' || !hasConversation}
+              ariaLabel="Clear conversation and start fresh" className="px-2 sm:px-2.5" >
+              <Eraser className="size-4" /><span className="hidden sm:inline">Clear</span>
+            </Button>
+          </div>
           {modelOptions.length > 0 ? (
             <label className="flex min-w-0 items-center gap-1.5 text-xs text-ink-subtle">
               <span className="sr-only">Agent model</span>
@@ -162,7 +181,7 @@ export const ChatComposer = ({
             </label>
           ) : null}
 
-          {!activeTurn && !blocked ? <span className="ml-auto hidden text-xs text-ink-subtle sm:flex">Enter to send · Shift+Enter for a new line</span> : null}
+          {!activeTurn && !blocked ? <span className="ml-auto hidden text-xs text-ink-subtle lg:flex">Enter to send · Shift+Enter for a new line</span> : null}
 
           {activeTurn ? (
             <Button

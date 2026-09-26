@@ -33,7 +33,7 @@ import time
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, ClassVar, Protocol, TypedDict, runtime_checkable
 from uuid import UUID, uuid4
@@ -49,6 +49,8 @@ from claude_agent_sdk import (
     PermissionResultDeny,
     ResultMessage,
     RateLimitEvent,
+    ServerToolResultBlock,
+    ServerToolUseBlock,
     StreamEvent,
     SystemMessage,
     TextBlock,
@@ -69,10 +71,12 @@ STATUS_PROVISIONING = "provisioning"
 STATUS_READY = "ready"
 STATUS_WORKING = "working"
 STATUS_WAITING = "waiting"
+STATUS_COMPACTING = "compacting"
 STATUS_FAILED = "failed"
 STATUS_CLOSED = "closed"
 
 _SUMMARY_LIMIT = 100_000
+_COMPACT_SUMMARY_LIMIT = 16_000
 _TITLE_LIMIT = 120
 _FILE_TOOLS = {"Read", "Edit", "Write", "MultiEdit", "NotebookEdit"}
 _QUESTION_TOOL = "AskUserQuestion"
@@ -271,6 +275,8 @@ class AgentRuntime(Protocol):
     async def set_configuration(self, config: AgentConfig) -> AgentConfig: ...
 
     async def interrupt(self) -> None: ...
+
+    async def compact(self) -> None: ...
 
     async def close(self) -> None: ...
 
@@ -523,9 +529,11 @@ class ClaudeAgentRuntime:
         self._pending: dict[str, _PendingRequest] = {}
         self._stream_message_id: str | None = None
         self._stream_ids: dict[str, str] = {}
+        self._assistant_block_offsets: dict[tuple[str, str], int] = {}
         self._context_input: int | None = None
         self._context_output = 0
         self._context_model: str | None = None
+        self._context_window: int | None = None
         self._quota_reported_at = 0.0
         self._last_quota = None
         self._interrupted = False
@@ -533,6 +541,7 @@ class ClaudeAgentRuntime:
         self._config_dir: Path | None = None
         self._clients: set[ClaudeSDKClient] = set()
         self._conversation_id: str | None = None
+        self._compacted_context: str | None = None
         self._transcript_store = _InMemoryTranscriptStore()
 
     async def start(self) -> None:
@@ -551,15 +560,12 @@ class ClaudeAgentRuntime:
         from mic_sessions.shared import claude_usage
         context = await claude_usage.context(self._require_client())
         if context is not None:
-            # Only the window comes from the CLI; before any turn the conversation starts empty.
-            used = self._context_input + self._context_output if self._context_input is not None else 0
-            await self._emit("session.usage", {"context": {
-                **context, "usedTokens": used, "percent": used / context["limitTokens"] * 100,
-            }})
+            self._context_window = context["limitTokens"]
+            await self._emit("session.usage", {"context": context})
 
-    async def _refresh_quota(self) -> None:
+    async def _refresh_quota(self, *, refresh: bool = False) -> None:
         from mic_sessions.shared import claude_usage
-        quota = await claude_usage.quota(self._credential.connection_id, self._credential.token)
+        quota = await claude_usage.quota(self._credential.connection_id, self._credential.token, refresh=refresh)
         if quota != self._last_quota:
             self._last_quota = quota
             await self._emit("session.usage", {"quota": quota})
@@ -591,22 +597,8 @@ class ClaudeAgentRuntime:
             return self._config
         replacement = await self._connect_client(config, resume=self._conversation_id)
 
-        previous_client = self._require_client()
-        previous_pump = self._pump
-        if previous_pump is not None:
-            previous_pump.cancel()
-            with suppress(asyncio.CancelledError, Exception):
-                await previous_pump
-        try:
-            await previous_client.disconnect()
-            self._clients.discard(previous_client)
-        except Exception:
-            # Keep ownership so close() retries before the workspace is deleted.
-            LOG.warning("The replaced Claude client did not disconnect cleanly", exc_info=True)
-
-        self._client = replacement
+        await self._replace_client(replacement)
         self._config = config
-        self._pump = asyncio.create_task(self._pump_messages(replacement))
         await self._refresh_context()
         return self._config
 
@@ -614,6 +606,61 @@ class ClaudeAgentRuntime:
         self._interrupted = True
         await self._deny_pending("The turn was interrupted")
         await self._require_client().interrupt()
+
+    async def compact(self) -> None:
+        """Summarize an isolated fork, then continue in a fresh, smaller context."""
+        if self._conversation_id is None:
+            raise ApiException.conflict("There is no conversation to compact yet")
+        options = replace(self._build_options(self._config, resume=self._conversation_id),
+                          fork_session=True, tools=[], skills=None, plugins=[], mcp_servers={},
+                          setting_sources=[],
+                          permission_mode="dontAsk", can_use_tool=None,
+                          include_partial_messages=False)
+        summary_client = ClaudeSDKClient(options=options)
+        summary_parts: list[str] = []
+        try:
+            async with asyncio.timeout(300):
+                await summary_client.connect()
+                await summary_client.query(
+                    "Summarize the conversation so far for a new agent context. Preserve the user's "
+                    "goals and decisions, current work state, relevant files, unresolved issues, "
+                    "constraints, and exact next steps. Use at most 2,000 words; do not omit essential facts. "
+                    "Return only the summary. Do not use tools or change files."
+                )
+                async for message in summary_client.receive_response():
+                    if isinstance(message, AssistantMessage):
+                        summary_parts.extend(block.text for block in message.content if isinstance(block, TextBlock))
+                    elif isinstance(message, ResultMessage) and message.is_error:
+                        raise RuntimeError("Claude could not summarize the conversation")
+        finally:
+            await summary_client.disconnect()
+        summary = "\n".join(summary_parts).strip()
+        if not summary:
+            raise RuntimeError("Claude returned an empty conversation summary")
+        if len(summary) > _COMPACT_SUMMARY_LIMIT:
+            raise RuntimeError("Claude returned a summary too large to compact safely")
+
+        previous_summary = self._compacted_context
+        previous_store = self._transcript_store
+        self._compacted_context = summary
+        self._transcript_store = _InMemoryTranscriptStore()
+        try:
+            replacement = await self._connect_client(self._config)
+        except BaseException:
+            self._compacted_context = previous_summary
+            self._transcript_store = previous_store
+            raise
+        await self._replace_client(replacement)
+        self._conversation_id = None
+        self._context_input = None
+        self._context_output = 0
+        self._context_window = None
+        await self._emit("session.usage", {"context": None})
+        await self._refresh_context()
+        try:
+            await self._refresh_quota(refresh=True)
+        except Exception:
+            LOG.debug("Claude quota is unavailable after compaction", exc_info=True)
 
     async def close(self) -> None:
         if self._pump is not None:
@@ -662,6 +709,22 @@ class ClaudeAgentRuntime:
             raise
         return client
 
+    async def _replace_client(self, replacement: ClaudeSDKClient) -> None:
+        previous_client = self._require_client()
+        previous_pump = self._pump
+        self._client = replacement
+        if previous_pump is not None:
+            previous_pump.cancel()
+            with suppress(asyncio.CancelledError, Exception):
+                await previous_pump
+        self._pump = asyncio.create_task(self._pump_messages(replacement))
+        try:
+            await previous_client.disconnect()
+            self._clients.discard(previous_client)
+        except Exception:
+            # Keep ownership so close() retries before the workspace is deleted.
+            LOG.warning("The replaced Claude client did not disconnect cleanly", exc_info=True)
+
     def _require_client(self) -> ClaudeSDKClient:
         if self._client is None:
             raise ApiException.conflict("The agent runtime is not running")
@@ -683,6 +746,14 @@ class ClaudeAgentRuntime:
         # MCP servers follow the CLI's project/local settings and approvals.
         plugins = ([{"type": "local", "path": str(self._workspace)}]
                    if (self._workspace / ".claude-plugin" / "plugin.json").is_file() else [])
+        system_append = (
+            "Prefer the dedicated Read tool for reading files and Edit, MultiEdit, "
+            "Write or NotebookEdit for changing files when applicable, so the session "
+            "can display file operations and their results clearly. Use shell tools "
+            "for commands that require them."
+        )
+        if self._compacted_context:
+            system_append += "\n\nContext retained from the conversation before compaction:\n" + self._compacted_context
         return ClaudeAgentOptions(
             cwd=str(self._workspace),
             env={
@@ -710,12 +781,7 @@ class ClaudeAgentRuntime:
             system_prompt={
                 "type": "preset",
                 "preset": "claude_code",
-                "append": (
-                    "Prefer the dedicated Read tool for reading files and Edit, MultiEdit, "
-                    "Write or NotebookEdit for changing files when applicable, so the session "
-                    "can display file operations and their results clearly. Use shell tools "
-                    "for commands that require them."
-                ),
+                "append": system_append,
             },
             disallowed_tools=settings.agent_claude_disallowed_tools,
             model=config.model,
@@ -867,9 +933,11 @@ class ClaudeAgentRuntime:
             await self._emit("agent.activity", {"kind": message.subtype, **data})
         elif isinstance(message, ConversationResetMessage):
             self._context_input = None
+            self._context_output = 0
             await self._emit("session.usage", {"context": None})
             self._conversation_id = None
             self._stream_ids.clear()
+            self._assistant_block_offsets.clear()
             self._stream_message_id = None
             await self._emit("agent.activity", {
                 "kind": "conversation_reset", "description": "The provider cleared its conversation context.",
@@ -891,11 +959,14 @@ class ClaudeAgentRuntime:
             self._context_input = sum(tokens.get(key, 0) or 0 for key in
                                       ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")) if tokens else None
             self._context_output = tokens.get("output_tokens", 0) or 0
+            await self._emit_context_usage()
         if parent == "root" and event_type == "message_delta":
             self._context_output = (raw.get("usage") or {}).get("output_tokens", self._context_output)
+            await self._emit_context_usage()
         if event_type == "message_start":
             self._stream_message_id = ((raw.get("message") or {}).get("id")) or uuid4().hex
             self._stream_ids[parent] = self._stream_message_id
+            self._assistant_block_offsets[(parent, self._stream_message_id)] = 0
             return
         if event_type == "message_stop":
             return
@@ -915,10 +986,33 @@ class ClaudeAgentRuntime:
             self._stream_message_id = uuid4().hex
         return self._stream_message_id
 
+    async def _emit_context_usage(self) -> None:
+        if self._context_input is None:
+            return
+        used = self._context_input + self._context_output
+        window = self._context_window
+        await self._emit("session.usage", {"context": {
+            "percent": used / window * 100 if window else None,
+            "usedTokens": used, "limitTokens": window, "updatedAt": time.time(),
+        }})
+
     async def _on_assistant_message(self, message: Any) -> None:
         parent = getattr(message, "parent_tool_use_id", None) or "root"
-        message_id = getattr(message, "message_id", None) or self._stream_ids.get(parent) or uuid4().hex
-        for index, block in enumerate(message.content):
+        # The streamed and authoritative messages can carry different vendor IDs. Reuse the
+        # stream ID so the final block replaces its provisional deltas in the transcript.
+        message_id = self._stream_ids.get(parent) or getattr(message, "message_id", None) or uuid4().hex
+        block_key = (parent, message_id)
+        # The SDK can deliver each block of one message as a separate AssistantMessage.
+        # Keep its original stream index across those slices.
+        first_index = self._assistant_block_offsets.get(block_key, 0)
+        if parent == "root" and message.usage:
+            tokens = message.usage
+            if any(key in tokens for key in ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")):
+                self._context_input = sum(tokens.get(key, 0) or 0 for key in
+                                          ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"))
+            self._context_output = tokens.get("output_tokens", self._context_output) or 0
+            await self._emit_context_usage()
+        for index, block in enumerate(message.content, start=first_index):
             block_id = f"{message_id}:{index}"
             if isinstance(block, TextBlock):
                 # Claude emits this sentinel when filtering a contentless assistant message.
@@ -929,7 +1023,12 @@ class ClaudeAgentRuntime:
                 await self._publish(thinking_message(block_id, block.thinking))
             elif isinstance(block, ToolUseBlock):
                 await self._publish(tool_use(block.id, block.name, _tool_title(block.name, block.input), block.input))
-        self._stream_ids.pop(parent, None)
+            elif isinstance(block, ServerToolUseBlock):
+                name = {"web_search": "WebSearch", "web_fetch": "WebFetch"}.get(block.name, block.name)
+                await self._publish(tool_use(block.id, name, _tool_title(name, block.input), block.input))
+            elif isinstance(block, ServerToolResultBlock):
+                await self._publish(tool_result(block.tool_use_id, False, _result_summary(block.content)))
+        self._assistant_block_offsets[block_key] = first_index + len(message.content)
         self._stream_message_id = None
         if message.error:
             await self._publish(agent_error(f"Provider error: {message.error}"))
@@ -951,13 +1050,12 @@ class ClaudeAgentRuntime:
         models = getattr(message, "model_usage", None) or {}
         model_usage = models.get(self._context_model, {})
         window = model_usage.get("contextWindow")
-        used = self._context_input + self._context_output if self._context_input is not None else None
-        await self._emit("session.usage", {"context": {
-            "percent": used / window * 100 if used is not None and window else None,
-            "usedTokens": used, "limitTokens": window, "updatedAt": time.time(),
-        }})
+        if isinstance(window, int) and window > 0:
+            self._context_window = window
+        await self._emit_context_usage()
         await self._deny_pending("The turn ended")
         self._stream_ids.clear()
+        self._assistant_block_offsets.clear()
         self._stream_message_id = None
         if message.is_error and getattr(message, "errors", None):
             await self._publish(agent_error(_result_summary("\n".join(message.errors))))
@@ -1166,6 +1264,34 @@ class CodexAgentRuntime:
                     self._task.cancel()
         elif self._task and not self._task.done():
             self._task.cancel()
+
+    async def compact(self):
+        from mic_sessions.shared import codex
+        if self._closing or self._account is None:
+            raise ApiException.conflict("Codex session is closed")
+        if self._thread_id is None:
+            raise ApiException.conflict("There is no conversation to compact yet")
+        if self._task and not self._task.done():
+            raise ApiException.conflict("A Codex turn is still running")
+        async with codex.connected(self._account, self._workspace, self._answer) as client:
+            self._client = client
+            try:
+                await client.call("thread_resume", self._thread_id,
+                                  {"cwd": str(self._workspace), "model": self._config.model, **_CODEX_ACCESS})
+                tokens = await client.compact(self._thread_id)
+                last = (tokens or {}).get("last") or {}
+                window = (tokens or {}).get("modelContextWindow")
+                used = last.get("totalTokens")
+                await self._emit("session.usage", {"context": {
+                    "percent": used / window * 100 if used is not None and window else None,
+                    "usedTokens": used, "limitTokens": window, "updatedAt": time.time(),
+                }})
+                try:
+                    await self._emit("session.usage", {"quota": await codex.quota(self._account, client, refresh=True)})
+                except Exception:
+                    LOG.debug("Codex quota is unavailable after compaction")
+            finally:
+                self._client = None
 
     async def close(self):
         from mic_sessions.shared import codex

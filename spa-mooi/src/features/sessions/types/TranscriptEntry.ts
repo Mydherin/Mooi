@@ -10,4 +10,4 @@ export type TranscriptEntry =
   | { id: string; kind: 'user'; at: string; text: string }
   | { id: string; kind: 'assistant'; at: string; streaming: boolean; blocks: TranscriptBlock[]; result: TurnResult | null }
   | { id: string; kind: 'error'; at: string; text: string }
-  | { id: string; kind: 'notice'; at: string; tone: 'success' | 'info'; title: string; text: string | null };
+  | { id: string; kind: 'notice'; at: string; tone: 'success' | 'info' | 'progress'; title: string; text: string | null };

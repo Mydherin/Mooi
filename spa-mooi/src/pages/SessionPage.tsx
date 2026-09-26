@@ -29,6 +29,8 @@ export const SessionPage = () => {
     actionError,
     send,
     interrupt,
+    compact,
+    clearConversation,
     allowPermission,
     denyPermission,
     answer,
@@ -121,6 +123,8 @@ export const SessionPage = () => {
           actionError={actionError}
           onSend={send}
           onInterrupt={interrupt}
+          onCompact={compact}
+          onClear={clearConversation}
           onConfigurationChange={(configuration) => void updateConfiguration(configuration)}
           onAllowPermission={(requestId, updatedInput) => void allowPermission(requestId, updatedInput)}
           onDenyPermission={(requestId, message) => void denyPermission(requestId, message)}

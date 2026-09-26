@@ -20,6 +20,8 @@ interface ChatPanelProps {
   actionError: string | null;
   onSend: (text: string) => Promise<boolean>;
   onInterrupt: () => Promise<boolean>;
+  onCompact: () => Promise<boolean>;
+  onClear: () => Promise<boolean>;
   onConfigurationChange: (configuration: SessionConfiguration) => void;
   onAllowPermission: (requestId: string, updatedInput?: Record<string, unknown>) => void;
   onDenyPermission: (requestId: string, message?: string) => void;
@@ -43,6 +45,8 @@ export const ChatPanel = ({
   actionError,
   onSend,
   onInterrupt,
+  onCompact,
+  onClear,
   onConfigurationChange,
   onAllowPermission,
   onDenyPermission,
@@ -92,8 +96,11 @@ export const ChatPanel = ({
       modelLoading={modelLoading}
       modelError={modelError}
       canInterrupt={session.capabilities.interrupt}
+      hasConversation={entries.some((entry) => entry.kind === 'user')}
       onSend={onSend}
       onInterrupt={onInterrupt}
+      onCompact={onCompact}
+      onClear={onClear}
       onConfigurationChange={onConfigurationChange}
     />
   </div>

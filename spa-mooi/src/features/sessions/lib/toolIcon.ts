@@ -52,6 +52,7 @@ export const toolCategory = (name: string, status: TranscriptStep['status']) => 
     return status === 'done' ? 'Edited' : 'Editing';
   }
   if (name === 'Bash') return 'Run command';
+  if (name === 'WebSearch') return 'Tool WebSearch';
   if (name === 'Skill') return 'Skill';
   return 'Tool';
 };

@@ -45,6 +45,7 @@ from pydantic import (
 from mic_sessions.shared import mooi, workspaces
 from mic_sessions.shared.agents import (
     PROVIDERS,
+    STATUS_COMPACTING,
     STATUS_FAILED,
     STATUS_PROVISIONING,
     STATUS_READY,
@@ -99,6 +100,7 @@ EVENT_SESSION_CONFIGURATION = "session.configuration"
 EVENT_DEPLOYMENT_UPDATED = "deployment.updated"
 EVENT_DEPLOYMENT_LOG = "deployment.log"
 EVENT_SESSION_CLEARED = "session.cleared"
+EVENT_SESSION_COMPACTION = "session.compaction"
 EVENT_MERGE_COMPLETED = "merge.completed"
 
 # --- wire contracts ---------------------------------------------------------------------------
@@ -1128,6 +1130,57 @@ async def interrupt_session(session_id: UUID, caller: Annotated[Caller, Depends(
             raise ApiException.conflict("There is no active turn to interrupt")
         await _runtime(session).interrupt()
         _touch_activity(session)
+
+
+@router.post("/sessions/{session_id}/clear", status_code=status.HTTP_204_NO_CONTENT)
+async def clear_session_conversation(
+    session_id: UUID, caller: Annotated[Caller, Depends(current_caller)]
+) -> None:
+    session = get_registry().get_for(caller, session_id)
+    async with session.operation_lock:
+        if session.status != STATUS_READY or session.closing or session.deployment.state == "starting":
+            raise ApiException.conflict("The session is not ready to clear its conversation")
+        await _reset_conversation(session, caller)
+        _touch_activity(session)
+
+
+@router.post("/sessions/{session_id}/compact", status_code=status.HTTP_202_ACCEPTED)
+async def compact_session_conversation(
+    session_id: UUID, caller: Annotated[Caller, Depends(current_caller)]
+) -> None:
+    session = get_registry().get_for(caller, session_id)
+    async with session.operation_lock:
+        if session.status != STATUS_READY or session.closing or session.deployment.state == "starting":
+            raise ApiException.conflict("The session is not ready to compact its conversation")
+        _runtime(session)
+        _touch_activity(session)
+        previous_context = session.usage.get("context")
+        record(session, EVENT_SESSION_COMPACTION, {"phase": "started"})
+        _record_status(session, STATUS_COMPACTING)
+        record(session, "session.usage", {"context": None})
+        _spawn(session, _run_compaction(session, previous_context))
+
+
+async def _run_compaction(session: Session, previous_context: dict[str, Any] | None) -> None:
+    """Own the long provider operation after the HTTP request has returned."""
+    async with session.operation_lock:
+        if session.closing or session.status != STATUS_COMPACTING:
+            return
+        try:
+            await _runtime(session).compact()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            LOG.exception("Session %s could not compact its conversation", session.id)
+            record(session, "session.usage", {"context": previous_context})
+            record(session, EVENT_SESSION_COMPACTION, {"phase": "failed"})
+            record(session, "error", {"message": "The agent could not compact the conversation. Try again."})
+            if session.status == STATUS_COMPACTING:
+                _record_status(session, STATUS_READY)
+        else:
+            record(session, EVENT_SESSION_COMPACTION, {"phase": "completed"})
+            if session.status == STATUS_COMPACTING:
+                _record_status(session, STATUS_READY)
 
 
 @router.post("/sessions/{session_id}/permissions/{request_id}", status_code=status.HTTP_204_NO_CONTENT)

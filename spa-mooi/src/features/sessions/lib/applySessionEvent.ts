@@ -319,6 +319,18 @@ export const applySessionEvent = (state: SessionTranscriptState, event: SessionE
       pending = [];
       break;
     }
+    case 'session.compaction': {
+      const phase = String(data.phase);
+      const previous = phase === 'started' ? entries : entries.map((entry) =>
+        entry.kind === 'notice' && entry.tone === 'progress' ? { ...entry, tone: 'info' as const } : entry);
+      entries = [...closeOpenEntry(previous), { id: `compaction-${seq}`, kind: 'notice', at,
+        tone: phase === 'started' ? 'progress' : phase === 'completed' ? 'success' : 'info',
+        title: phase === 'started' ? 'Compacting context…' : phase === 'completed' ? 'Context compacted' : 'Compaction failed',
+        text: phase === 'started' ? 'Earlier messages stay visible while the agent condenses its context.'
+          : phase === 'completed' ? 'The agent now continues with a concise summary of earlier messages.'
+            : 'The earlier context is still available to the agent.' }];
+      break;
+    }
     case 'merge.completed': {
       lastMerge = { targetBranch: String(data.targetBranch), commit: String(data.commit), seq };
       entries = [...closeOpenEntry(entries), { id: `merge-${seq}`, kind: 'notice', at, tone: 'success',

@@ -121,6 +121,46 @@ class Client:
         finally:
             self.sdk.unregister_turn_notifications(turn_id)
 
+    async def compact(self, thread_id: str):
+        """Run native compaction through completion, retaining its usage notifications.
+
+        The low-level SDK returns before compaction finishes and does not return its turn id.
+        Its router's pending-turn scope buffers the early notifications until thread/read exposes
+        that id and we register the normal turn consumer.
+        """
+        before = await self.call("thread_read", thread_id, include_turns=True)
+        known = {turn.id for turn in before.thread.turns}
+        with self.sdk._router.pending_turn(thread_id) as cursors:
+            await self.call("thread_compact", thread_id)
+            async with asyncio.timeout(300):
+                while True:
+                    snapshot = await self.call("thread_read", thread_id, include_turns=True)
+                    turn = next((turn for turn in reversed(snapshot.thread.turns) if turn.id not in known), None)
+                    if turn is not None:
+                        # register_turn_notifications starts at the current cursor and would
+                        # skip events emitted before thread/read reveals the compaction turn.
+                        self.sdk._router.prepare_turn(turn.id, thread_id, cursors, for_handle=False)
+                        break
+                    await asyncio.sleep(0.25)
+        usage = None
+        completed_item = False
+        try:
+            async with asyncio.timeout(300):
+                while True:
+                    note = await self.call("next_turn_notification", turn.id)
+                    payload = (note.payload.params if isinstance(note.payload, UnknownNotification)
+                               else note.payload.model_dump(by_alias=True, mode="json"))
+                    if note.method == "thread/tokenUsage/updated":
+                        usage = payload.get("tokenUsage")
+                    elif note.method == "item/completed" and (payload.get("item") or {}).get("type") == "contextCompaction":
+                        completed_item = True
+                    elif note.method == "turn/completed":
+                        if payload["turn"]["status"] != "completed" or not completed_item:
+                            raise RuntimeError("Codex could not compact the conversation")
+                        return usage
+        finally:
+            self.sdk.unregister_turn_notifications(turn.id)
+
 
 class Account:
     """One private SDK home and credential lock per stored connection.
@@ -264,11 +304,11 @@ async def models(credential: Credential, refresh: bool = False) -> dict[str, Any
         release(account)
 
 
-async def quota(account: Account, client: Client) -> dict[str, Any] | None:
+async def quota(account: Account, client: Client, *, refresh: bool = False) -> dict[str, Any] | None:
     """Read bounded account usage after a turn or at session startup."""
     from openai_codex.generated.v2_all import GetAccountRateLimitsResponse, RateLimitSnapshot
 
-    if time.monotonic() - account.quota_checked_at < 60:
+    if not refresh and time.monotonic() - account.quota_checked_at < 60:
         return account.quota_snapshot
     account.quota_checked_at = time.monotonic()
     async with asyncio.timeout(5):
