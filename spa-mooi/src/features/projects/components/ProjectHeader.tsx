@@ -9,6 +9,7 @@ import { Card } from '@/shared/components/Card';
 import { Eyebrow } from '@/shared/components/Eyebrow';
 import { GithubMark } from '@/shared/components/icons/GithubMark';
 import { Initials } from '@/shared/components/Initials';
+import { iconAction } from '@/shared/styles/iconAction';
 import { cn } from '@/shared/utils/cn';
 import { formatDate } from '@/shared/utils/formatDate';
 
@@ -17,9 +18,6 @@ interface ProjectHeaderProps {
   busy: boolean;
   onRemove: () => void;
 }
-
-const iconAction =
-  'inline-flex size-10 shrink-0 items-center justify-center rounded-[10px] border border-line bg-surface text-ink-muted transition hover:bg-surface-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:pointer-events-none disabled:opacity-50';
 
 /**
  * Actions live inside the overview card as icons, next to the repository mark, so the page keeps

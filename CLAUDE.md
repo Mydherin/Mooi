@@ -54,6 +54,8 @@ This is a monorepository which contains a whole application with different techn
 
 - Application must be totally responsive with awesome view in desktop and mobile
 
+- For compact groups of actions, use the project detail view's icon-button pattern: distinct Lucide icons, accessible labels and hover titles. If actions do not fit comfortably, group secondary ones in an icon-triggered context menu
+
 ## mic-mooi
 
 ### Microservice Stack

@@ -1,6 +1,7 @@
-import { Plus, RefreshCw } from 'lucide-react';
-import { Button } from '@/shared/components/Button';
+import { FolderInput, FolderPlus, RefreshCw } from 'lucide-react';
 import { SearchInput } from '@/shared/components/SearchInput';
+import { iconAction } from '@/shared/styles/iconAction';
+import { cn } from '@/shared/utils/cn';
 
 interface ProjectsHeaderProps {
   onAdd: () => void;
@@ -44,37 +45,37 @@ export const ProjectsHeader = ({
         />
       ) : null}
 
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          variant="secondary"
-          size="md"
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
           onClick={onRefresh}
           disabled={busy}
-          className="flex-1 sm:flex-none"
+          aria-label="Refresh projects"
+          title="Refresh projects"
+          className={iconAction}
         >
-          <RefreshCw className="size-4" />
-          Refresh
-        </Button>
-        <Button
-          variant="brand"
-          size="md"
+          <RefreshCw className={cn('size-4', busy && 'animate-spin')} />
+        </button>
+        <button
+          type="button"
           onClick={onCreate}
           disabled={!canAdd}
-          className="flex-1 sm:flex-none"
+          aria-label="Create project"
+          title="Create project"
+          className={iconAction}
         >
-          <Plus className="size-4" />
-          Create project
-        </Button>
-        <Button
-          variant="secondary"
-          size="md"
+          <FolderPlus className="size-4" />
+        </button>
+        <button
+          type="button"
           onClick={onAdd}
           disabled={!canAdd}
-          className="flex-1 sm:flex-none"
+          aria-label="Add repository"
+          title="Add repository"
+          className={iconAction}
         >
-          <Plus className="size-4" />
-          Add repository
-        </Button>
+          <FolderInput className="size-4" />
+        </button>
       </div>
     </div>
   </div>
