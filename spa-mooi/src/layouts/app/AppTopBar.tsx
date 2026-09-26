@@ -1,7 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Menu } from 'lucide-react';
 import { ROUTES } from '@/app/routes';
-import { AppConnectionPills } from '@/layouts/app/AppConnectionPills';
 import { AppUserMenu } from '@/layouts/app/AppUserMenu';
 import { IconButton } from '@/shared/components/IconButton';
 import { Logo } from '@/shared/components/Logo';
@@ -9,7 +8,7 @@ import { ThemeToggle } from '@/shared/components/ThemeToggle';
 import { useSidebarStore } from '@/stores/sidebarStore';
 
 /**
- * The slim bar every screen sits under: the state of the connections, and the session.
+ * The slim bar every screen sits under.
  *
  * The account menu appears only below `lg` because above it the sidebar user card already owns the
  * player; two account surfaces on one screen would be two places to drift apart.
@@ -29,7 +28,6 @@ export const AppTopBar = () => {
       </Link>
 
       <div className="ml-auto flex items-center gap-2">
-        <AppConnectionPills />
         <ThemeToggle />
         <span className="lg:hidden">
           <AppUserMenu />

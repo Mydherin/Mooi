@@ -73,7 +73,7 @@ public class AgentConnectionFeature {
     @Auth.Authenticated
     public AgentConnectionPayload connectOauth(@PathVariable String provider,
             @Valid @RequestBody OauthConnectRequest request, Auth.Principal principal) {
-        return agentConnectionService.connectOauth(principal.player().id(), provider, request.code(), request.state());
+        return agentConnectionService.connectOauth(principal.player().id(), provider, request.code(), request.state(), request.name());
     }
 
     /** Always recorded as {@code setup_token}: this door never produces an OAuth-mode row. */
@@ -81,7 +81,7 @@ public class AgentConnectionFeature {
     @Auth.Authenticated
     public AgentConnectionPayload connectToken(@PathVariable String provider,
             @Valid @RequestBody TokenConnectRequest request, Auth.Principal principal) {
-        return agentConnectionService.connectToken(principal.player().id(), provider, request.token());
+        return agentConnectionService.connectToken(principal.player().id(), provider, request.token(), request.name());
     }
 
     @GetMapping("/me/agents/connections")
@@ -91,19 +91,26 @@ public class AgentConnectionFeature {
     }
 
     /** Always 204, linked or not: disconnecting is stated as an outcome, not as a transaction. */
-    @DeleteMapping("/me/agents/{provider}/connection")
+    @DeleteMapping("/me/agents/connections/{connectionId}")
     @Auth.Authenticated
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void disconnect(@PathVariable String provider, Auth.Principal principal) {
-        agentConnectionService.disconnect(principal.player().id(), provider);
+    public void disconnect(@PathVariable UUID connectionId, Auth.Principal principal) {
+        agentConnectionService.disconnect(principal.player().id(), connectionId);
+    }
+
+    @PutMapping("/me/agents/connections/{connectionId}/name")
+    @Auth.Authenticated
+    public AgentConnectionPayload rename(@PathVariable UUID connectionId,
+            @Valid @RequestBody RenameRequest request, Auth.Principal principal) {
+        return agentConnectionService.rename(principal.player().id(), connectionId, request.name());
     }
 
     /** A browser holding a valid access token is not enough here: only another internal service may call this. */
-    @GetMapping("/me/agents/{provider}/credential")
+    @GetMapping("/me/agents/connections/{connectionId}/credential")
     @Auth.Authenticated
     @Auth.ServiceCall
-    public CredentialPayload credential(@PathVariable String provider, Auth.Principal principal) {
-        return agentConnectionService.credential(principal.player().id(), provider);
+    public CredentialPayload credential(@PathVariable UUID connectionId, Auth.Principal principal) {
+        return agentConnectionService.credential(principal.player().id(), connectionId);
     }
 
     @PostMapping("/me/agents/codex/device-connection")
@@ -162,7 +169,7 @@ public class AgentConnectionFeature {
         }
 
         public List<AgentConnectionPayload> list(UUID playerId) {
-            return agentConnectionRepository.findByPlayerIdOrderByProviderAsc(playerId).stream()
+            return agentConnectionRepository.findByPlayerIdOrderByConnectedAtDesc(playerId).stream()
                     .map(this::toPayload)
                     .toList();
         }
@@ -189,14 +196,14 @@ public class AgentConnectionFeature {
          * is exactly the attack this parameter exists to stop, and only this request knows both.
          */
         @Transactional
-        public AgentConnectionPayload connectOauth(UUID playerId, String provider, String code, String state) {
+        public AgentConnectionPayload connectOauth(UUID playerId, String provider, String code, String state, String name) {
             Agents.Provider agentProvider = settings.find(provider).orElseThrow(Agents.AgentsException::unknownProvider);
             Agents.StateCodec.StateClaims claims = stateCodec.verify(state);
             if (!claims.playerId().equals(playerId) || !claims.provider().equals(provider)) {
                 throw Agents.AgentsException.invalidState();
             }
             Agents.OAuthClient.Tokens grant = oauthClient.exchangeCode(agentProvider, code, claims.codeVerifier());
-            AgentConnection saved = upsert(playerId, agentProvider, Agents.Mode.OAUTH, toGrant(grant));
+            AgentConnection saved = create(playerId, agentProvider, Agents.Mode.OAUTH, toGrant(grant), name);
             Agents.LOG.info("Player {} linked agent provider {} ({})", playerId, agentProvider.id(),
                     Agents.Mode.OAUTH.wire());
             return toPayload(saved);
@@ -209,10 +216,10 @@ public class AgentConnectionFeature {
          * of expiring, so a caller is never handed a credential that dies mid-flight.
          */
         @Transactional
-        public CredentialPayload credential(UUID playerId, String provider) {
-            Agents.Provider agentProvider = settings.find(provider).orElseThrow(Agents.AgentsException::unknownProvider);
-            AgentConnection connection = agentConnectionRepository.findByPlayerIdAndProvider(playerId, provider)
+        public CredentialPayload credential(UUID playerId, UUID connectionId) {
+            AgentConnection connection = agentConnectionRepository.findByPlayerIdAndId(playerId, connectionId)
                     .orElseThrow(Agents.AgentsException::reauthorize);
+            Agents.Provider agentProvider = settings.find(connection.getProvider()).orElseThrow(Agents.AgentsException::unknownProvider);
             if (Agents.Mode.fromWire(connection.getMode()) == Agents.Mode.OAUTH) {
                 connection = ensureFreshToken(connection, agentProvider);
             }
@@ -227,13 +234,13 @@ public class AgentConnectionFeature {
          * and safely, the first time a session tries to use it.
          */
         @Transactional
-        public AgentConnectionPayload connectToken(UUID playerId, String provider, String token) {
+        public AgentConnectionPayload connectToken(UUID playerId, String provider, String token, String name) {
             Agents.Provider agentProvider = settings.find(provider).orElseThrow(Agents.AgentsException::unknownProvider);
             if (provider.equals("codex") || token == null || token.isBlank()) {
                 throw Agents.AgentsException.invalidToken();
             }
-            AgentConnection saved = upsert(playerId, agentProvider, Agents.Mode.SETUP_TOKEN,
-                    new Grant(token.strip(), null, null, null, null));
+            AgentConnection saved = create(playerId, agentProvider, Agents.Mode.SETUP_TOKEN,
+                    new Grant(token.strip(), null, null, null, null), name);
             Agents.LOG.info("Player {} linked agent provider {} ({})", playerId, agentProvider.id(),
                     Agents.Mode.SETUP_TOKEN.wire());
             return toPayload(saved);
@@ -245,8 +252,8 @@ public class AgentConnectionFeature {
             if (request.token().length() > 65536 || request.accountLabel() != null && request.accountLabel().length() > 255) {
                 throw Agents.AgentsException.invalidToken();
             }
-            return toPayload(upsert(playerId, provider, Agents.Mode.DEVICE_OAUTH,
-                    new Grant(request.token(), null, null, null, request.accountLabel())));
+            return toPayload(create(playerId, provider, Agents.Mode.DEVICE_OAUTH,
+                    new Grant(request.token(), null, null, null, request.accountLabel()), request.name()));
         }
 
         @Transactional
@@ -260,31 +267,31 @@ public class AgentConnectionFeature {
             }
         }
 
-        /** Idempotent: disconnecting a provider that was never linked is not an error. */
+        /** Idempotent: disconnecting an account that was never linked is not an error. */
         @Transactional
-        public void disconnect(UUID playerId, String provider) {
-            agentConnectionRepository.findByPlayerIdAndProvider(playerId, provider).ifPresent(connection -> {
+        public void disconnect(UUID playerId, UUID connectionId) {
+            agentConnectionRepository.findByPlayerIdAndId(playerId, connectionId).ifPresent(connection -> {
                 agentConnectionRepository.delete(connection);
-                Agents.LOG.info("Player {} unlinked agent provider {}", playerId, provider);
+                Agents.LOG.info("Player {} unlinked agent connection {}", playerId, connectionId);
             });
         }
 
-        /**
-         * Creates or updates the row for {@code (playerId, provider)}. {@code connectedAt} survives
-         * an update — relinking or renewing is not a new link — and {@code stale} is always cleared:
-         * a grant that just arrived, of either mode, is by definition not stale.
-         */
-        private AgentConnection upsert(UUID playerId, Agents.Provider provider, Agents.Mode mode, Grant grant) {
-            AgentConnection connection = agentConnectionRepository
-                    .findByPlayerIdAndProvider(playerId, provider.id())
-                    .orElseGet(() -> {
-                        AgentConnection created = new AgentConnection();
-                        created.setPlayerId(playerId);
-                        created.setProvider(provider.id());
-                        created.setConnectedAt(OffsetDateTime.now(clock));
-                        return created;
-                    });
+        @Transactional
+        public AgentConnectionPayload rename(UUID playerId, UUID connectionId, String name) {
+            AgentConnection connection = agentConnectionRepository.findByPlayerIdAndId(playerId, connectionId)
+                    .orElseThrow(Agents.AgentsException::reauthorize);
+            connection.setName(cleanName(name));
+            return toPayload(agentConnectionRepository.save(connection));
+        }
+
+        /** Creates a separate account link for every completed authorization. */
+        private AgentConnection create(UUID playerId, Agents.Provider provider, Agents.Mode mode, Grant grant, String name) {
+            AgentConnection connection = new AgentConnection();
+            connection.setPlayerId(playerId);
+            connection.setProvider(provider.id());
+            connection.setConnectedAt(OffsetDateTime.now(clock));
             connection.setCredentialId(UUID.randomUUID());
+            connection.setName(cleanName(name));
             connection.setMode(mode.wire());
             connection.setAccountLabel(grant.accountLabel());
             connection.setAccessToken(secretBox.encrypt(grant.accessToken()));
@@ -293,6 +300,13 @@ public class AgentConnectionFeature {
             connection.setScope(grant.scope());
             connection.setStale(false);
             return agentConnectionRepository.save(connection);
+        }
+
+        private String cleanName(String name) {
+            if (name == null || name.isBlank()) return null;
+            String cleaned = name.strip();
+            if (cleaned.length() > 100) throw Agents.AgentsException.invalidToken();
+            return cleaned;
         }
 
         /**
@@ -323,7 +337,13 @@ public class AgentConnectionFeature {
                         renewed.refreshToken() != null ? renewed.refreshToken() : refreshToken,
                         renewed.scope() != null ? renewed.scope() : connection.getScope(),
                         renewed.accountLabel() != null ? renewed.accountLabel() : connection.getAccountLabel());
-                return upsert(connection.getPlayerId(), provider, Agents.Mode.OAUTH, grant);
+                connection.setAccessToken(secretBox.encrypt(grant.accessToken()));
+                connection.setAccessTokenExpiresAt(grant.accessTokenExpiresAt());
+                connection.setRefreshToken(secretBox.encrypt(grant.refreshToken()));
+                connection.setScope(grant.scope());
+                connection.setAccountLabel(grant.accountLabel());
+                connection.setStale(false);
+                return agentConnectionRepository.save(connection);
             } catch (Agents.AgentsException exception) {
                 Agents.LOG.warn("Unable to renew the agent credential of player {} for provider {}: {}",
                         connection.getPlayerId(), provider.id(), exception.getReason());
@@ -346,7 +366,7 @@ public class AgentConnectionFeature {
             String label = settings.find(connection.getProvider())
                     .map(Agents.Provider::label)
                     .orElse(connection.getProvider());
-            return new AgentConnectionPayload(connection.getProvider(), label, connection.getMode(),
+            return new AgentConnectionPayload(connection.getId(), connection.getProvider(), label, connection.getName(), connection.getMode(),
                     connection.getAccountLabel(), connection.getScope(), connection.getConnectedAt(),
                     connection.getAccessTokenExpiresAt(), connection.isStale());
         }
@@ -355,8 +375,8 @@ public class AgentConnectionFeature {
     // --- persistence ---
 
     /**
-     * One agent-provider credential linked to one player, one row per {@code (player, provider)}: a
-     * player relinking the same provider renews this row rather than creating a second one.
+     * One agent-provider credential linked to one player. A player may link several accounts for
+     * the same provider.
      */
     @Getter
     @Setter
@@ -381,6 +401,9 @@ public class AgentConnectionFeature {
 
         @Column(name = "account_label", length = 255)
         private String accountLabel;
+
+        @Column(name = "name", length = 100)
+        private String name;
 
         /**
          * AES-256-GCM ciphertext produced by {@code Crypto.SecretBox}, never a usable credential.
@@ -414,9 +437,9 @@ public class AgentConnectionFeature {
 
     public interface AgentConnectionRepository extends JpaRepository<AgentConnection, UUID> {
 
-        List<AgentConnection> findByPlayerIdOrderByProviderAsc(UUID playerId);
+        List<AgentConnection> findByPlayerIdOrderByConnectedAtDesc(UUID playerId);
 
-        Optional<AgentConnection> findByPlayerIdAndProvider(UUID playerId, String provider);
+        Optional<AgentConnection> findByPlayerIdAndId(UUID playerId, UUID id);
 
         // The identity check and update must be atomic with a concurrent disconnect/relink.
         @Modifying
@@ -434,7 +457,7 @@ public class AgentConnectionFeature {
      * OAuth credential expired and renewal failed — the player repairs it with one click, the row is
      * not deleted.
      */
-    public record AgentConnectionPayload(String provider, String label, String mode, String accountLabel,
+    public record AgentConnectionPayload(UUID id, String provider, String label, String name, String mode, String accountLabel,
                                          String scope, OffsetDateTime connectedAt, OffsetDateTime expiresAt,
                                          boolean stale) {
     }
@@ -460,14 +483,17 @@ public class AgentConnectionFeature {
     public record AgentConnectionsResponse(List<AgentConnectionPayload> connections) {
     }
 
-    public record OauthConnectRequest(@NotBlank String code, @NotBlank String state) {
+    public record OauthConnectRequest(@NotBlank String code, @NotBlank String state, @NotBlank String name) {
     }
 
-    public record DeviceConnectRequest(@NotBlank String token, String accountLabel) { }
+    public record DeviceConnectRequest(@NotBlank String token, String accountLabel, @NotBlank String name) { }
 
     public record RefreshCredentialRequest(@NotBlank String token,
             @jakarta.validation.constraints.NotNull UUID connectionId) { }
 
-    public record TokenConnectRequest(@NotBlank String token) {
+    public record TokenConnectRequest(@NotBlank String token, @NotBlank String name) {
+    }
+
+    public record RenameRequest(@NotBlank String name) {
     }
 }

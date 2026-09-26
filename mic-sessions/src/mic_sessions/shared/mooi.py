@@ -38,6 +38,7 @@ class Project:
 
 @dataclass(frozen=True)
 class Credential:
+    provider: str
     mode: str
     token: str = field(repr=False)
     expires_at: datetime | None
@@ -108,11 +109,11 @@ async def fetch_github_token(caller: Caller) -> str:
     return body["token"]
 
 
-async def fetch_agent_credential(caller: Caller, provider: str) -> Credential:
+async def fetch_agent_credential(caller: Caller, connection_id: str) -> Credential:
     settings = get_settings()
     body = await _get(
         get_http_client(),
-        f"{settings.mooi_api_base_url}/me/agents/{provider}/credential",
+        f"{settings.mooi_api_base_url}/me/agents/connections/{connection_id}/credential",
         _service_headers(caller),
         "No agent provider linked",
     )
@@ -120,24 +121,25 @@ async def fetch_agent_credential(caller: Caller, provider: str) -> Credential:
 
     async def save(token: str) -> None:
         response = await get_http_client().put(
-            f"{settings.mooi_api_base_url}/me/agents/{provider}/credential",
+            f"{settings.mooi_api_base_url}/me/agents/{body['provider']}/credential",
             headers=_service_headers(caller),
             json={"token": token, "connectionId": body.get("connectionId")},
         )
         _raise_for_status(response, "Agent connection changed; reconnect the session")
 
     return Credential(
+        provider=body["provider"],
         mode=body["mode"],
         token=body["token"],
         connection_id=body.get("connectionId"),
-        save=save if provider == "codex" else None,
+        save=save if body["provider"] == "codex" else None,
         expires_at=datetime.fromisoformat(expires_at) if expires_at else None,
     )
 
 
-async def link_codex(caller: Caller, token: str, account_label: str | None) -> None:
+async def link_codex(caller: Caller, token: str, account_label: str | None, name: str) -> None:
     response = await get_http_client().post(
         f"{get_settings().mooi_api_base_url}/me/agents/codex/device-connection",
-        headers=_service_headers(caller), json={"token": token, "accountLabel": account_label},
+        headers=_service_headers(caller), json={"token": token, "accountLabel": account_label, "name": name},
     )
     _raise_for_status(response, "Could not save the Codex connection")

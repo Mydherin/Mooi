@@ -1,0 +1,13 @@
+databaseChangeLog:
+  - changeSet:
+      id: 014-agent-connections-player-connected-index
+      author: mooi
+      changes:
+        - createIndex:
+            tableName: agent_connections
+            indexName: ix_agent_connections_player_connected
+            columns:
+              - column:
+                  name: player_id
+              - column:
+                  name: connected_at

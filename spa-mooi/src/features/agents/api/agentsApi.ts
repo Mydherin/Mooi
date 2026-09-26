@@ -55,11 +55,12 @@ export const completeAgentAuthorization = async (
   provider: string,
   code: string,
   state: string,
+  name: string,
 ): Promise<AgentConnection> => {
   const response = await authenticatedFetch(connectionPath(provider), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ code, state }),
+    body: JSON.stringify({ code, state, name }),
   });
 
   if (!response.ok) {
@@ -70,11 +71,11 @@ export const completeAgentAuthorization = async (
 };
 
 /** Links a provider from a token pasted by the player (e.g. `claude setup-token`), never OAuth. */
-export const connectAgentToken = async (provider: string, token: string): Promise<AgentConnection> => {
+export const connectAgentToken = async (provider: string, token: string, name: string): Promise<AgentConnection> => {
   const response = await authenticatedFetch(connectionPath(provider), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token }),
+    body: JSON.stringify({ token, name }),
   });
 
   if (!response.ok) {
@@ -84,10 +85,18 @@ export const connectAgentToken = async (provider: string, token: string): Promis
   return (await response.json()) as AgentConnection;
 };
 
-export const disconnectAgent = async (provider: string): Promise<void> => {
-  const response = await authenticatedFetch(connectionPath(provider), { method: 'DELETE' });
+export const disconnectAgent = async (id: string): Promise<void> => {
+  const response = await authenticatedFetch(`/me/agents/connections/${encodeURIComponent(id)}`, { method: 'DELETE' });
 
   if (!response.ok) {
     throw new Error(await apiErrorMessage(response, 'Could not disconnect this provider.'));
   }
+};
+
+export const renameAgentConnection = async (id: string, name: string): Promise<AgentConnection> => {
+  const response = await authenticatedFetch(`/me/agents/connections/${encodeURIComponent(id)}/name`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),
+  });
+  if (!response.ok) throw new Error(await apiErrorMessage(response, 'Could not rename this account.'));
+  return (await response.json()) as AgentConnection;
 };

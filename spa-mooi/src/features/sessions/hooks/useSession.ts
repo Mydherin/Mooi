@@ -5,7 +5,7 @@ import {
   answerQuestion,
   fetchChanges,
   fetchSession,
-  fetchSessionProviders,
+  fetchSessionProvider,
   interruptSession,
   sendSessionMessage,
   updateSessionConfiguration,
@@ -116,18 +116,17 @@ export const useSession = (sessionId: string | undefined): UseSession => {
   }, [refreshChanges, sessionId, streamState]);
 
   useEffect(() => {
-    if (!session?.provider) return;
+    if (!session?.provider || !session.connectionId) return;
 
     let cancelled = false;
     setModelOptions([]);
     setModelLoading(true);
     setModelError(null);
-    fetchSessionProviders()
-      .then((providers) => {
+    fetchSessionProvider(session.provider, session.connectionId)
+      .then((provider) => {
         if (!cancelled) {
-          const provider = providers.find((entry) => entry.id === session.provider);
-          setModelOptions(provider?.models ?? []);
-          setModelError(provider?.unavailable ?? null);
+          setModelOptions(provider.models ?? []);
+          setModelError(provider.unavailable ?? null);
         }
       })
       .catch((failure: Error) => {
@@ -138,7 +137,7 @@ export const useSession = (sessionId: string | undefined): UseSession => {
       });
 
     return () => { cancelled = true; };
-  }, [session?.provider]);
+  }, [session?.provider, session?.connectionId]);
 
   const runAction = useCallback(async (action: () => Promise<unknown>): Promise<boolean> => {
     if (actionPending.current) return false;

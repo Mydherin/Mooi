@@ -15,10 +15,10 @@ export const useAgentsStore = create<AgentsState>((set) => ({
   setConnections: (connections) => set({ connections, status: 'ready', error: null }),
   upsertConnection: (connection) =>
     set((state) => ({
-      connections: [connection, ...state.connections.filter((current) => current.provider !== connection.provider)],
+      connections: [connection, ...state.connections.filter((current) => current.id !== connection.id)],
     })),
-  removeConnection: (provider) =>
-    set((state) => ({ connections: state.connections.filter((connection) => connection.provider !== provider) })),
+  removeConnection: (id) =>
+    set((state) => ({ connections: state.connections.filter((connection) => connection.id !== id) })),
   setStatus: (status) => set({ status }),
   setError: (error) => set({ error, status: error ? 'error' : 'ready' }),
   clear: () => set({ providers: [], connections: [], status: 'ready', error: null }),

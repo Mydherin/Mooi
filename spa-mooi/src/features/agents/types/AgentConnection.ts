@@ -8,8 +8,10 @@ import type { AgentConnectionMode } from '@/features/agents/types/AgentConnectio
  * repairs it with one click, the row is not deleted.
  */
 export interface AgentConnection {
+  id: string;
   provider: string;
   label: string;
+  name: string | null;
   mode: AgentConnectionMode;
   accountLabel: string | null;
   scope: string | null;

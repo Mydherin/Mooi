@@ -3,6 +3,7 @@ import {
   connectAgentToken,
   disconnectAgent,
   fetchAgentConnections,
+  renameAgentConnection,
   startAgentAuthorization,
 } from '@/features/agents/api/agentsApi';
 import type { AgentConnection } from '@/features/agents/types/AgentConnection';
@@ -17,9 +18,10 @@ interface UseAgentConnections {
   error: string | null;
   busy: boolean;
   actionError: string | null;
-  startOauth: (provider: string) => void;
-  connectToken: (provider: string, token: string) => Promise<boolean>;
-  disconnect: (provider: string) => Promise<boolean>;
+  startOauth: (provider: string, name: string) => void;
+  connectToken: (provider: string, token: string, name: string) => Promise<boolean>;
+  disconnect: (id: string) => Promise<boolean>;
+  rename: (id: string, name: string) => Promise<boolean>;
   reload: () => void;
   clearActionError: () => void;
 }
@@ -43,11 +45,14 @@ export const useAgentConnections = (): UseAgentConnections => {
    * Leaves the application on purpose: the authorization happens on the provider's own site, and
    * the callback comes back to a route of ours that finishes the exchange (E4).
    */
-  const startOauth = useCallback((provider: string) => {
+  const startOauth = useCallback((provider: string, name: string) => {
     setBusy(true);
     setActionError(null);
     startAgentAuthorization(provider)
       .then((authorization) => {
+        const state = new URL(authorization.authorizeUrl).searchParams.get('state');
+        if (!state) throw new Error('Could not start the authorization.');
+        sessionStorage.setItem(`agent-oauth-name:${state}`, name.trim());
         window.location.assign(authorization.authorizeUrl);
       })
       .catch((failure: Error) => {
@@ -56,12 +61,12 @@ export const useAgentConnections = (): UseAgentConnections => {
       });
   }, []);
 
-  const connectToken = useCallback(async (provider: string, token: string): Promise<boolean> => {
+  const connectToken = useCallback(async (provider: string, token: string, name: string): Promise<boolean> => {
     setBusy(true);
     setActionError(null);
 
     try {
-      const connection = await connectAgentToken(provider, token);
+      const connection = await connectAgentToken(provider, token, name);
 
       useAgentsStore.getState().upsertConnection(connection);
 
@@ -75,18 +80,32 @@ export const useAgentConnections = (): UseAgentConnections => {
     }
   }, []);
 
-  const disconnect = useCallback(async (provider: string): Promise<boolean> => {
+  const disconnect = useCallback(async (id: string): Promise<boolean> => {
     setBusy(true);
     setActionError(null);
 
     try {
-      await disconnectAgent(provider);
-      useAgentsStore.getState().removeConnection(provider);
+      await disconnectAgent(id);
+      useAgentsStore.getState().removeConnection(id);
 
       return true;
     } catch (failure) {
       setActionError((failure as Error).message);
 
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  const rename = useCallback(async (id: string, name: string): Promise<boolean> => {
+    setBusy(true);
+    setActionError(null);
+    try {
+      useAgentsStore.getState().upsertConnection(await renameAgentConnection(id, name));
+      return true;
+    } catch (failure) {
+      setActionError((failure as Error).message);
       return false;
     } finally {
       setBusy(false);
@@ -116,6 +135,7 @@ export const useAgentConnections = (): UseAgentConnections => {
     startOauth,
     connectToken,
     disconnect,
+    rename,
     reload,
     clearActionError,
   };

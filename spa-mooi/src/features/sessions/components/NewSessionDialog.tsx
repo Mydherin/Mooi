@@ -1,16 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { GitBranch } from 'lucide-react';
-import { fetchSessionProviders } from '@/features/sessions/api/sessionsApi';
+import { fetchSessionProvider } from '@/features/sessions/api/sessionsApi';
 import type { SessionProvider } from '@/features/sessions/types/SessionProvider';
 import { SessionModelFields } from '@/features/sessions/components/SessionModelFields';
 import { ROUTES } from '@/app/routes';
 import type { AgentConnection } from '@/features/agents/types/AgentConnection';
+import { AgentAccountSelect } from '@/features/agents/components/AgentAccountSelect';
 import type { Project } from '@/features/projects/types/Project';
 import type { CreateSessionRequest } from '@/features/sessions/types/CreateSessionRequest';
 import { Button } from '@/shared/components/Button';
 import { Modal } from '@/shared/components/Modal';
-import { SegmentedControl } from '@/shared/components/SegmentedControl';
 
 interface NewSessionDialogProps {
   open: boolean;
@@ -70,25 +70,29 @@ export const NewSessionDialog = ({
   onCreate,
 }: NewSessionDialogProps) => {
   const [branch, setBranch] = useState('');
-  const [provider, setProvider] = useState('');
-  const [catalog, setCatalog] = useState<SessionProvider[]>([]);
+  const [connectionId, setConnectionId] = useState('');
+  const [catalog, setCatalog] = useState<{ connectionId: string; provider: SessionProvider } | null>(null);
   const [model, setModel] = useState('');
   const [effort, setEffort] = useState('');
   const [catalogError, setCatalogError] = useState<string | null>(null);
-  const selectedProvider = catalog.find((entry) => entry.id === provider);
+  const selectedConnection = connections.find((entry) => entry.id === connectionId);
+  const provider = selectedConnection?.provider ?? '';
+  const selectedProvider = catalog?.connectionId === connectionId && catalog.provider.id === provider
+    ? catalog.provider : undefined;
 
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    setCatalog([]);
+    setCatalog(null);
     setCatalogError(null);
-    void fetchSessionProviders().then((entries) => {
-      if (!cancelled) setCatalog(entries);
+    if (!provider) return;
+    void fetchSessionProvider(provider, connectionId).then((entry) => {
+      if (!cancelled) setCatalog({ connectionId, provider: entry });
     }).catch((failure: Error) => {
       if (!cancelled) setCatalogError(failure.message);
     });
     return () => { cancelled = true; };
-  }, [open]);
+  }, [open, connectionId, provider]);
 
   useEffect(() => {
     const defaultModel = selectedProvider?.defaultModel ?? '';
@@ -111,12 +115,11 @@ export const NewSessionDialog = ({
 
   useEffect(() => {
     if (!open) return;
-    setProvider((current) => (current && connections.some((connection) => connection.provider === current)
-      ? current
-      : connections[0]?.provider ?? ''));
+    setConnectionId((current) => (current && connections.some((connection) => connection.id === current)
+      ? current : connections[0]?.id ?? ''));
   }, [open, connections]);
 
-  const canSubmit = connections.length > 0 && branch.trim().length > 0 && provider.length > 0
+  const canSubmit = connections.length > 0 && branch.trim().length > 0 && provider.length > 0 && connectionId.length > 0
     && Boolean(selectedProvider?.models.some((entry) => entry.id === model)) && !selectedProvider?.unavailable;
 
   const handleSubmit = () => {
@@ -127,6 +130,7 @@ export const NewSessionDialog = ({
     void onCreate({
       projectId: project.id,
       provider,
+      connectionId,
       model,
       effort: effort || null,
       branch: branch.trim(),
@@ -157,11 +161,11 @@ export const NewSessionDialog = ({
       {connections.length === 0 ? (
         <div className="rounded-[10px] border border-warning/30 bg-warning-soft px-4 py-3.5 text-sm leading-relaxed text-ink">
           <p>
-            <span className="font-medium">Link an agent provider first.</span>{' '}
+            <span className="font-medium">Add an agent account first.</span>{' '}
             <span className="text-ink-muted">A session needs one to run.</span>
           </p>
           <Link
-            to={ROUTES.account}
+            to={`${ROUTES.account}?tab=agents`}
             onClick={onClose}
             className="mt-2 inline-block font-medium text-brand underline-offset-4 hover:underline"
           >
@@ -171,12 +175,8 @@ export const NewSessionDialog = ({
       ) : (
         <div className="flex flex-col gap-5">
           <label className="flex flex-col gap-2">
-            <span className="text-xs font-medium text-ink-muted">Agent provider</span>
-            <SegmentedControl
-              items={connections.map((connection) => ({ id: connection.provider, label: connection.label }))}
-              value={provider}
-              onChange={setProvider}
-            />
+            <span className="text-xs font-medium text-ink-muted">Agent account</span>
+            <AgentAccountSelect connections={connections} value={connectionId} onChange={setConnectionId} />
           </label>
 
           <SessionModelFields provider={selectedProvider} model={model} effort={effort}

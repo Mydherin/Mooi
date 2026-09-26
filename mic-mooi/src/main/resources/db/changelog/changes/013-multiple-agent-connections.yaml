@@ -1,0 +1,14 @@
+databaseChangeLog:
+  - changeSet:
+      id: 013-multiple-agent-connections
+      author: mooi
+      changes:
+        - dropUniqueConstraint:
+            tableName: agent_connections
+            constraintName: uq_agent_connections_player_provider
+        - addColumn:
+            tableName: agent_connections
+            columns:
+              - column:
+                  name: name
+                  type: varchar(100)

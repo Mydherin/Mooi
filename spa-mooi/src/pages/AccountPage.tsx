@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { AccountNoteCard } from '@/features/account/components/AccountNoteCard';
 import { AccountRoleCard } from '@/features/account/components/AccountRoleCard';
 import { AccountSessionCard } from '@/features/account/components/AccountSessionCard';
@@ -13,12 +14,13 @@ import { useAuthStore } from '@/stores/authStore';
 const tabs: TabItem[] = [
   { id: 'profile', label: 'Profile & preferences' },
   { id: 'github', label: 'GitHub' },
-  { id: 'agents', label: 'Agent providers' },
+  { id: 'agents', label: 'Agent accounts' },
 ];
 
 export const AccountPage = () => {
   const player = useAuthStore((state) => state.player);
-  const [tab, setTab] = useState('profile');
+  const [searchParams] = useSearchParams();
+  const [tab, setTab] = useState(() => searchParams.get('tab') === 'agents' ? 'agents' : 'profile');
 
   if (!player) {
     return null;

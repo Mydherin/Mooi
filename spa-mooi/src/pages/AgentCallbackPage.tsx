@@ -55,7 +55,14 @@ export const AgentCallbackPage = () => {
     }
 
     useAgentsStore.getState().setStatus('loading');
-    completeAgentAuthorization(provider, code, state)
+    const storageKey = `agent-oauth-name:${state}`;
+    const name = sessionStorage.getItem(storageKey);
+    sessionStorage.removeItem(storageKey);
+    if (!name) {
+      setFailure('The account title is missing. Please start the connection again.');
+      return;
+    }
+    completeAgentAuthorization(provider, code, state, name)
       .then((connection) => {
         useAgentsStore.getState().upsertConnection(connection);
         navigate(ROUTES.account, { replace: true });

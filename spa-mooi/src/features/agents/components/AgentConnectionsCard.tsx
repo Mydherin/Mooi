@@ -1,101 +1,83 @@
 import { useState } from 'react';
-import { CodexConnectDialog } from '@/features/agents/components/CodexConnectDialog';
-import { RefreshCw } from 'lucide-react';
-import { AgentProviderRow } from '@/features/agents/components/AgentProviderRow';
-import { AgentTokenDialog } from '@/features/agents/components/AgentTokenDialog';
+import { Bot, Plus, RefreshCw, TriangleAlert, Unlink } from 'lucide-react';
+import { AddAgentAccountDialog } from '@/features/agents/components/AddAgentAccountDialog';
 import { useAgentConnections } from '@/features/agents/hooks/useAgentConnections';
+import type { AgentConnection } from '@/features/agents/types/AgentConnection';
 import { Button } from '@/shared/components/Button';
 import { Card } from '@/shared/components/Card';
+import { Modal } from '@/shared/components/Modal';
 
-const Skeleton = () => (
-  <ul className="mt-5 flex animate-pulse-soft flex-col gap-4">
-    {[0, 1].map((row) => (
-      <li key={row} className="flex items-center gap-3">
-        <span className="size-9 shrink-0 rounded-xl bg-surface-2" />
-        <span className="flex min-w-0 flex-1 flex-col gap-2">
-          <span className="h-3.5 w-32 rounded-full bg-surface-2" />
-          <span className="h-3 w-48 rounded-full bg-surface-2" />
-        </span>
-      </li>
-    ))}
-  </ul>
-);
+const accountTitle = (connection: AgentConnection) => connection.name || connection.accountLabel || connection.label;
 
-/**
- * The agent providers Mooi can start sessions with, and their connection state on the account
- * screen. Every provider is listed even before it is linked, so a player knows what is available
- * before ever creating a session.
- */
 export const AgentConnectionsCard = () => {
-  const { providers, connections, status, error, busy, actionError, startOauth, connectToken, disconnect, reload, clearActionError } =
-    useAgentConnections();
-  const [codexOpen, setCodexOpen] = useState(false);
-  const [tokenDialogProvider, setTokenDialogProvider] = useState<string | null>(null);
+  const { providers, connections, status, error, busy, actionError, startOauth, connectToken,
+    disconnect, rename, reload, clearActionError } = useAgentConnections();
+  const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<AgentConnection | null>(null);
+  const [name, setName] = useState('');
 
-  const dialogProvider = providers.find((provider) => provider.id === tokenDialogProvider) ?? null;
+  return <Card className="p-5 sm:p-6">
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <h2 className="text-sm font-extrabold tracking-[-0.02em] text-ink">Agent accounts</h2>
+        <p className="mt-1 text-xs text-ink-subtle">Choose which account runs each session.</p>
+      </div>
+      <Button variant="secondary" size="sm" disabled={busy || providers.length === 0}
+        onClick={() => { clearActionError(); setAdding(true); }}>
+        <Plus className="size-4" /> Add account
+      </Button>
+    </div>
 
-  const openConnect = (provider: (typeof providers)[number]) => {
-    if (provider.modes.includes('device_oauth')) {
-      setCodexOpen(true);
-    } else if (provider.oauthEnabled) {
-      startOauth(provider.id);
-    } else {
-      clearActionError();
-      setTokenDialogProvider(provider.id);
-    }
-  };
+    {status === 'error' && <div className="mt-5 flex flex-wrap items-center gap-3">
+      <p className="min-w-0 flex-1 text-sm text-danger">{error}</p>
+      <Button variant="secondary" size="sm" onClick={reload}><RefreshCw className="size-4" /> Try again</Button>
+    </div>}
 
-  return (
-    <Card className="p-5 sm:p-6">
-      <h2 className="text-sm font-extrabold tracking-[-0.02em] text-ink">Agents</h2>
+    {status === 'loading' && connections.length === 0 && <div className="mt-5 space-y-3 animate-pulse-soft">
+      {[0, 1].map((index) => <div key={index} className="h-16 rounded-xl bg-surface-2" />)}
+    </div>}
 
-      {status === 'error' ? (
-        <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center">
-          <p className="min-w-0 flex-1 rounded-[10px] border border-danger/30 bg-danger-soft px-4 py-2.5 text-sm text-danger">
-            {error}
+    {status === 'ready' && connections.length === 0 && <div className="mt-5 rounded-xl border border-dashed border-line px-5 py-8 text-center">
+      <span className="mx-auto flex size-10 items-center justify-center rounded-xl bg-surface-2 text-ink-muted"><Bot className="size-5" /></span>
+      <p className="mt-3 text-sm font-semibold text-ink">No agent accounts yet</p>
+      <p className="mt-1 text-xs text-ink-muted">Add a Claude or Codex account to start a session.</p>
+    </div>}
+
+    {connections.length > 0 && <ul className="mt-5 divide-y divide-line rounded-xl border border-line px-4 sm:px-5">
+      {connections.map((connection) => <li key={connection.id} className="flex flex-wrap items-center gap-3 py-4 sm:flex-nowrap">
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-surface-2 text-ink-muted"><Bot className="size-5" /></span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold text-ink">{accountTitle(connection)}</p>
+          <p className="mt-0.5 flex items-center gap-1.5 text-xs text-ink-subtle">
+            {connection.label}
+            {connection.stale && <span className="inline-flex items-center gap-1 text-warning"><TriangleAlert className="size-3" /> Needs attention</span>}
           </p>
-          <span className="shrink-0">
-            <Button variant="secondary" size="sm" onClick={reload}>
-              <RefreshCw className="size-4" />
-              Try again
-            </Button>
-          </span>
         </div>
-      ) : null}
+        <div className="ml-auto flex shrink-0 items-center gap-1 sm:ml-0">
+          <Button variant="ghost" size="sm" disabled={busy} onClick={() => { clearActionError(); setEditing(connection); setName(connection.name || accountTitle(connection)); }}>Rename</Button>
+          <Button variant="danger" size="sm" disabled={busy} onClick={() => void disconnect(connection.id)}><Unlink className="size-4" /> Disconnect</Button>
+        </div>
+      </li>)}
+    </ul>}
 
-      {status !== 'error' && status !== 'ready' && providers.length === 0 ? <Skeleton /> : null}
+    {actionError && !adding && !editing && <p role="alert" className="mt-4 text-sm text-danger">{actionError}</p>}
 
-      {status !== 'error' && providers.length > 0 ? (
-        <ul className="mt-5 divide-y divide-line">
-          {providers.map((provider) => (
-            <AgentProviderRow
-              key={provider.id}
-              provider={provider}
-              connection={connections.find((connection) => connection.provider === provider.id) ?? null}
-              busy={busy}
-              onConnect={() => openConnect(provider)}
-              onDisconnect={() => void disconnect(provider.id)}
-            />
-          ))}
-        </ul>
-      ) : null}
+    {adding && <AddAgentAccountDialog providers={providers} busy={busy} actionError={actionError}
+      onClose={() => setAdding(false)} onConnected={reload} onConnectToken={connectToken} onStartOauth={startOauth} />}
 
-      {actionError && !dialogProvider ? (
-        <p className="mt-4 rounded-[10px] border border-danger/30 bg-danger-soft px-4 py-2.5 text-sm text-danger">
-          {actionError}
-        </p>
-      ) : null}
-
-      {codexOpen && <CodexConnectDialog onClose={() => setCodexOpen(false)} onConnected={reload} />}
-
-      <AgentTokenDialog
-        open={dialogProvider !== null}
-        providerLabel={dialogProvider?.label ?? ''}
-        busy={busy}
-        actionError={dialogProvider ? actionError : null}
-        onClose={() => setTokenDialogProvider(null)}
-        onSubmit={(token) => connectToken(dialogProvider?.id ?? '', token)}
-      />
-    </Card>
-  );
+    <Modal open={editing !== null} onClose={() => setEditing(null)} title="Rename account"
+      description="Choose a title to recognize this account."
+      footer={<>
+        <Button variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
+        <Button variant="brand" disabled={busy || !name.trim()} onClick={() => {
+          if (editing) void rename(editing.id, name.trim()).then((success) => { if (success) setEditing(null); });
+        }}>Save</Button>
+      </>}>
+      <label className="flex flex-col gap-2 text-xs font-semibold text-ink-muted">Account title
+        <input value={name} onChange={(event) => setName(event.target.value)} maxLength={100} required autoFocus
+          className="h-12 rounded-[10px] border border-line bg-surface-2 px-3 text-sm text-ink outline-none focus:border-brand" />
+      </label>
+      {editing && actionError && <p role="alert" className="mt-3 text-sm text-danger">{actionError}</p>}
+    </Modal>
+  </Card>;
 };

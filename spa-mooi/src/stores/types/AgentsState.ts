@@ -10,7 +10,7 @@ export interface AgentsState {
   setProviders: (providers: AgentProvider[]) => void;
   setConnections: (connections: AgentConnection[]) => void;
   upsertConnection: (connection: AgentConnection) => void;
-  removeConnection: (provider: string) => void;
+  removeConnection: (id: string) => void;
   setStatus: (status: AgentsStatus) => void;
   setError: (error: string | null) => void;
   clear: () => void;

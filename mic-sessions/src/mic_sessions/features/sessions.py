@@ -316,6 +316,7 @@ class DeploymentActivity(DeploymentContract):
 class CreateSessionRequest(BaseModel):
     projectId: UUID
     provider: str
+    connectionId: UUID
     branch: str = Field(pattern=_BRANCH_PATTERN)
     model: str | None = None
     effort: str | None = None
@@ -331,6 +332,7 @@ class SessionPayload(BaseModel):
     projectId: UUID
     projectFullName: str
     provider: str
+    connectionId: UUID
     providerLabel: str
     branch: str
     baseBranch: str
@@ -449,6 +451,7 @@ class Session:
     project_id: UUID
     project_full_name: str
     provider: str
+    connection_id: UUID
     branch: str
     base_branch: str
     base_commit: str
@@ -485,6 +488,7 @@ class Session:
             projectId=self.project_id,
             projectFullName=self.project_full_name,
             provider=self.provider,
+            connectionId=self.connection_id,
             providerLabel=descriptor.label,
             branch=self.branch,
             baseBranch=self.base_branch,
@@ -512,6 +516,7 @@ def new_session(
     project_id: UUID,
     project_full_name: str,
     provider: str,
+    connection_id: UUID,
     branch: str,
     base_branch: str,
 ) -> Session:
@@ -523,6 +528,7 @@ def new_session(
         project_id=project_id,
         project_full_name=project_full_name,
         provider=provider,
+        connection_id=connection_id,
         branch=branch,
         base_branch=base_branch,
         base_commit="",
@@ -910,7 +916,7 @@ async def create_session(
     """Reserve a session immediately; provision it in a tracked background task."""
     descriptor = describe(body.provider)
     registry = get_registry()
-    await descriptor.prepare(caller)
+    await descriptor.prepare(caller, str(body.connectionId))
     config = descriptor.configure(body.model, body.effort)
     await workspaces.get_workspaces().validate_branch(body.branch)
 
@@ -920,6 +926,7 @@ async def create_session(
         project_id=body.projectId,
         project_full_name="",
         provider=descriptor.id,
+        connection_id=body.connectionId,
         branch=body.branch,
         base_branch="",
     )
@@ -944,7 +951,7 @@ async def _provision(session: Session, caller: Caller, project: mooi.Project) ->
 
         _record_status(session, STATUS_PROVISIONING, f"Loading {descriptor.label} and repository credentials")
         credential, github_token = await asyncio.gather(
-            mooi.fetch_agent_credential(caller, descriptor.id),
+            mooi.fetch_agent_credential(caller, str(session.connection_id)),
             mooi.fetch_github_token(caller),
         )
 
@@ -983,19 +990,12 @@ async def _provision(session: Session, caller: Caller, project: mooi.Project) ->
         LOG.info("Session %s provisioning finished in %.0f ms", session.id, (time.perf_counter() - started_at) * 1000)
 
 
-@router.get("/sessions/providers")
-async def session_providers(caller: Annotated[Caller, Depends(current_caller)]) -> dict[str, Any]:
-    providers = []
-    for descriptor in PROVIDERS.values():
-        try:
-            await descriptor.prepare(caller)
-        except ApiException as error:
-            if error.status_code in (401, 403):
-                raise
-            providers.append({**descriptor.configuration(), "models": [], "unavailable": error.message})
-            continue
-        providers.append(descriptor.configuration())
-    return {"providers": providers}
+@router.get("/sessions/providers/{provider}")
+async def session_provider(provider: str, connectionId: UUID,
+                           caller: Annotated[Caller, Depends(current_caller)]) -> dict[str, Any]:
+    descriptor = describe(provider)
+    await descriptor.prepare(caller, str(connectionId))
+    return descriptor.configuration()
 
 
 @router.get("/sessions/workspaces")
@@ -1159,7 +1159,7 @@ async def send_message(
         try:
             refresh = getattr(runtime, "refresh_credential", None)
             if refresh:
-                await refresh(await mooi.fetch_agent_credential(caller, session.provider))
+                await refresh(await mooi.fetch_agent_credential(caller, str(session.connection_id)))
             await runtime.set_configuration(session.config)
         except ApiException:
             raise
@@ -1188,7 +1188,7 @@ async def update_session_configuration(
 ) -> SessionPayload:
     session = get_registry().get_for(caller, session_id)
     descriptor = describe(session.provider)
-    await descriptor.prepare(caller)
+    await descriptor.prepare(caller, str(session.connection_id))
     async with session.operation_lock:
         if (session.closing or session.deployment.state == "starting"
                 or session.status not in (STATUS_PROVISIONING, STATUS_READY, STATUS_WORKING, STATUS_WAITING)):
@@ -2168,7 +2168,7 @@ async def _run_deployment_start(session: Session, caller: Caller, operation_id: 
                 )
                 verified_endpoint.clear()
                 try:
-                    credential = await mooi.fetch_agent_credential(caller, session.provider)
+                    credential = await mooi.fetch_agent_credential(caller, str(session.connection_id))
                     secrets.append(credential.token)
                 except Exception:
                     LOG.debug("Background operation encountered an exception", exc_info=True)

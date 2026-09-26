@@ -1726,11 +1726,14 @@ class ProviderDescriptor:
     runtime_class: type[AgentRuntime]
     structured_executor: StructuredExecutor | None = None
 
-    async def prepare(self, caller) -> None:
+    async def prepare(self, caller, connection_id: str) -> None:
         loader = getattr(self.runtime_class, "load_configuration", None)
         if loader:
             from mic_sessions.shared.mooi import fetch_agent_credential
-            await loader(await fetch_agent_credential(caller, self.id))
+            credential = await fetch_agent_credential(caller, connection_id)
+            if credential.provider != self.id:
+                raise ApiException.bad_request("The selected account belongs to another provider")
+            await loader(credential)
 
     def configuration(self) -> dict[str, Any]:
         return self.runtime_class.configuration()

@@ -2,15 +2,13 @@ import { useEffect, useState } from 'react';
 import { ExternalLink, LoaderCircle } from 'lucide-react';
 import { startCodexAuthorization, pollCodexAuthorization, cancelCodexAuthorization } from '@/features/agents/api/codexApi';
 import type { CodexAuthorization } from '@/features/agents/types/CodexAuthorization';
-import { Modal } from '@/shared/components/Modal';
-import { Button } from '@/shared/components/Button';
 
-interface CodexConnectDialogProps {
-  onClose: () => void;
+interface CodexPairingProps {
+  name: string;
   onConnected: () => void;
 }
 
-export const CodexConnectDialog = ({ onClose, onConnected }: CodexConnectDialogProps) => {
+export const CodexPairing = ({ name, onConnected }: CodexPairingProps) => {
   const [attempt, setAttempt] = useState<CodexAuthorization | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -28,13 +26,12 @@ export const CodexConnectDialog = ({ onClose, onConnected }: CodexConnectDialogP
         if (status === 'connected') {
           current = null;
           onConnected();
-          onClose();
         } else if (['failed', 'expired', 'cancelled'].includes(status)) {
           setError('The login could not be completed. Close this window and try again.');
         } else timer = setTimeout(() => void poll(), 2000);
       } catch (cause) { fail(cause); }
     };
-    const startTimer = setTimeout(() => void startCodexAuthorization().then((value) => {
+    const startTimer = setTimeout(() => void startCodexAuthorization(name.trim()).then((value) => {
       current = value;
       if (disposed) { void cancelCodexAuthorization(value.id).catch(() => {}); return; }
       setAttempt(value);
@@ -46,13 +43,11 @@ export const CodexConnectDialog = ({ onClose, onConnected }: CodexConnectDialogP
       clearTimeout(timer);
       if (current) void cancelCodexAuthorization(current.id).catch(() => {});
     };
-    // One login attempt per mounted dialog; parent callbacks do not restart authorization.
+    // One login attempt for the chosen account title.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return <Modal open onClose={onClose} title="Connect Codex" description="Sign in with your ChatGPT account."
-    footer={<Button variant="ghost" onClick={onClose}>Close</Button>}>
-    {error ? <p role="alert" className="text-sm text-danger">{error}</p> : attempt ?
+  return error ? <p role="alert" className="text-sm text-danger">{error}</p> : attempt ?
       <div className="flex flex-col gap-4">
         <p className="text-sm text-ink-muted">Open the secure sign-in page and enter this code. This window will update when your account is linked.</p>
         <code className="select-all rounded-xl bg-surface-2 p-4 text-center text-xl font-semibold tracking-widest text-ink">{attempt.userCode}</code>
@@ -61,6 +56,5 @@ export const CodexConnectDialog = ({ onClose, onConnected }: CodexConnectDialogP
           Continue with ChatGPT <ExternalLink className="size-4" />
         </a>
         <p className="text-xs text-ink-subtle">If prompted, enable device code sign-in in your ChatGPT security settings. The code expires after a few minutes.</p>
-      </div> : <p role="status" className="flex items-center gap-2 text-sm text-ink-muted"><LoaderCircle className="size-4 animate-spin" /> Preparing secure sign-in…</p>}
-  </Modal>;
+      </div> : <p role="status" className="flex items-center gap-2 text-sm text-ink-muted"><LoaderCircle className="size-4 animate-spin" /> Preparing secure sign-in…</p>;
 };

@@ -9,6 +9,7 @@ export interface Session {
   projectId: string;
   projectFullName: string;
   provider: string;
+  connectionId: string;
   model: string;
   effort?: string | null;
   providerLabel: string;

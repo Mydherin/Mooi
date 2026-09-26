@@ -4,8 +4,8 @@ import type { CodexAuthorization } from '@/features/agents/types/CodexAuthorizat
 
 const path = '/agents/codex/authorization';
 
-export const startCodexAuthorization = async (): Promise<CodexAuthorization> => {
-  const response = await sessionsFetch(path, { method: 'POST' });
+export const startCodexAuthorization = async (name: string): Promise<CodexAuthorization> => {
+  const response = await sessionsFetch(`${path}?name=${encodeURIComponent(name)}`, { method: 'POST' });
   if (!response.ok) throw new Error(await apiErrorMessage(response, 'Could not start Codex login.'));
   return response.json();
 };

@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Annotated
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from mic_sessions.shared.auth import Caller, current_caller
 from mic_sessions.shared.codex import Client
@@ -21,6 +21,7 @@ router = APIRouter()
 @dataclass
 class Attempt:
     owner: str
+    name: str = ""
     task: asyncio.Task | None = None
     state: str = "pending"
     client: Client | None = None
@@ -66,7 +67,11 @@ async def _login(attempt: Attempt):
 
 
 @router.post("/agents/codex/authorization")
-async def start(caller: Annotated[Caller, Depends(current_caller)]):
+async def start(caller: Annotated[Caller, Depends(current_caller)],
+                name: Annotated[str, Query(min_length=1, max_length=100)]):
+    name = name.strip()
+    if not name:
+        raise ApiException.bad_request("An account title is required")
     owner = str(caller.player_id)
     replaced = []
     for key, existing in list(_attempts.items()):
@@ -78,7 +83,7 @@ async def start(caller: Annotated[Caller, Depends(current_caller)]):
     if len(_attempts) >= 32:
         raise ApiException(429, "Too many login attempts. Try again later.")
     key = uuid4().hex
-    attempt = Attempt(owner, ready=asyncio.get_running_loop().create_future())
+    attempt = Attempt(owner, name=name, ready=asyncio.get_running_loop().create_future())
     _attempts[key] = attempt
     attempt.task = asyncio.create_task(_login(attempt))
     try:
@@ -112,7 +117,7 @@ async def status(key: str, caller: Annotated[Caller, Depends(current_caller)]):
             account = await attempt.client.call("account_read", {"refreshToken": True})
             label = getattr(account.account.root, "email", None) if account.account else None
             home = attempt.client.home
-            await link_codex(caller, (home / "auth.json").read_text(), label)
+            await link_codex(caller, (home / "auth.json").read_text(), label, attempt.name)
             attempt.state = "connected"
         except Exception:
             attempt.state = "failed"
