@@ -54,9 +54,10 @@ Links a GitHub account to an existing player. It never signs anyone in — sign-
 2. Enable **Expire user authorization tokens**: it is the only setup that issues refresh tokens,
    which is what keeps the link alive without asking the player to authorize again.
 3. Enable **Request user authorization (OAuth) during installation**, and grant **Repository
-   permissions → Metadata: Read-only** and **Contents: Read and write**: this is what lets an
-   installation be redeemed as a login, list the repositories it was granted and push session
-   merges. Existing installations must accept the updated permissions on GitHub.
+   permissions → Metadata: Read-only**, **Contents: Read and write**, and **Administration:
+   Read and write**. Administration is required to create and delete GitHub repositories from
+   Mooi. Existing installations must accept the updated permissions on GitHub. Select **All
+   repositories** during installation so newly created repositories are available to sessions.
 4. Callback URL: `http://localhost:28471/account/github/callback` (pinned SPA dev port; `make`
    exports the matching `GITHUB_REDIRECT_URI` automatically).
 5. Generate a client secret, then set in `mic-mooi/.env`: `GITHUB_CLIENT_ID`,

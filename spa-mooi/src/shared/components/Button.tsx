@@ -8,6 +8,7 @@ interface ButtonProps {
   variant?: ButtonVariant;
   size?: ButtonSize;
   type?: 'button' | 'submit';
+  form?: string;
   onClick?: () => void;
   disabled?: boolean;
   className?: string;
@@ -19,6 +20,7 @@ export const Button = ({
   variant = 'primary',
   size = 'md',
   type = 'button',
+  form,
   onClick,
   disabled = false,
   className,
@@ -26,6 +28,7 @@ export const Button = ({
 }: ButtonProps) => (
   <button
     type={type === 'submit' ? 'submit' : 'button'}
+    form={form}
     onClick={onClick}
     disabled={disabled}
     aria-label={ariaLabel}

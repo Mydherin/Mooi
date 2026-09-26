@@ -4,6 +4,7 @@ import { SearchInput } from '@/shared/components/SearchInput';
 
 interface ProjectsHeaderProps {
   onAdd: () => void;
+  onCreate: () => void;
   onRefresh: () => void;
   busy: boolean;
   canAdd: boolean;
@@ -14,6 +15,7 @@ interface ProjectsHeaderProps {
 
 export const ProjectsHeader = ({
   onAdd,
+  onCreate,
   onRefresh,
   busy,
   canAdd,
@@ -42,7 +44,7 @@ export const ProjectsHeader = ({
         />
       ) : null}
 
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Button
           variant="secondary"
           size="md"
@@ -55,6 +57,16 @@ export const ProjectsHeader = ({
         </Button>
         <Button
           variant="brand"
+          size="md"
+          onClick={onCreate}
+          disabled={!canAdd}
+          className="flex-1 sm:flex-none"
+        >
+          <Plus className="size-4" />
+          Create project
+        </Button>
+        <Button
+          variant="secondary"
           size="md"
           onClick={onAdd}
           disabled={!canAdd}

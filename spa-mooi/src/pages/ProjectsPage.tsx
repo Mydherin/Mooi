@@ -3,6 +3,7 @@ import { FolderGit2, Plus, RefreshCw, Search } from 'lucide-react';
 import { GithubGateCard } from '@/features/github/components/GithubGateCard';
 import { useGithubLinked } from '@/features/github/hooks/useGithubLinked';
 import { AddProjectDialog } from '@/features/projects/components/AddProjectDialog';
+import { CreateProjectDialog } from '@/features/projects/components/CreateProjectDialog';
 import { ProjectGrid } from '@/features/projects/components/ProjectGrid';
 import { ProjectsHeader } from '@/features/projects/components/ProjectsHeader';
 import { useProjects } from '@/features/projects/hooks/useProjects';
@@ -25,14 +26,14 @@ const Skeleton = () => (
  * The homepage of a signed-in player: the workspace is its projects, so there is nothing to put in
  * front of them.
  *
- * It starts empty on purpose — a project exists because the player imported a repository they own,
- * so there is nothing to show until they do.
+ * It starts empty until the player creates or imports a GitHub repository.
  */
 export const ProjectsPage = () => {
   const { linked, resolved } = useGithubLinked();
   const { projects, status, error, reload } = useProjects();
   const [query, setQuery] = useState('');
   const [isDialogOpen, setDialogOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
 
   const visibleProjects = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -63,6 +64,7 @@ export const ProjectsPage = () => {
     <div className="mx-auto w-full max-w-6xl px-5 py-7 sm:px-8 lg:px-10 lg:py-10">
       <ProjectsHeader
         onAdd={() => setDialogOpen(true)}
+        onCreate={() => setCreateOpen(true)}
         onRefresh={reload}
         busy={status === 'loading'}
         canAdd={linked}
@@ -101,7 +103,11 @@ export const ProjectsPage = () => {
             title="No projects yet"
             description="Add a GitHub repository to start working on it here."
           >
-            <Button variant="brand" onClick={() => setDialogOpen(true)}>
+            <Button variant="brand" onClick={() => setCreateOpen(true)}>
+              <Plus className="size-4" />
+              Create project
+            </Button>
+            <Button variant="secondary" onClick={() => setDialogOpen(true)}>
               <Plus className="size-4" />
               Add repository
             </Button>
@@ -130,6 +136,7 @@ export const ProjectsPage = () => {
       </div>
 
       <AddProjectDialog open={isDialogOpen} onClose={() => setDialogOpen(false)} />
+      <CreateProjectDialog open={createOpen} onClose={() => setCreateOpen(false)} />
     </div>
   );
 };

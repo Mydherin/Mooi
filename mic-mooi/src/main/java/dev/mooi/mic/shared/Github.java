@@ -134,6 +134,16 @@ public class Github {
                     "Repository not found or not visible to your GitHub account");
         }
 
+        public static GithubException repositoryWriteDenied() {
+            return new GithubException(HttpStatus.FORBIDDEN,
+                    "GitHub denied this action. Grant Mooi Administration write access and try again");
+        }
+
+        public static GithubException repositoryConflict() {
+            return new GithubException(HttpStatus.CONFLICT,
+                    "GitHub could not create this repository. Check its name and try again");
+        }
+
         /** GitHub is unreachable, slow or broken. Distinct from a refusal: retrying may work. */
         public static GithubException unavailable(String detail) {
             LOG.warn("GitHub is unavailable: {}", detail);
@@ -563,6 +573,55 @@ public class Github {
         public Repository fetchRepository(String owner, String name, String accessToken) {
             return toRepository(readJson(get("/repos/" + encode(owner) + "/" + encode(name), accessToken,
                     "GET /repos/" + owner + "/" + name)));
+        }
+
+        /** Creates a repository owned by the linked GitHub user. GitHub's response is authoritative. */
+        public Repository createRepository(String name, boolean privateRepository, String accessToken) {
+            String body;
+            try {
+                body = objectMapper.writeValueAsString(Map.of(
+                        "name", name, "private", privateRepository, "auto_init", true));
+            } catch (JacksonException exception) {
+                throw GithubException.unavailable("Unable to build the repository request");
+            }
+            HttpRequest request = repositoryRequest("/user/repos", accessToken)
+                    .header(HttpHeaders.CONTENT_TYPE, JSON)
+                    .POST(HttpRequest.BodyPublishers.ofString(body)).build();
+            return toRepository(readJson(sendRepositoryWrite(request, "create repository")));
+        }
+
+        /** Deletes the exact repository the player selected, after its numeric id was checked. */
+        public void deleteRepository(String owner, String name, String accessToken) {
+            HttpRequest request = repositoryRequest("/repos/" + encode(owner) + "/" + encode(name), accessToken)
+                    .DELETE().build();
+            sendRepositoryWrite(request, "delete repository");
+        }
+
+        private HttpRequest.Builder repositoryRequest(String path, String accessToken) {
+            return HttpRequest.newBuilder(URI.create(settings.getApiBaseUrl() + path))
+                    .timeout(settings.getRequestTimeout())
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                    .header(ACCEPT_HEADER, GITHUB_JSON)
+                    .header(API_VERSION_HEADER, API_VERSION);
+        }
+
+        private String sendRepositoryWrite(HttpRequest request, String action) {
+            try {
+                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                return switch (response.statusCode()) {
+                    case 200, 201, 204 -> response.body();
+                    case 401 -> throw GithubException.reauthorize();
+                    case 403 -> throw GithubException.repositoryWriteDenied();
+                    case 404 -> throw GithubException.repositoryNotFound();
+                    case 409, 422 -> throw GithubException.repositoryConflict();
+                    default -> throw GithubException.unavailable(action + " answered " + response.statusCode());
+                };
+            } catch (IOException exception) {
+                throw GithubException.unavailable(action + " failed: " + exception.getMessage());
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                throw GithubException.unavailable(action + " was interrupted");
+            }
         }
 
         /**

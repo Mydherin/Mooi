@@ -74,8 +74,8 @@ export const ProjectHeader = ({ project, busy, onRemove }: ProjectHeaderProps) =
               type="button"
               onClick={onRemove}
               disabled={busy}
-              aria-label="Remove project"
-              title="Remove project"
+              aria-label="Delete GitHub repository"
+              title="Delete GitHub repository"
               className={cn(iconAction, 'border-danger/35 text-danger hover:bg-danger-soft hover:text-danger')}
             >
               <Trash2 className="size-4" />

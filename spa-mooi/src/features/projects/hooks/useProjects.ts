@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import {
   addProject,
+  createProject,
   fetchProjects,
   removeProject,
 } from '@/features/projects/api/projectsApi';
@@ -16,6 +17,7 @@ interface UseProjects {
   busy: boolean;
   actionError: string | null;
   add: (fullName: string, settings: ProjectSettings) => Promise<Project | null>;
+  create: (name: string, isPrivate: boolean) => Promise<Project | null>;
   remove: (projectId: string) => Promise<boolean>;
   reload: () => void;
   clearActionError: () => void;
@@ -54,6 +56,21 @@ export const useProjects = (): UseProjects => {
     }
   }, []);
 
+  const create = useCallback(async (name: string, isPrivate: boolean): Promise<Project | null> => {
+    setBusy(true);
+    setActionError(null);
+    try {
+      const project = await createProject(name, isPrivate);
+      useProjectsStore.getState().upsertProject(project);
+      return project;
+    } catch (failure) {
+      setActionError((failure as Error).message);
+      return null;
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
   const remove = useCallback(async (projectId: string): Promise<boolean> => {
     setBusy(true);
     setActionError(null);
@@ -85,5 +102,5 @@ export const useProjects = (): UseProjects => {
 
   const clearActionError = useCallback(() => setActionError(null), []);
 
-  return { projects, status, error, busy, actionError, add, remove, reload, clearActionError };
+  return { projects, status, error, busy, actionError, add, create, remove, reload, clearActionError };
 };

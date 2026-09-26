@@ -5,6 +5,7 @@ import { ROUTES } from '@/app/routes';
 import { sessionPath } from '@/app/paths';
 import { useAgentConnections } from '@/features/agents/hooks/useAgentConnections';
 import { ProjectHeader } from '@/features/projects/components/ProjectHeader';
+import { DeleteProjectDialog } from '@/features/projects/components/DeleteProjectDialog';
 import { useProjects } from '@/features/projects/hooks/useProjects';
 import { findProject } from '@/features/projects/lib/findProject';
 import { NewSessionDialog } from '@/features/sessions/components/NewSessionDialog';
@@ -32,12 +33,13 @@ const WORKSPACES_TAB = 'workspaces';
 export const ProjectPage = () => {
   const { projectId } = useParams();
   const navigate = useNavigate();
-  const { projects, status, busy, remove } = useProjects();
+  const { projects, status, busy, actionError: deleteError, clearActionError: clearDeleteError, remove } = useProjects();
   const project = findProject(projects, projectId);
   const { sessions, busy: sessionBusy, actionError, create, clearActionError } = useProjectSessions(project?.id);
   useSessionsSync(project?.id, Boolean(project));
   const { connections } = useAgentConnections();
   const [newSessionOpen, setNewSessionOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = searchParams.get('tab') === WORKSPACES_TAB ? WORKSPACES_TAB : 'sessions';
   const sessionsRevision = useMemo(
@@ -96,7 +98,7 @@ export const ProjectPage = () => {
       <ProjectHeader
         project={project}
         busy={busy}
-        onRemove={handleRemove}
+        onRemove={() => { clearDeleteError(); setDeleteOpen(true); }}
       />
 
       <Tabs
@@ -151,6 +153,8 @@ export const ProjectPage = () => {
         }}
         onCreate={handleCreateSession}
       />
+      {deleteOpen ? <DeleteProjectDialog project={project} busy={busy} error={deleteError}
+        onClose={() => { if (!busy) setDeleteOpen(false); }} onDelete={handleRemove} /> : null}
     </div>
   );
 };

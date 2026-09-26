@@ -52,9 +52,8 @@ import lombok.Setter;
  * asked when the project is added, can be corrected later, and decides whether the project's
  * sessions offer deploy and preview at all.
  *
- * <p>That grant is also the authorization rule. A repository is added by name, but the metadata is
- * always fetched from GitHub with the caller's token first, so a name typed into a request body can
- * never add something the player cannot actually see.
+ * <p>That grant is also the authorization rule. Imported repository metadata is fetched from GitHub
+ * with the caller's token; newly created repository metadata comes from GitHub's creation response.
  *
  * <p>Self-contained by architecture: API, application logic, persistence and contracts live in this
  * single file and may only import transversal aspects from {@code shared}.
@@ -79,6 +78,13 @@ public class ProjectFeature {
         return projectService.add(principal.player().id(), request.fullName(), request.webApplication());
     }
 
+    @PostMapping("/me/projects/new")
+    @Auth.Authenticated
+    @ResponseStatus(HttpStatus.CREATED)
+    public ProjectPayload createProject(@Valid @RequestBody CreateProjectRequest request, Auth.Principal principal) {
+        return projectService.create(principal.player().id(), request.name(), request.isPrivate());
+    }
+
     /** Only the player-owned setting is editable; GitHub metadata is never taken from a request body. */
     @PatchMapping("/me/projects/{projectId}")
     @Auth.Authenticated
@@ -88,7 +94,7 @@ public class ProjectFeature {
         return projectService.update(principal.player().id(), projectId, request.webApplication());
     }
 
-    /** Always 204, present or not: removing something already gone is the outcome that was asked for. */
+    /** Removes the local project reference only. */
     @DeleteMapping("/me/projects/{projectId}")
     @Auth.Authenticated
     @ResponseStatus(HttpStatus.NO_CONTENT)
@@ -96,14 +102,21 @@ public class ProjectFeature {
         projectService.remove(principal.player().id(), projectId);
     }
 
+    /** Permanently deletes the repository on GitHub and then its local project reference. */
+    @DeleteMapping("/me/projects/{projectId}/repository")
+    @Auth.Authenticated
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteRepository(@PathVariable UUID projectId, Auth.Principal principal) {
+        projectService.delete(principal.player().id(), projectId);
+    }
+
     // --- application ---
 
     /**
-     * Everything a workspace does with its repositories: listing them, adding one, dropping one.
+     * Everything a workspace does with its repositories: listing, importing, creating and deleting.
      *
      * <p>Every method is scoped to the calling player, and no method ever trusts the client for
-     * repository metadata — {@code fullName} is the only thing the caller decides, and it is
-     * immediately resolved against GitHub with the caller's own token.
+     * repository metadata. GitHub resolves imports and returns the metadata for newly created ones.
      */
     @Service
     @RequiredArgsConstructor
@@ -145,6 +158,16 @@ public class ProjectFeature {
                         throw Github.GithubException.alreadyAdded();
                     });
 
+            return save(playerId, repository, webApplication);
+        }
+
+        @Transactional
+        public ProjectPayload create(UUID playerId, String name, boolean privateRepository) {
+            Github.Repository repository = oauthClient.createRepository(name, privateRepository, accessToken(playerId));
+            return save(playerId, repository, false);
+        }
+
+        private ProjectPayload save(UUID playerId, Github.Repository repository, boolean webApplication) {
             Project project = new Project();
             project.setPlayerId(playerId);
             project.setGithubRepoId(repository.id());
@@ -176,16 +199,27 @@ public class ProjectFeature {
             return toPayload(project);
         }
 
-        /**
-         * Drops the reference and only the reference: nothing on GitHub is touched, because nothing
-         * of the repository was ever ours. Silent when the row is already gone, which is what makes
-         * a repeated call harmless.
-         */
+        /** Refuses to delete a repository if its saved name now resolves to another GitHub id. */
+        @Transactional
+        public void delete(UUID playerId, UUID projectId) {
+            Project project = projectRepository.findByIdAndPlayerId(projectId, playerId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Project not found"));
+            String token = accessToken(playerId);
+            Github.Repository current = oauthClient.fetchRepository(project.getOwner(), project.getName(), token);
+            if (current.id() != project.getGithubRepoId()) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "This repository has changed on GitHub. Refresh the project before deleting it");
+            }
+            oauthClient.deleteRepository(project.getOwner(), project.getName(), token);
+            projectRepository.delete(project);
+            Github.LOG.info("Player {} deleted GitHub repository {}", playerId, project.getFullName());
+        }
+
         @Transactional
         public void remove(UUID playerId, UUID projectId) {
             projectRepository.findByIdAndPlayerId(projectId, playerId).ifPresent(project -> {
                 projectRepository.delete(project);
-                Github.LOG.info("Player {} removed repository {}", playerId, project.getFullName());
+                Github.LOG.info("Player {} removed repository {} from workspace", playerId, project.getFullName());
             });
         }
 
@@ -341,6 +375,13 @@ public class ProjectFeature {
             String fullName,
             /** Required rather than defaulted: the answer must be the player's, never assumed. */
             @NotNull Boolean webApplication) {
+    }
+
+    public record CreateProjectRequest(
+            @NotBlank
+            @Pattern(regexp = "^[A-Za-z0-9._-]{1,100}$", message = "must be a valid GitHub repository name")
+            String name,
+            @NotNull Boolean isPrivate) {
     }
 
     public record UpdateProjectRequest(@NotNull Boolean webApplication) {

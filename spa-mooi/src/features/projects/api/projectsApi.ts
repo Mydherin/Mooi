@@ -39,6 +39,20 @@ export const addProject = async (fullName: string, settings: ProjectSettings): P
   return (await response.json()) as Project;
 };
 
+export const createProject = async (name: string, isPrivate: boolean): Promise<Project> => {
+  const response = await authenticatedFetch(`${PROJECTS_PATH}/new`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, isPrivate }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await apiErrorMessage(response, 'Could not create this repository on GitHub.'));
+  }
+
+  return (await response.json()) as Project;
+};
+
 export const updateProject = async (projectId: string, settings: ProjectSettings): Promise<Project> => {
   const response = await authenticatedFetch(`${PROJECTS_PATH}/${projectId}`, {
     method: 'PATCH',
@@ -54,9 +68,9 @@ export const updateProject = async (projectId: string, settings: ProjectSettings
 };
 
 export const removeProject = async (projectId: string): Promise<void> => {
-  const response = await authenticatedFetch(`${PROJECTS_PATH}/${projectId}`, { method: 'DELETE' });
+  const response = await authenticatedFetch(`${PROJECTS_PATH}/${projectId}/repository`, { method: 'DELETE' });
 
   if (!response.ok) {
-    throw new Error(await apiErrorMessage(response, 'Could not remove this project.'));
+    throw new Error(await apiErrorMessage(response, 'Could not delete this repository on GitHub.'));
   }
 };
