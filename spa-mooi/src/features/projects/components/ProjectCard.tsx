@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { ChevronRight, GitBranch, Star } from 'lucide-react';
+import { ChevronRight, GitBranch, Globe, Star } from 'lucide-react';
 import { projectPath } from '@/app/paths';
 import type { Project } from '@/features/projects/types/Project';
 import { Badge } from '@/shared/components/Badge';
@@ -49,6 +49,12 @@ export const ProjectCard = ({ project }: ProjectCardProps) => (
           <Star className="size-3" />
           {project.stars}
         </span>
+        {project.webApplication ? (
+          <span className="flex items-center gap-1.5 text-brand-strong">
+            <Globe className="size-3" />
+            Web app
+          </span>
+        ) : null}
       </div>
 
       <div className="mt-auto flex items-center justify-between gap-3 border-t border-line pt-3.5 text-[11px] text-ink-subtle">

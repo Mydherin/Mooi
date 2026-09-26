@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { useNavigate, useParams, Link } from 'react-router-dom';
-import { CloudUpload, Compass, MessagesSquare } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { useNavigate, useParams, useSearchParams, Link } from 'react-router-dom';
+import { Compass, FolderGit2, MessagesSquare, Plus } from 'lucide-react';
 import { ROUTES } from '@/app/routes';
 import { sessionPath } from '@/app/paths';
 import { useAgentConnections } from '@/features/agents/hooks/useAgentConnections';
@@ -9,18 +9,25 @@ import { useProjects } from '@/features/projects/hooks/useProjects';
 import { findProject } from '@/features/projects/lib/findProject';
 import { NewSessionDialog } from '@/features/sessions/components/NewSessionDialog';
 import { SessionList } from '@/features/sessions/components/SessionList';
+import { WorkspacesOverview } from '@/features/sessions/components/workspaces/WorkspacesOverview';
 import { useProjectSessions } from '@/features/sessions/hooks/useProjectSessions';
+import { useProjectWorkspaces } from '@/features/sessions/hooks/useProjectWorkspaces';
 import { Card } from '@/shared/components/Card';
 import { EmptyState } from '@/shared/components/EmptyState';
 import { Button } from '@/shared/components/Button';
+import { Tabs } from '@/shared/components/Tabs';
 import { buttonStyles } from '@/shared/styles/buttonStyles';
 
 /**
  * What Mooi knows about an imported repository, and nothing it does not.
  *
- * Deployments render as an empty state rather than as sample rows: a repository added a minute ago
- * has none, and inventing one would make the screen lie about work that never ran.
+ * Deploy and preview live inside each session; whether sessions offer them is a project setting,
+ * edited from the header.
+ *
+ * The active tab lives in `?tab=` so a reload lands back on the same view.
  */
+const WORKSPACES_TAB = 'workspaces';
+
 export const ProjectPage = () => {
   const { projectId } = useParams();
   const navigate = useNavigate();
@@ -29,6 +36,16 @@ export const ProjectPage = () => {
   const { sessions, busy: sessionBusy, actionError, create, clearActionError } = useProjectSessions(project?.id);
   const { connections } = useAgentConnections();
   const [newSessionOpen, setNewSessionOpen] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = searchParams.get('tab') === WORKSPACES_TAB ? WORKSPACES_TAB : 'sessions';
+  const sessionsRevision = useMemo(
+    () => sessions.map((session) => `${session.id}:${session.status}:${session.workspacePath ?? ''}`).join('|'),
+    [sessions],
+  );
+  const workspaces = useProjectWorkspaces(tab === WORKSPACES_TAB ? project?.id : undefined, sessionsRevision);
+
+  const handleTabChange = (next: string) =>
+    setSearchParams(next === WORKSPACES_TAB ? { tab: WORKSPACES_TAB } : {}, { replace: true });
 
   if (!project) {
     if (status === 'loading' || status === 'idle') {
@@ -78,39 +95,47 @@ export const ProjectPage = () => {
         project={project}
         busy={busy}
         onRemove={handleRemove}
-        onNewSession={() => setNewSessionOpen(true)}
       />
 
-      {sessions.length > 0 ? (
-        <SessionList sessions={sessions} />
+      <Tabs
+        ariaLabel="Project views"
+        value={tab}
+        onChange={handleTabChange}
+        className="-mb-2 border-b border-line"
+        items={[
+          { id: 'sessions', label: 'Sessions', icon: MessagesSquare, count: sessions.length },
+          {
+            id: WORKSPACES_TAB,
+            label: 'Workspaces',
+            icon: FolderGit2,
+            count: sessions.filter((session) => session.workspacePath).length,
+          },
+        ]}
+      />
+
+      {tab === WORKSPACES_TAB ? (
+        <WorkspacesOverview
+          projectId={project.id}
+          previewsEnabled={project.webApplication}
+          overview={workspaces.overview}
+          loading={workspaces.loading}
+          error={workspaces.error}
+          onReload={workspaces.reload}
+        />
+      ) : sessions.length > 0 ? (
+        <SessionList sessions={sessions} onNewSession={() => setNewSessionOpen(true)} />
       ) : (
         <EmptyState
           icon={MessagesSquare}
           title="No sessions yet"
-          description="Start one to have an agent work on this repository."
-        />
+          description="Start one to have an agent work on this repository in its own isolated clone."
+        >
+          <Button variant="brand" size="lg" onClick={() => setNewSessionOpen(true)} className="px-7">
+            <Plus className="size-5" />
+            New session
+          </Button>
+        </EmptyState>
       )}
-
-      <div className="flex flex-col gap-3 rounded-[14px] border border-line bg-surface-2 px-5 py-4 sm:flex-row sm:items-center">
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-[10px] bg-surface-3 text-ink-subtle">
-          <CloudUpload className="size-4" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="flex items-center gap-2 text-sm font-extrabold text-ink">
-            Deployments
-            <span className="text-[9px] font-extrabold tracking-[0.06em] text-ink-subtle uppercase">
-              Not operational
-            </span>
-          </p>
-          <p className="mt-1 text-[12px] leading-relaxed text-ink-subtle">
-            The concept exists, but no deployment runs yet. This stays empty on purpose rather than
-            showing work that never happened.
-          </p>
-        </div>
-        <Button variant="secondary" size="sm" disabled>
-          Deploy
-        </Button>
-      </div>
 
       <NewSessionDialog
         open={newSessionOpen}

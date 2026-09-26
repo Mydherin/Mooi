@@ -1,7 +1,8 @@
 import { Link } from 'react-router-dom';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, GitBranch } from 'lucide-react';
 import { sessionPath } from '@/app/paths';
 import { SessionStatusBadge } from '@/features/sessions/components/SessionStatusBadge';
+import { WorkspacePathLabel } from '@/features/sessions/components/WorkspacePathLabel';
 import type { Session } from '@/features/sessions/types/Session';
 import { formatDate } from '@/shared/utils/formatDate';
 
@@ -20,16 +21,17 @@ export const SessionListItem = ({ session }: SessionListItemProps) => (
       </span>
 
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-extrabold text-ink">{session.title}</p>
+        <p className="flex min-w-0 items-center gap-1.5 text-sm font-extrabold text-ink">
+          <GitBranch className="size-3.5 shrink-0 text-ink-subtle" />
+          <span className="truncate font-mono">{session.branch}</span>
+        </p>
         <p className="mt-0.5 truncate text-[11px] text-ink-subtle">
           {session.detail ?? `Updated ${formatDate(session.updatedAt)}`}
         </p>
+        <WorkspacePathLabel path={session.workspacePath} className="mt-1" />
       </div>
 
-      <span className="hidden shrink-0 items-center gap-3 text-[11px] text-ink-subtle sm:flex">
-        <span className="max-w-[180px] truncate font-mono">{session.branch}</span>
-        <span className="font-bold">{session.providerLabel}</span>
-      </span>
+      <span className="hidden shrink-0 text-[11px] font-bold text-ink-subtle sm:block">{session.providerLabel}</span>
 
       <ChevronRight className="size-4 shrink-0 text-line-strong" />
     </Link>

@@ -19,3 +19,7 @@ databaseChangeLog:
       file: db/changelog/changes/009-create-agent-connections.yaml
   - include:
       file: db/changelog/changes/010-promote-mydherin-admin.yaml
+  - include:
+      file: db/changelog/changes/011-add-project-web-application.yaml
+  - include:
+      file: db/changelog/changes/012-codex-connections.yaml

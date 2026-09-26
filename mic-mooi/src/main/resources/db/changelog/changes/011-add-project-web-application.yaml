@@ -1,0 +1,25 @@
+databaseChangeLog:
+  - changeSet:
+      id: 011-add-project-web-application
+      author: mooi
+      changes:
+        # Existing rows predate the question and always offered deploy and preview, so they are
+        # backfilled as web applications. The default is dropped right after: every new project
+        # must carry the player's explicit answer.
+        - addColumn:
+            tableName: projects
+            columns:
+              - column:
+                  name: is_web_application
+                  type: boolean
+                  defaultValueBoolean: true
+                  remarks: Player-declared; gates deploy and preview for the project's sessions
+                  constraints:
+                    nullable: false
+        - dropDefaultValue:
+            tableName: projects
+            columnName: is_web_application
+      rollback:
+        - dropColumn:
+            tableName: projects
+            columnName: is_web_application

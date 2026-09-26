@@ -4,5 +4,4 @@ export interface CreateSessionRequest {
   model?: string;
   effort?: string | null;
   branch: string;
-  title?: string;
 }

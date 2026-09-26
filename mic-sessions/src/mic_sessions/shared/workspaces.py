@@ -38,6 +38,16 @@ class SessionWorkspace:
 
 
 @dataclass(frozen=True)
+class WorkspaceInspection:
+    """What a clone looks like on disk right now: its checked-out ref, size and pending edits."""
+
+    head_commit: str | None
+    head_branch: str | None
+    dirty_files: int
+    size_bytes: int
+
+
+@dataclass(frozen=True)
 class ChangedFile:
     path: str
     change: str
@@ -57,6 +67,19 @@ _CHANGE_KINDS = {"A": "added", "M": "modified", "D": "deleted", "R": "renamed", 
 
 def _redact(text: str) -> str:
     return _CREDENTIAL_PATTERN.sub("//***@", text)
+
+
+def _directory_size(directory: Path) -> int:
+    """Apparent size of every regular file below `directory`, never following symlinks."""
+    total = 0
+    for root, _, files in os.walk(directory, followlinks=False):
+        for name in files:
+            try:
+                stat = os.lstat(os.path.join(root, name))
+            except OSError:
+                continue
+            total += stat.st_size
+    return total
 
 
 class Workspaces:
@@ -223,6 +246,34 @@ class Workspaces:
             if marker.is_file() and not marker.is_symlink() and marker.read_text() == str(session_id):
                 await self.remove_workspace(session_id)
 
+    # --- inspection ------------------------------------------------------------------------------
+
+    async def inspect(self, workspace: Path) -> WorkspaceInspection:
+        """Best-effort snapshot of a clone; every probe tolerates failure so one broken clone never
+        hides the rest of an overview."""
+        if not workspace.is_dir():
+            return WorkspaceInspection(head_commit=None, head_branch=None, dirty_files=0, size_bytes=0)
+        head_code, head, _ = await self._run("-C", str(workspace), "rev-parse", "HEAD")
+        branch_code, branch, _ = await self._run("-C", str(workspace), "rev-parse", "--abbrev-ref", "HEAD")
+        status_code, status, _ = await self._run(
+            "-C", str(workspace), "status", "--porcelain", "-z", "--untracked-files=all"
+        )
+        dirty = 0
+        if status_code == 0:
+            fields = [field for field in status.split("\0") if field]
+            i = 0
+            while i < len(fields):
+                # A rename/copy entry carries its source path as the next field.
+                i += 2 if fields[i][:1] in ("R", "C") else 1
+                dirty += 1
+        size = await asyncio.to_thread(_directory_size, workspace.parent)
+        return WorkspaceInspection(
+            head_commit=(head.strip() or None) if head_code == 0 else None,
+            head_branch=(branch.strip() or None) if branch_code == 0 else None,
+            dirty_files=dirty,
+            size_bytes=size,
+        )
+
     # --- diffs ----------------------------------------------------------------------------------
 
     async def _numstat(self, workspace: Path, base_commit: str) -> dict[str, tuple[int, int]]:
@@ -373,6 +424,10 @@ async def create_workspace(
 
 async def remove_workspace(session_id: UUID) -> None:
     await get_workspaces().remove_workspace(session_id)
+
+
+async def inspect(workspace: Path) -> WorkspaceInspection:
+    return await get_workspaces().inspect(workspace)
 
 
 async def changes(workspace: Path, base_commit: str) -> ChangesSummary:

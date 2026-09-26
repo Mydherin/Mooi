@@ -125,7 +125,7 @@ define validate-artifact-stem
 $(if $(filter $*,$(ARTIFACTS)),,$(error Unknown artifact '$*'. Known artifacts: $(ARTIFACTS)))
 endef
 
-.PHONY: dev-start-% dev-stop-% dev-status-% dev-clean-% dev-logs-%
+.PHONY: dev-start-% dev-stop-% dev-restart-% dev-status-% dev-clean-% dev-logs-%
 
 # Not documented via ## here: make/help.mk synthesizes the Artifacts group
 # directly from $(ARTIFACTS) instead of scraping these pattern rules.
@@ -141,6 +141,12 @@ dev-stop-%:
 	$(SHELL_LIB)
 	$(call artifact-stop-block,$*)
 	$(call artifact-scoped-stop-services-block,$*)
+
+# Restart <artifact> and what it needs.
+dev-restart-%:
+	@$(validate-artifact-stem)
+	@$(MAKE) dev-stop-$*
+	@$(MAKE) dev-start-$*
 
 # Show the state of <artifact>.
 dev-status-%:

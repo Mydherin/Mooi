@@ -8,11 +8,10 @@ import { formatDate } from '@/shared/utils/formatDate';
 interface RepositoryRowProps {
   repository: GithubRepository;
   added: boolean;
-  busy: boolean;
-  onAdd: () => void;
+  onSelect: () => void;
 }
 
-export const RepositoryRow = ({ repository, added, busy, onAdd }: RepositoryRowProps) => {
+export const RepositoryRow = ({ repository, added, onSelect }: RepositoryRowProps) => {
   const shortName = repository.name || repository.fullName.split('/')[1] || repository.fullName;
   const meta = [
     repository.description,
@@ -48,7 +47,7 @@ export const RepositoryRow = ({ repository, added, busy, onAdd }: RepositoryRowP
             In your workspace
           </span>
         ) : (
-          <Button variant="brand" size="sm" onClick={onAdd} disabled={busy}>
+          <Button variant="brand" size="sm" onClick={onSelect}>
             Add
           </Button>
         )}

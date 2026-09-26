@@ -6,6 +6,7 @@ import { useProjects } from '@/features/projects/hooks/useProjects';
 import { findProject } from '@/features/projects/lib/findProject';
 import { ChatPanel } from '@/features/sessions/components/chat/ChatPanel';
 import { SessionWorkspace } from '@/features/sessions/components/SessionWorkspace';
+import { deploymentAvailable } from '@/features/sessions/lib/deploymentAvailable';
 import { WorkspaceHeader } from '@/features/sessions/components/WorkspaceHeader';
 import { useProjectSessions } from '@/features/sessions/hooks/useProjectSessions';
 import { useSession } from '@/features/sessions/hooks/useSession';
@@ -74,6 +75,7 @@ export const SessionPage = () => {
   const entries = transcript?.entries ?? [];
   const pending = transcript?.pending ?? [];
   const streamState = transcript?.streamState ?? 'closed';
+  const deployEnabled = deploymentAvailable(project, session.deployment);
 
   const handleClose = () => {
     void close(session.id).then((closed) => {
@@ -88,6 +90,7 @@ export const SessionPage = () => {
       <WorkspaceHeader
         project={project}
         session={session}
+        deployEnabled={deployEnabled}
         onClose={handleClose}
         closeBusy={closing}
       />
@@ -105,7 +108,7 @@ export const SessionPage = () => {
           </div>
         </div>
       ) : null}
-      <SessionWorkspace key={session.id} sessionId={session.id}>
+      <SessionWorkspace key={session.id} sessionId={session.id} deployEnabled={deployEnabled}>
         <ChatPanel
           session={session}
           entries={entries}

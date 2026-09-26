@@ -13,7 +13,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from mic_sessions.features import health, sessions
+from mic_sessions.features import agent_connections, health, sessions
 from mic_sessions.shared import web, workspaces
 from mic_sessions.shared.env import get_settings
 from mic_sessions.shared.logging import CorrelationIdMiddleware, configure_logging
@@ -31,6 +31,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        await agent_connections.close_all()
         await sessions.close_all()
         await web.close_http_client()
 
@@ -43,6 +44,7 @@ def create_app() -> FastAPI:
     web.install(app)
     app.add_middleware(CorrelationIdMiddleware)
     app.include_router(health.router)
+    app.include_router(agent_connections.router)
     app.include_router(sessions.router)
     app.state.session_count = sessions.get_registry().count
 

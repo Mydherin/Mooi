@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { CodexConnectDialog } from '@/features/agents/components/CodexConnectDialog';
 import { RefreshCw } from 'lucide-react';
 import { AgentProviderRow } from '@/features/agents/components/AgentProviderRow';
 import { AgentTokenDialog } from '@/features/agents/components/AgentTokenDialog';
@@ -28,12 +29,15 @@ const Skeleton = () => (
 export const AgentConnectionsCard = () => {
   const { providers, connections, status, error, busy, actionError, startOauth, connectToken, disconnect, reload, clearActionError } =
     useAgentConnections();
+  const [codexOpen, setCodexOpen] = useState(false);
   const [tokenDialogProvider, setTokenDialogProvider] = useState<string | null>(null);
 
   const dialogProvider = providers.find((provider) => provider.id === tokenDialogProvider) ?? null;
 
   const openConnect = (provider: (typeof providers)[number]) => {
-    if (provider.oauthEnabled) {
+    if (provider.modes.includes('device_oauth')) {
+      setCodexOpen(true);
+    } else if (provider.oauthEnabled) {
       startOauth(provider.id);
     } else {
       clearActionError();
@@ -81,6 +85,8 @@ export const AgentConnectionsCard = () => {
           {actionError}
         </p>
       ) : null}
+
+      {codexOpen && <CodexConnectDialog onClose={() => setCodexOpen(false)} onConnected={reload} />}
 
       <AgentTokenDialog
         open={dialogProvider !== null}

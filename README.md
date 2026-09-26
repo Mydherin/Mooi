@@ -79,7 +79,7 @@ The SPA needs no GitHub variable: it asks the API for ready-made authorize and i
 
 ### Agent providers
 
-Links a player's own Claude subscription so `mic-sessions` can run agent sessions on their behalf.
+Links a player's own Claude or Codex account so `mic-sessions` can run agent sessions on their behalf.
 Credentials are stored by `mic-mooi` and handed to `mic-sessions` server-to-server; the browser
 never sees a raw token.
 
@@ -93,7 +93,7 @@ openssl rand -base64 32
 
 2. Copy `mic-mooi/.env`'s `JWT_SECRET` into `mic-sessions/.env` as well: `mic-sessions` verifies
    access tokens locally with the same signing key, no network hop required for that check.
-3. Two credential modes are supported, both stored the same way and both mapped to the same
+3. Claude supports two credential modes, both stored the same way and both mapped to the same
    downstream env var (`CLAUDE_CODE_OAUTH_TOKEN`):
    - **Setup token** (works out of the box): the player runs `claude setup-token` and pastes the
      printed `sk-ant-oat…` token on the account screen.
@@ -104,12 +104,18 @@ openssl rand -base64 32
      in hand — until then, use the setup-token mode above.
 4. **Anthropic API keys (`sk-ant-api…`) are not a supported credential** — this is "bring your Claude
    subscription", not "bring your API billing".
+5. **Codex**: open **Account → Agents → Codex → Connect**, follow the ChatGPT sign-in link and enter
+   the displayed device code. Enable device code sign-in in ChatGPT security settings if requested.
+   No OpenAI API key, OAuth client registration or global Codex installation is required. Credentials
+   and refresh tokens are encrypted with the same `SECRETS_KEY`. One account per provider is supported.
+   Choose either provider when creating a session; models and reasoning levels come from its
+   connected account's SDK catalog.
 
 ### Agent session runtime
 
 Run `mic-sessions` with one process and one worker. `make dev-start-mic-sessions` installs
-Python 3.13 and the pinned Claude Agent SDK through uv, checks its bundled local CLI, then
-starts the service. A global Claude installation and an agent Docker image are not required.
+Python 3.13 and the pinned official Claude and Codex SDKs through uv, checks the Claude bundled CLI,
+then starts the service. Both SDKs include their CLI runtime; no global agent installation is required.
 Git and the host tools required by your repositories must be installed locally.
 
 Set `VITE_SESSIONS_BASE_URL` in `spa-mooi/.env` to `http://localhost:44913`.
@@ -121,7 +127,6 @@ Configure `mic-sessions/.env` using its example:
 | `GIT_BINARY`, `GIT_TIMEOUT_SECONDS` | Git executable and command timeout |
 | `MAX_SESSIONS`, `MAX_SESSIONS_PER_PLAYER` | Concurrent session limits |
 | `SESSION_IDLE_TIMEOUT_MINUTES` | Inactivity expiry; active turns/questions are retained |
-| `AGENT_CLAUDE_MODELS` | JSON model-to-effort allowlist; use models available to your account |
 | `AGENT_CLAUDE_MODEL`, `AGENT_CLAUDE_EFFORT` | Defaults for new sessions |
 | `AGENT_CLAUDE_DISALLOWED_TOOLS` | Comma-separated tool exclusions |
 | `EVENT_LOG_LIMIT`, `EVENT_LOG_BYTES` | Per-session retained event limits |
@@ -133,6 +138,10 @@ Session conversations are held in memory and cannot survive a service restart. S
 only marked session leftovers; legacy repositories and unowned directories are preserved.
 `dev-clean` preserves workspace storage; the next start reconciles owned leftovers, including
 when `WORKSPACE_ROOT` points outside the artifact directory.
+
+Codex uses a private account directory and does not inherit the host's Codex login, configuration or
+API keys. Turns sharing one Codex connection are serialized to coordinate refresh-token rotation.
+The current launcher supports macOS and Linux. Model availability still depends on the linked account.
 
 Claude runs locally with the service user's permissions. Its working directory and private
 per-runtime configuration directory do not restrict access to the host. Run the service under an
@@ -150,8 +159,12 @@ install plugin dependencies automatically.
 
 Install Docker CLI with Compose v2 where `mic-sessions` runs and grant its service user access
 to the configured host Unix socket. Verify with `make dev-preflight-mic-sessions`.
-Deploy uses the session provider with fixed `claude-sonnet-5` / `high`; the linked account must
-have access to that model. Chat model settings do not configure Deploy.
+Deploy uses the session provider: Claude uses `claude-opus-5-5` / `medium`; Codex uses its default model
+with `medium` reasoning and SDK dynamic tools. The linked account must have access to the model.
+Chat model settings do not configure Deploy. Codex dynamic tools are an experimental app-server API;
+the SDK and bundled CLI versions are pinned together.
+Deploy and Preview are only offered for projects marked as web applications (asked when adding
+the project, editable on the project page). Projects added before this setting count as web apps.
 
 Set these values in `mic-sessions/.env`:
 
@@ -206,6 +219,7 @@ make            # same as `make help`
 | --- | --- |
 | `make dev-start` | Start all dependencies and artifacts |
 | `make dev-stop` | Stop all artifacts and dependencies |
+| `make dev-restart` | Restart all dependencies and artifacts |
 | `make dev-status` | Show the state of the whole application |
 | `make dev-clean` | Stop everything and remove all dev state |
 
@@ -217,6 +231,7 @@ Every artifact gets the same set of commands, scoped to it and to what it needs:
 | --- | --- |
 | `make dev-start-<artifact>` | Start `<artifact>` and its dependencies |
 | `make dev-stop-<artifact>` | Stop `<artifact>` only |
+| `make dev-restart-<artifact>` | Restart `<artifact>` and its dependencies |
 | `make dev-status-<artifact>` | Show the state of `<artifact>` |
 | `make dev-clean-<artifact>` | Stop `<artifact>` and remove its dev state |
 | `make dev-logs-<artifact>` | Tail the logs of `<artifact>` |

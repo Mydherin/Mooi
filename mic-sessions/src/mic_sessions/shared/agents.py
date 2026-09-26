@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import os
 import shutil
 import subprocess
@@ -32,6 +33,7 @@ import tempfile
 import time
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, ClassVar, Literal, Protocol, TypedDict, runtime_checkable
@@ -47,6 +49,7 @@ from claude_agent_sdk import (
     PermissionResultAllow,
     PermissionResultDeny,
     ResultMessage,
+    RateLimitEvent,
     StreamEvent,
     SystemMessage,
     TextBlock,
@@ -267,6 +270,8 @@ class AgentRuntime(Protocol):
 
     async def send(self, text: str) -> None: ...
 
+    async def refresh_usage(self) -> None: ...
+
     async def set_configuration(self, config: AgentConfig) -> AgentConfig: ...
 
     async def interrupt(self) -> None: ...
@@ -355,6 +360,64 @@ def _result_summary(content: Any) -> str:
     return text
 
 
+def _validate_agent_workspace(workspace_path: Path, expected_branch: str) -> Path:
+    settings = get_settings()
+    try:
+        managed_root = (settings.workspace_root / "sessions").resolve(strict=True)
+        workspace = workspace_path.resolve(strict=True)
+    except FileNotFoundError as error:
+        raise RuntimeError("The session workspace does not exist") from error
+
+    if (
+        workspace_path.is_symlink()
+        or not workspace.is_dir()
+        or workspace == managed_root
+        or not workspace.is_relative_to(managed_root)
+    ):
+        raise RuntimeError("The session workspace is outside the managed workspace root")
+    git_dir = workspace / ".git"
+    if (
+        not git_dir.is_dir()
+        or git_dir.is_symlink()
+        or not git_dir.resolve(strict=True).is_relative_to(workspace)
+    ):
+        raise RuntimeError("The session workspace does not have private Git metadata")
+
+    git_binary = shutil.which(settings.git_binary)
+    if not git_binary:
+        raise RuntimeError("Git is required to validate the session workspace")
+    environment = {
+        "PATH": os.environ.get("PATH", ""),
+        "HOME": os.environ.get("HOME", ""),
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "LC_ALL": "C",
+    }
+    try:
+        top_level = subprocess.run(
+            [git_binary, "-C", str(workspace), "rev-parse", "--show-toplevel"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=settings.git_timeout_seconds,
+            env=environment,
+        ).stdout.strip()
+        branch = subprocess.run(
+            [git_binary, "-C", str(workspace), "symbolic-ref", "--quiet", "--short", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=settings.git_timeout_seconds,
+            env=environment,
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError) as error:
+        raise RuntimeError("The session workspace Git state could not be validated") from error
+
+    if Path(top_level).resolve() != workspace or branch != expected_branch:
+        raise RuntimeError("The session workspace is not on its requested branch")
+    return workspace
+
+
 class ClaudeAgentRuntime:
     """Adapter for Claude Code through `claude_agent_sdk`, the only module here that imports it.
 
@@ -364,15 +427,68 @@ class ClaudeAgentRuntime:
     """
 
     capabilities: ClassVar[AgentCapabilities] = CLAUDE_CAPABILITIES
+    _catalog: ClassVar[ContextVar[dict[str, Any] | None]] = ContextVar('claude_catalog', default=None)
+    _catalogs: ClassVar[dict[str, tuple[float, dict[str, Any]]]] = {}
 
-    @staticmethod
-    def configuration() -> dict[str, Any]:
+    @classmethod
+    async def load_configuration(cls, credential: Credential) -> None:
+        cached = cls._catalogs.get(credential.connection_id or '')
+        if cached and cached[0] > time.monotonic():
+            cls._catalog.set(cached[1])
+            return
+        with tempfile.TemporaryDirectory(prefix="mooi-claude-models-") as config_dir:
+            client = ClaudeSDKClient(options=ClaudeAgentOptions(
+                env={
+                    "CLAUDE_CODE_OAUTH_TOKEN": credential.token,
+                    "CLAUDE_CONFIG_DIR": config_dir,
+                    "ANTHROPIC_API_KEY": "",
+                    "ANTHROPIC_AUTH_TOKEN": "",
+                    "CLAUDE_CODE_USE_BEDROCK": "0",
+                    "CLAUDE_CODE_USE_VERTEX": "0",
+                    "CLAUDE_CODE_USE_FOUNDRY": "0",
+                },
+                setting_sources=[],
+            ))
+            try:
+                async with asyncio.timeout(30):
+                    await client.connect()
+                    info = await client.get_server_info()
+            except Exception:
+                LOG.exception("Could not load Claude models")
+                raise ApiException(502, "Could not load Claude models. Check your connection and try again.") from None
+            finally:
+                with suppress(Exception):
+                    await client.disconnect()
+
+        models = []
+        for entry in (info or {}).get("models", []):
+            model_id = entry.get("value")
+            if not isinstance(model_id, str) or not model_id or model_id.lower() == "default":
+                continue
+            efforts = entry.get("supportedEffortLevels") or []
+            models.append({"id": model_id, "label": entry.get("displayName") or model_id,
+                           "contextWindow": entry.get("contextWindow"),
+                           "efforts": efforts if isinstance(efforts, list) else []})
+        if not models:
+            raise ApiException(502, "Claude returned no available models. Check your connection and try again.")
         settings = get_settings()
-        return {"id": "claude", "label": "Claude",
-                "models": [{"id": model, "label": model.title(), "efforts": efforts}
-                           for model, efforts in settings.agent_claude_models.items()],
-                "defaultModel": settings.agent_claude_model or "sonnet",
-                "defaultEffort": settings.agent_claude_effort}
+        preferred = settings.agent_claude_model
+        default = next((item for item in models if item["id"] == preferred), models[0])
+        catalog = {"id": "claude", "label": "Claude", "models": models,
+                   "defaultModel": default["id"], "defaultEffort": settings.agent_claude_effort}
+        if credential.connection_id:
+            for key, (expires, _) in list(cls._catalogs.items()):
+                if expires < time.monotonic():
+                    cls._catalogs.pop(key, None)
+            if len(cls._catalogs) >= 1024:
+                cls._catalogs.pop(next(iter(cls._catalogs)))
+            cls._catalogs[credential.connection_id] = (time.monotonic() + 300, catalog)
+        cls._catalog.set(catalog)
+
+    @classmethod
+    def configuration(cls) -> dict[str, Any]:
+        return cls._catalog.get() or {"id": "claude", "label": "Claude", "models": [],
+                                      "defaultModel": "", "defaultEffort": None}
 
     @classmethod
     def configure(cls, model: str | None, effort: str | None) -> AgentConfig:
@@ -411,6 +527,11 @@ class ClaudeAgentRuntime:
         self._pending: dict[str, _PendingRequest] = {}
         self._stream_message_id: str | None = None
         self._stream_ids: dict[str, str] = {}
+        self._context_input: int | None = None
+        self._context_output = 0
+        self._context_model: str | None = None
+        self._quota_reported_at = 0.0
+        self._last_quota = None
         self._interrupted = False
         self._awaiting_first_event_at: float | None = None
         self._config_dir: Path | None = None
@@ -427,7 +548,28 @@ class ClaudeAgentRuntime:
         self._config_dir = Path(tempfile.mkdtemp(prefix="claude-", dir=self._workspace.parent))
         self._client = await self._connect_client(self._config)
         self._pump = asyncio.create_task(self._pump_messages(self._client))
+        await asyncio.gather(self._refresh_context(), self._refresh_quota())
         LOG.info("Claude runtime connected in %.0f ms", (time.perf_counter() - started_at) * 1000)
+
+    async def _refresh_context(self) -> None:
+        from mic_sessions.shared import claude_usage
+        context = await claude_usage.context(self._require_client())
+        if context is not None:
+            # Only the window comes from the CLI; before any turn the conversation starts empty.
+            used = self._context_input + self._context_output if self._context_input is not None else 0
+            await self._emit("session.usage", {"context": {
+                **context, "usedTokens": used, "percent": used / context["limitTokens"] * 100,
+            }})
+
+    async def _refresh_quota(self) -> None:
+        from mic_sessions.shared import claude_usage
+        quota = await claude_usage.quota(self._credential.connection_id, self._credential.token)
+        if quota != self._last_quota:
+            self._last_quota = quota
+            await self._emit("session.usage", {"quota": quota})
+
+    async def refresh_usage(self) -> None:
+        await self._refresh_quota()
 
     async def send(self, text: str) -> None:
         self._interrupted = False
@@ -449,6 +591,7 @@ class ClaudeAgentRuntime:
         if config.effort == self._config.effort:
             await self._require_client().set_model(config.model)
             self._config = config
+            await self._refresh_context()
             return self._config
         replacement = await self._connect_client(config, resume=self._conversation_id)
 
@@ -468,6 +611,7 @@ class ClaudeAgentRuntime:
         self._client = replacement
         self._config = config
         self._pump = asyncio.create_task(self._pump_messages(replacement))
+        await self._refresh_context()
         return self._config
 
     async def interrupt(self) -> None:
@@ -533,61 +677,7 @@ class ClaudeAgentRuntime:
         return {"CLAUDE_CODE_OAUTH_TOKEN": self._credential.token}
 
     def _validate_workspace(self) -> Path:
-        settings = get_settings()
-        try:
-            managed_root = (settings.workspace_root / "sessions").resolve(strict=True)
-            workspace = self._workspace.resolve(strict=True)
-        except FileNotFoundError as error:
-            raise RuntimeError("The session workspace does not exist") from error
-
-        if (
-            self._workspace.is_symlink()
-            or not workspace.is_dir()
-            or workspace == managed_root
-            or not workspace.is_relative_to(managed_root)
-        ):
-            raise RuntimeError("The session workspace is outside the managed workspace root")
-        git_dir = workspace / ".git"
-        if (
-            not git_dir.is_dir()
-            or git_dir.is_symlink()
-            or not git_dir.resolve(strict=True).is_relative_to(workspace)
-        ):
-            raise RuntimeError("The session workspace does not have private Git metadata")
-
-        git_binary = shutil.which(settings.git_binary)
-        if not git_binary:
-            raise RuntimeError("Git is required to validate the session workspace")
-        environment = {
-            "PATH": os.environ.get("PATH", ""),
-            "HOME": os.environ.get("HOME", ""),
-            "GIT_CONFIG_NOSYSTEM": "1",
-            "GIT_CONFIG_GLOBAL": os.devnull,
-            "LC_ALL": "C",
-        }
-        try:
-            top_level = subprocess.run(
-                [git_binary, "-C", str(workspace), "rev-parse", "--show-toplevel"],
-                check=True,
-                capture_output=True,
-                text=True,
-                timeout=settings.git_timeout_seconds,
-                env=environment,
-            ).stdout.strip()
-            branch = subprocess.run(
-                [git_binary, "-C", str(workspace), "symbolic-ref", "--quiet", "--short", "HEAD"],
-                check=True,
-                capture_output=True,
-                text=True,
-                timeout=settings.git_timeout_seconds,
-                env=environment,
-            ).stdout.strip()
-        except (OSError, subprocess.SubprocessError) as error:
-            raise RuntimeError("The session workspace Git state could not be validated") from error
-
-        if Path(top_level).resolve() != workspace or branch != self._branch:
-            raise RuntimeError("The session workspace is not on its requested branch")
-        return workspace
+        return _validate_agent_workspace(self._workspace, self._branch)
 
     def _build_options(self, config: AgentConfig, resume: str | None = None) -> ClaudeAgentOptions:
         settings = get_settings()
@@ -748,12 +838,38 @@ class ClaudeAgentRuntime:
             await self._on_user_message(message)
         elif isinstance(message, ResultMessage):
             await self._on_result_message(message)
+        elif isinstance(message, RateLimitEvent):
+            info = message.rate_limit_info
+            self._quota_reported_at = time.time()
+            from mic_sessions.shared import claude_usage
+            await claude_usage.remember(self._credential.connection_id, self._credential.token,
+                                  info.rate_limit_type, {
+                "percent": info.utilization * 100 if info.utilization is not None else None,
+                "window": info.rate_limit_type, "resetsAt": info.resets_at,
+                "status": info.status, "updatedAt": self._quota_reported_at,
+            })
+            # The CLI tracks every plan window from the anthropic-ratelimit-unified-*
+            # headers on each response; utilization is a fraction that may exceed 1.
+            windows = info.raw.get("unifiedWindows")
+            for name in ("five_hour", "seven_day"):
+                window = windows.get(name) if isinstance(windows, dict) else None
+                utilization = window.get("utilization") if isinstance(window, dict) else None
+                if (isinstance(utilization, (int, float)) and not isinstance(utilization, bool)
+                        and math.isfinite(utilization)):
+                    await claude_usage.remember(self._credential.connection_id, self._credential.token, name, {
+                        "percent": max(0, min(100, utilization * 100)), "window": name,
+                        "resetsAt": window.get("resetsAt"), "updatedAt": self._quota_reported_at,
+                    })
+            await self._refresh_quota()
+
         elif isinstance(message, SystemMessage):
             # Whitelist useful user-facing metadata; never publish the raw initialization payload.
             data = {key: message.data[key] for key in
                     ("description", "summary", "status", "task_id", "tool_use_id") if key in message.data}
             await self._emit("agent.activity", {"kind": message.subtype, **data})
         elif isinstance(message, ConversationResetMessage):
+            self._context_input = None
+            await self._emit("session.usage", {"context": None})
             self._conversation_id = None
             self._stream_ids.clear()
             self._stream_message_id = None
@@ -770,6 +886,15 @@ class ClaudeAgentRuntime:
         event_type = raw.get("type") or getattr(message, "event_type", None)
         parent = getattr(message, "parent_tool_use_id", None) or "root"
         self._stream_message_id = self._stream_ids.get(parent)
+        if parent == "root" and event_type == "message_start":
+            info = raw.get("message") or {}
+            tokens = info.get("usage") or {}
+            self._context_model = info.get("model")
+            self._context_input = sum(tokens.get(key, 0) or 0 for key in
+                                      ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")) if tokens else None
+            self._context_output = tokens.get("output_tokens", 0) or 0
+        if parent == "root" and event_type == "message_delta":
+            self._context_output = (raw.get("usage") or {}).get("output_tokens", self._context_output)
         if event_type == "message_start":
             self._stream_message_id = ((raw.get("message") or {}).get("id")) or uuid4().hex
             self._stream_ids[parent] = self._stream_message_id
@@ -824,6 +949,15 @@ class ClaudeAgentRuntime:
     async def _on_result_message(self, message: Any) -> None:
         """Only `terminalReason` is required by the contract; every other field is best effort, so
         it is read defensively — the vendor adds and removes them across releases."""
+        await self._refresh_quota()
+        models = getattr(message, "model_usage", None) or {}
+        model_usage = models.get(self._context_model, {})
+        window = model_usage.get("contextWindow")
+        used = self._context_input + self._context_output if self._context_input is not None else None
+        await self._emit("session.usage", {"context": {
+            "percent": used / window * 100 if used is not None and window else None,
+            "usedTokens": used, "limitTokens": window, "updatedAt": time.time(),
+        }})
         await self._deny_pending("The turn ended")
         self._stream_ids.clear()
         self._stream_message_id = None
@@ -838,6 +972,268 @@ class ClaudeAgentRuntime:
                 usage=getattr(message, "usage", None),
             )
         )
+
+
+CODEX_CAPABILITIES = AgentCapabilities(streaming=True, thinking=True, permissions=True,
+                                      questions=True, interrupt=True)
+
+
+class CodexAgentRuntime:
+    """Codex conversation adapter; vendor objects never cross the event contract."""
+
+    capabilities: ClassVar[AgentCapabilities] = CODEX_CAPABILITIES
+    _catalog: ClassVar[ContextVar[dict[str, Any] | None]] = ContextVar('codex_catalog', default=None)
+
+    @staticmethod
+    def configuration() -> dict[str, Any]:
+        return CodexAgentRuntime._catalog.get() or {
+            "id": "codex", "label": "Codex", "models": [], "defaultModel": "", "defaultEffort": None}
+
+    @classmethod
+    async def load_configuration(cls, credential: Credential):
+        from mic_sessions.shared import codex
+        try:
+            cls._catalog.set(await codex.models(credential))
+        except Exception:
+            raise ApiException(502, "Could not load Codex models. Check your connection and try again.") from None
+
+    @classmethod
+    def configure(cls, model: str | None, effort: str | None) -> AgentConfig:
+        catalog = cls.configuration()
+        chosen = model or catalog["defaultModel"]
+        entry = next((item for item in catalog["models"] if item["id"] == chosen), None)
+        if entry is None:
+            raise ApiException.bad_request("Unsupported Codex model; refresh the model list")
+        supported = entry["efforts"]
+        value = effort if effort is not None else entry.get("defaultEffort")
+        if value is not None and value not in supported:
+            raise ApiException.bad_request("Unsupported effort for this model")
+        return AgentConfig(chosen, value)
+
+    def __init__(self, credential, workspace, branch, emit, ask, config):
+        self._credential, self._workspace, self._branch = credential, workspace, branch
+        self._emit, self._ask, self._config = emit, ask, config
+        self._account = None
+        self._client = None
+        self._thread_id = None
+        self._turn_id = None
+        self._task = None
+        self._pending = {}
+        self._loop = asyncio.get_running_loop()
+        self._interrupted = False
+        self._closing = False
+
+    async def _publish(self, event):
+        await self._emit(event["type"], event["data"])
+
+    async def start(self):
+        from mic_sessions.shared import codex
+        # Both adapters enforce the same managed clone and branch precondition.
+        await asyncio.to_thread(_validate_agent_workspace, self._workspace, self._branch)
+        self._account = codex.acquire(self._credential)
+        window = codex.context_window(self._credential.connection_id, self._config.model)
+        if window:
+            await self._emit("session.usage", {"context": {
+                "percent": 0, "usedTokens": 0, "limitTokens": window, "updatedAt": time.time(),
+            }})
+        try:
+            async with asyncio.timeout(15):
+                async with codex.connected(self._account, self._workspace) as client:
+                    snapshot = await codex.quota(self._account, client)
+                    await self._emit("session.usage", {"quota": snapshot})
+        except Exception:
+            LOG.debug("Initial Codex account usage is unavailable")
+            await self._emit("session.usage", {"quota": {}})
+
+    async def refresh_usage(self):
+        from mic_sessions.shared import codex
+        account = self._account
+        if self._closing or account is None:
+            return
+        if account.lock.locked() or time.monotonic() - account.quota_checked_at < 60:
+            if account.quota_snapshot:
+                await self._emit("session.usage", {"quota": account.quota_snapshot})
+            return
+        async with asyncio.timeout(15):
+            async with codex.connected(account, self._workspace) as client:
+                snapshot = await codex.quota(account, client)
+                if snapshot:
+                    await self._emit("session.usage", {"quota": snapshot})
+
+    async def send(self, text):
+        if self._closing or self._account is None:
+            raise ApiException.conflict("Codex session is closed")
+        if self._task and not self._task.done():
+            raise ApiException.conflict("A Codex turn is already running")
+        self._interrupted = False
+        self._task = asyncio.create_task(self._run(text))
+        await asyncio.sleep(0)
+
+    async def refresh_credential(self, credential):
+        if credential.connection_id != self._credential.connection_id:
+            raise ApiException.conflict("The Codex account changed. Create a new session.")
+        self._credential = credential
+        if self._account:
+            self._account.credential = credential
+
+    async def set_configuration(self, config):
+        self._config = config
+        return config
+
+    async def _answer(self, method, params):
+        from mic_sessions.shared.codex import decline
+        if self._closing or self._interrupted:
+            return decline(method)
+        request_id = uuid4().hex
+        future = self._loop.create_future()
+        questions = params.get("questions", [])
+        is_question = method in ("item/tool/requestUserInput", "tool/requestUserInput")
+        is_permissions = method == "item/permissions/requestApproval"
+        if not is_question and not is_permissions and method not in (
+            "item/commandExecution/requestApproval", "item/fileChange/requestApproval"
+        ):
+            return decline(method)
+        self._pending[request_id] = (future, is_question)
+        try:
+            if is_question:
+                normalized = [{"question": item["question"], "header": item.get("header", "Question"),
+                               "multiSelect": False, "options": item.get("options") or []}
+                              for item in questions]
+                await self._publish(question_request(request_id, normalized))
+                await self._ask(QuestionRequest(request_id, normalized))
+            else:
+                name = "Permissions" if is_permissions else "Bash" if "commandExecution" in method else "Edit"
+                title = str(params.get("command") or params.get("reason") or name)[:120]
+                await self._publish(permission_request(request_id, name, title, params))
+                await self._ask(PermissionRequest(request_id, name, title, params))
+            answer = await future
+            if is_question:
+                answers = answer.get("answers") or {}
+                return {"answers": {item["id"]: {"answers": (
+                    answers.get(item["question"], []) if isinstance(answers.get(item["question"]), list)
+                    else [str(answers[item["question"]])] if item["question"] in answers else [])}
+                    for item in questions}}
+            if is_permissions:
+                return {"permissions": params.get("permissions", {}) if answer.get("decision") == "allow" else {},
+                        "scope": "turn"}
+            return {"decision": "accept" if answer.get("decision") == "allow" else "decline"}
+        finally:
+            self._pending.pop(request_id, None)
+
+    async def resolve(self, request_id, payload):
+        pending = self._pending.get(request_id)
+        if not pending or pending[0].done():
+            raise ApiException.not_found("Unknown or already answered request")
+        pending[0].set_result(payload)
+        await self._publish(question_resolved(request_id, payload.get("answers") or {}) if pending[1]
+                            else permission_resolved(request_id, payload.get("decision", "deny")))
+
+    async def _deny_pending(self):
+        for key, (future, question) in list(self._pending.items()):
+            if not future.done():
+                await self.resolve(key, {"answers": {}} if question else {"decision": "deny"})
+
+    async def interrupt(self):
+        self._interrupted = True
+        await self._deny_pending()
+        if self._client and self._turn_id:
+            try:
+                async with asyncio.timeout(10):
+                    await self._client.call("turn_interrupt", self._thread_id, self._turn_id)
+            except Exception:
+                if self._task and not self._task.done():
+                    self._task.cancel()
+        elif self._task and not self._task.done():
+            self._task.cancel()
+
+    async def close(self):
+        from mic_sessions.shared import codex
+        self._closing = True
+        await self._deny_pending()
+        if self._task and not self._task.done():
+            self._task.cancel()
+            await asyncio.gather(self._task, return_exceptions=True)
+        if self._account:
+            codex.release(self._account)
+            self._account = None
+
+    async def _run(self, text):
+        from mic_sessions.shared import codex
+        terminal = "error"
+        started = time.monotonic()
+        usage = None
+        try:
+            async with codex.connected(self._account, self._workspace, self._answer) as client:
+                self._client = client
+                params = {"cwd": str(self._workspace), "model": self._config.model,
+                          "approvalPolicy": "on-request", "approvalsReviewer": "user",
+                          "sandbox": "workspace-write"}
+                thread = (await client.call("thread_resume", self._thread_id, params) if self._thread_id
+                          else await client.call("thread_start", params))
+                self._thread_id = thread.thread.id
+                turn = await client.call("turn_start", self._thread_id, text,
+                                         {"model": self._config.model, "effort": self._config.effort})
+                self._turn_id = turn.turn.id
+                if self._interrupted:
+                    await client.call("turn_interrupt", self._thread_id, self._turn_id)
+                async for method, payload in client.notifications(self._turn_id):
+                    if method == "turn/completed":
+                        status = payload["turn"]["status"]
+                        terminal = "completed" if status == "completed" else "interrupted" if status == "interrupted" else "error"
+                        if terminal == "error":
+                            await self._publish(agent_error("Codex could not complete the turn. Check your account and selected model."))
+                    elif method == "thread/tokenUsage/updated":
+                        tokens = payload.get("tokenUsage") or {}
+                        usage = tokens.get("last")
+                        window = tokens.get("modelContextWindow")
+                        used = (usage or {}).get("totalTokens")
+                        await self._emit("session.usage", {"context": {
+                            "percent": used / window * 100 if used is not None and window else None,
+                            "usedTokens": used, "limitTokens": window, "updatedAt": time.time(),
+                        }})
+                    else:
+                        await self._event(method, payload)
+                # Best effort, once per turn; shared account cache bounds short-turn traffic.
+                try:
+                    quota = await codex.quota(self._account, client)
+                    await self._emit("session.usage", {"quota": quota})
+                except Exception:
+                    LOG.debug("Codex quota is unavailable")
+        except asyncio.CancelledError:
+            terminal = "interrupted"
+        except Exception:
+            await self._publish(agent_error("Codex could not complete the turn. Check your account connection and try again."))
+        finally:
+            self._client = self._turn_id = None
+            await self._deny_pending()
+            if not self._closing:
+                await self._publish(turn_result("interrupted" if self._interrupted else terminal,
+                                               duration_ms=int((time.monotonic() - started) * 1000), usage=usage))
+
+    async def _event(self, method, payload):
+        item_id = payload.get("itemId", "")
+        if method == "item/agentMessage/delta":
+            await self._publish(assistant_delta(item_id, payload.get("delta", "")))
+        elif method in ("item/reasoning/summaryTextDelta", "item/reasoning/textDelta"):
+            await self._publish(thinking_delta(item_id, payload.get("delta", "")))
+        elif method in ("item/started", "item/completed"):
+            item = payload.get("item", {})
+            kind, identity = item.get("type"), item.get("id", uuid4().hex)
+            done = method == "item/completed"
+            if kind == "agentMessage" and done:
+                await self._publish(assistant_message(identity, item.get("text", "")))
+            elif kind == "reasoning" and done:
+                await self._publish(thinking_message(identity, "\n".join(item.get("summary") or item.get("content") or [])))
+            elif kind not in ("agentMessage", "reasoning", "userMessage", "contextCompaction"):
+                name = {"commandExecution": "Bash", "fileChange": "Edit", "webSearch": "WebSearch"}.get(kind, kind or "Tool")
+                if not done:
+                    await self._publish(tool_use(identity, name, _tool_title(name, item), item))
+                else:
+                    await self._publish(tool_result(identity, item.get("status") in ("failed", "declined")
+                                                   or item.get("exitCode") not in (None, 0),
+                                                   _result_summary(item.get("aggregatedOutput") or item)))
+        elif method == "error" and not payload.get("willRetry"):
+            await self._publish(agent_error("Codex reported an error. Retry or reconnect your account."))
 
 
 @dataclass(frozen=True)
@@ -1199,6 +1595,129 @@ async def _execute_claude_structured(operation: StructuredOperation) -> dict[str
                 raise asyncio.CancelledError
 
 
+async def _execute_codex_structured(operation: StructuredOperation) -> dict[str, Any]:
+    """SDK dynamic tools carry validated objects; never scrape JSON from assistant prose.
+
+    Codex itself has a read-only sandbox. Only these host tools may edit deployment files
+    or operate Docker, with the same domain callbacks used by the Claude adapter.
+    """
+    import jsonschema
+    from mic_sessions.shared import codex
+
+    account = codex.acquire(operation.credential)
+    # Repository configuration must not add MCP servers, hooks or tools to Deploy.
+    # All repository access goes through the bounded host file tools below.
+    directory = tempfile.TemporaryDirectory(prefix="mooi-codex-operation-")
+    working_directory = Path(directory.name)
+    result = None
+    callbacks = {item.name: item for item in operation.tools}
+    output_name = "mooi_submit_result"
+    read_name, write_name = "mooi_read_file", "mooi_write_deployment_file"
+    path_schema = {"type": "object", "properties": {"path": {"type": "string"}},
+                   "required": ["path"], "additionalProperties": False}
+    write_schema = {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}},
+                    "required": ["path", "content"], "additionalProperties": False}
+    specs = [{"type": "function", "name": item.name, "description": item.description,
+              "inputSchema": item.input_schema} for item in operation.tools]
+    specs += [{"type": "function", "name": output_name, "description": "Submit the final structured result.",
+               "inputSchema": operation.output_schema},
+              {"type": "function", "name": read_name, "description": "Read a workspace file or list a directory.",
+               "inputSchema": path_schema},
+              {"type": "function", "name": write_name, "description": "Write deployment configuration only.",
+               "inputSchema": write_schema}]
+    schemas = {item["name"]: item["inputSchema"] for item in specs}
+
+    def file_operation(name, arguments):
+        root = operation.cwd.resolve()
+        path = (root / arguments["path"]).resolve()
+        if not path.is_relative_to(root):
+            raise ValueError("Path is outside the workspace")
+        parts = path.relative_to(root).parts
+        if any(part == ".git" or part == ".env" or part.startswith(".env.") for part in parts):
+            raise ValueError("Credential and Git files are unavailable")
+        if name == read_name:
+            if path.is_dir():
+                return {"entries": sorted(item.name for item in path.iterdir() if item.name != ".git")[:2000]}
+            if path.stat().st_size > 1_000_000:
+                raise ValueError("File is too large")
+            return {"content": path.read_text()}
+        allowed = (path.name == "Dockerfile" or path.name.startswith("Dockerfile.")
+                   or path.name == ".dockerignore" or path.name in (
+                       "compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml", "nginx.conf"))
+        if not allowed or "src" in parts or len(arguments["content"]) > 1_000_000:
+            raise ValueError("Only deployment configuration may be edited")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(arguments["content"])
+        return {"written": arguments["path"]}
+
+    async def execute(method, params):
+        nonlocal result
+        if method != "item/tool/call":
+            return codex.decline(method)
+        name, arguments = params.get("tool"), params.get("arguments")
+        try:
+            if name not in schemas or not isinstance(arguments, dict):
+                raise ValueError("Unknown tool")
+            jsonschema.validate(arguments, schemas[name])
+            await operation.activity(StructuredActivity("tool", str(name)[:120], status="running",
+                                                       tool_id=str(params.get("callId", ""))[:64] or None))
+            if name == output_name:
+                result = arguments
+                output = {"accepted": True}
+            elif name in (read_name, write_name):
+                file_task = asyncio.create_task(asyncio.to_thread(file_operation, name, arguments))
+                try:
+                    output = await asyncio.shield(file_task)
+                except asyncio.CancelledError:
+                    await asyncio.gather(file_task, return_exceptions=True)
+                    raise
+            else:
+                output = await callbacks[name].execute(arguments)
+            await operation.activity(StructuredActivity("tool_result", str(name)[:120], status="done"))
+            return {"success": True, "contentItems": [{"type": "inputText", "text": json.dumps(output)}]}
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            return {"success": False, "contentItems": [{"type": "inputText",
+                    "text": "Tool failed or input was rejected. Check the permitted path and schema."}]}
+
+    try:
+        async with asyncio.timeout(get_settings().deployment_timeout_seconds):
+            async with codex.connected(account, working_directory, execute, structured=True) as client:
+                await operation.progress(StructuredProgress("preparing", "Preparing deployment configuration"))
+                thread = await client.call("thread_start", {
+                    "cwd": str(working_directory), "approvalPolicy": "never", "sandbox": "read-only",
+                    "ephemeral": True, "dynamicTools": specs,
+                    "developerInstructions": "Use only the provided tools. Their paths are relative to the repository. "
+                    "Read root AGENTS.md/CLAUDE.md and applicable repository instructions with mooi_read_file. "
+                    "Read files with mooi_read_file; "
+                    "write deployment files with mooi_write_deployment_file. Never execute shell commands. "
+                    "Never ask questions. Finish by calling mooi_submit_result with the required object. "
+                    "If configuration is missing, submit a structured failure.",
+                })
+                turn = await client.call("turn_start", thread.thread.id, operation.prompt, {"effort": "medium"})
+                async for method, payload in client.notifications(turn.turn.id):
+                    if method == "turn/completed" and payload["turn"]["status"] != "completed":
+                        raise StructuredOperationError("provider_unavailable", "Codex could not complete the operation")
+                    if method == "item/completed" and payload.get("item", {}).get("type") == "agentMessage":
+                        await operation.activity(StructuredActivity("assistant", "Codex",
+                                                 _structured_detail(payload["item"].get("text", ""))))
+        if not isinstance(result, dict):
+            raise StructuredOperationError("invalid_agent_output", "Codex returned no structured result")
+        return result
+    except asyncio.CancelledError:
+        raise
+    except TimeoutError:
+        raise StructuredOperationError("timeout", "Codex operation timed out") from None
+    except StructuredOperationError:
+        raise
+    except Exception:
+        raise StructuredOperationError("provider_unavailable", "Codex operation failed") from None
+    finally:
+        directory.cleanup()
+        codex.release(account)
+
+
 @dataclass(frozen=True)
 class ProviderDescriptor:
     id: str
@@ -1206,6 +1725,12 @@ class ProviderDescriptor:
     capabilities: AgentCapabilities
     runtime_class: type[AgentRuntime]
     structured_executor: StructuredExecutor | None = None
+
+    async def prepare(self, caller) -> None:
+        loader = getattr(self.runtime_class, "load_configuration", None)
+        if loader:
+            from mic_sessions.shared.mooi import fetch_agent_credential
+            await loader(await fetch_agent_credential(caller, self.id))
 
     def configuration(self) -> dict[str, Any]:
         return self.runtime_class.configuration()
@@ -1215,6 +1740,8 @@ class ProviderDescriptor:
 
 
 PROVIDERS: dict[str, ProviderDescriptor] = {
+    "codex": ProviderDescriptor("codex", "Codex", CODEX_CAPABILITIES, CodexAgentRuntime,
+                                structured_executor=_execute_codex_structured),
     "claude": ProviderDescriptor("claude", "Claude", CLAUDE_CAPABILITIES, ClaudeAgentRuntime,
                                  structured_executor=_execute_claude_structured),
 }

@@ -1,3 +1,5 @@
+import { ChatUsageIndicators } from './ChatUsageIndicators';
+import type { SessionUsage } from '@/features/sessions/types/SessionUsage';
 import type { SessionConfiguration } from '@/features/sessions/types/SessionConfiguration';
 import type { SessionProvider } from '@/features/sessions/types/SessionProvider';
 import { useLayoutEffect, useRef, useState } from 'react';
@@ -7,6 +9,7 @@ import { Button } from '@/shared/components/Button';
 
 interface ChatComposerProps {
   status: SessionStatus;
+  usage?: SessionUsage;
   busy: boolean;
   deploying?: boolean;
   model: string;
@@ -29,6 +32,7 @@ const hints: Partial<Record<SessionStatus, string>> = {
 
 export const ChatComposer = ({
   status,
+  usage,
   busy,
   deploying = false,
   model,
@@ -48,8 +52,10 @@ export const ChatComposer = ({
   const configurationDisabled = deploying || busy || status === 'closed' || status === 'failed' || modelLoading || Boolean(modelError);
 
   const changeModel = (nextModel: string) => {
-    const supported = modelOptions.find((option) => option.id === nextModel)?.efforts ?? [];
-    onConfigurationChange({ model: nextModel, effort: effort && supported.includes(effort) ? effort : null });
+    const option = modelOptions.find((entry) => entry.id === nextModel);
+    const supported = option?.efforts ?? [];
+    onConfigurationChange({ model: nextModel, effort: effort && supported.includes(effort)
+      ? effort : option?.defaultEffort ?? supported[0] ?? null });
   };
 
   const hint = hints[status] ?? (deploying ? 'Deployment in progress. Your draft is saved; chat resumes when it finishes.' : null);
@@ -118,6 +124,7 @@ export const ChatComposer = ({
         {activeTurn ? <p className="px-5 pb-2 text-xs text-ink-muted">Model and effort changes apply to your next message.</p> : null}
 
         <div className="flex flex-wrap items-center gap-2 px-2 pb-2">
+          <ChatUsageIndicators usage={usage} loading={status === 'provisioning'} />
           {modelOptions.length > 0 ? (
             <label className="flex min-w-0 items-center gap-1.5 text-xs text-ink-subtle">
               <span className="sr-only">Agent model</span>
@@ -149,7 +156,6 @@ export const ChatComposer = ({
                 aria-label="Agent effort"
                 className="max-w-[9rem] truncate rounded-lg border border-line bg-surface px-2 py-1.5 font-medium text-ink outline-none focus:border-brand disabled:cursor-not-allowed disabled:opacity-60"
               >
-                <option value="">Default</option>
                 {effort && !effortOptions.includes(effort) ? <option value={effort}>{effort}</option> : null}
                 {effortOptions.map((option) => <option key={option} value={option}>{option}</option>)}
               </select>

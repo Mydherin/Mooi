@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { GitBranch } from 'lucide-react';
+import { fetchSessionProviders } from '@/features/sessions/api/sessionsApi';
+import type { SessionProvider } from '@/features/sessions/types/SessionProvider';
+import { SessionModelFields } from '@/features/sessions/components/SessionModelFields';
 import { ROUTES } from '@/app/routes';
 import type { AgentConnection } from '@/features/agents/types/AgentConnection';
 import type { Project } from '@/features/projects/types/Project';
@@ -33,6 +36,14 @@ const BRANCH_PREFIX = 'feat/';
 
 const randomSuffix = (): string => Math.random().toString(36).slice(2, 8);
 
+const defaultEffortFor = (provider: SessionProvider | undefined, model: string): string => {
+  const entry = provider?.models.find((candidate) => candidate.id === model);
+  if (!entry?.efforts.length) return '';
+  if (entry.defaultEffort && entry.efforts.includes(entry.defaultEffort)) return entry.defaultEffort;
+  if (provider?.defaultEffort && entry.efforts.includes(provider.defaultEffort)) return provider.defaultEffort;
+  return entry.efforts[0];
+};
+
 /**
  * Suggest a fresh branch per opening; users can also reuse an existing remote branch.
  * Each session has its own clone, so matching branch names can run independently.
@@ -59,19 +70,41 @@ export const NewSessionDialog = ({
   onCreate,
 }: NewSessionDialogProps) => {
   const [branch, setBranch] = useState('');
-  const [title, setTitle] = useState('');
   const [provider, setProvider] = useState('');
+  const [catalog, setCatalog] = useState<SessionProvider[]>([]);
+  const [model, setModel] = useState('');
+  const [effort, setEffort] = useState('');
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+  const selectedProvider = catalog.find((entry) => entry.id === provider);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setCatalog([]);
+    setCatalogError(null);
+    void fetchSessionProviders().then((entries) => {
+      if (!cancelled) setCatalog(entries);
+    }).catch((failure: Error) => {
+      if (!cancelled) setCatalogError(failure.message);
+    });
+    return () => { cancelled = true; };
+  }, [open]);
+
+  useEffect(() => {
+    const defaultModel = selectedProvider?.defaultModel ?? '';
+    setModel(defaultModel);
+    setEffort(defaultEffortFor(selectedProvider, defaultModel));
+  }, [selectedProvider]);
 
   const wasOpenRef = useRef(false);
 
   /**
-   * Only the closed-to-open transition seeds branch/title: a `connections` refresh (e.g. the
+   * Only the closed-to-open transition seeds the branch: a `connections` refresh (e.g. the
    * account page linking a provider in another tab) must not wipe what the user is typing.
    */
   useEffect(() => {
     if (open && !wasOpenRef.current) {
       setBranch(proposeBranchName(project.name));
-      setTitle('');
     }
     wasOpenRef.current = open;
   }, [open, project.name]);
@@ -83,7 +116,8 @@ export const NewSessionDialog = ({
       : connections[0]?.provider ?? ''));
   }, [open, connections]);
 
-  const canSubmit = connections.length > 0 && branch.trim().length > 0 && provider.length > 0;
+  const canSubmit = connections.length > 0 && branch.trim().length > 0 && provider.length > 0
+    && Boolean(selectedProvider?.models.some((entry) => entry.id === model)) && !selectedProvider?.unavailable;
 
   const handleSubmit = () => {
     if (!canSubmit) {
@@ -93,8 +127,9 @@ export const NewSessionDialog = ({
     void onCreate({
       projectId: project.id,
       provider,
+      model,
+      effort: effort || null,
       branch: branch.trim(),
-      title: title.trim().length > 0 ? title.trim() : undefined,
     }).then((succeeded) => {
       if (succeeded) {
         onClose();
@@ -144,6 +179,14 @@ export const NewSessionDialog = ({
             />
           </label>
 
+          <SessionModelFields provider={selectedProvider} model={model} effort={effort}
+            onModelChange={(value) => {
+              setModel(value);
+              setEffort(defaultEffortFor(selectedProvider, value));
+            }} onEffortChange={setEffort} />
+          {catalogError ? <p role="alert" className="text-sm text-danger">{catalogError}</p> :
+            !selectedProvider ? <p role="status" className="text-xs text-ink-muted">Loading models…</p> : null}
+
           <label className="flex flex-col gap-2">
             <span className="text-xs font-medium text-ink-muted">Branch</span>
             <span className="flex h-12 w-full items-center gap-2 rounded-[10px] border border-line bg-surface-2 px-3 transition focus-within:border-brand/50">
@@ -161,18 +204,6 @@ export const NewSessionDialog = ({
             <span className="text-xs text-ink-subtle">
               Created from {project.defaultBranch ?? 'the default branch'}. Reusing this branch replaces its previous live session safely; the remote branch is never deleted.
             </span>
-          </label>
-
-          <label className="flex flex-col gap-2">
-            <span className="text-xs font-medium text-ink-muted">Title (optional)</span>
-            <input
-              value={title}
-              onChange={(event) => setTitle(event.target.value)}
-              placeholder="What is this session for?"
-              autoComplete="off"
-              aria-label="Session title"
-              className="h-12 w-full min-w-0 rounded-[10px] border border-line bg-surface-2 px-3 text-sm text-ink placeholder:text-ink-subtle transition focus:border-brand/50 focus:outline-none"
-            />
           </label>
         </div>
       )}

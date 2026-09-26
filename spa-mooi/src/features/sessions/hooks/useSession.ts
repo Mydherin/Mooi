@@ -125,7 +125,9 @@ export const useSession = (sessionId: string | undefined): UseSession => {
     fetchSessionProviders()
       .then((providers) => {
         if (!cancelled) {
-          setModelOptions(providers.find((provider) => provider.id === session.provider)?.models ?? []);
+          const provider = providers.find((entry) => entry.id === session.provider);
+          setModelOptions(provider?.models ?? []);
+          setModelError(provider?.unavailable ?? null);
         }
       })
       .catch((failure: Error) => {

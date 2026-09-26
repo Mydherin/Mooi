@@ -7,6 +7,8 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -104,6 +106,23 @@ public class AgentConnectionFeature {
         return agentConnectionService.credential(principal.player().id(), provider);
     }
 
+    @PostMapping("/me/agents/codex/device-connection")
+    @Auth.Authenticated
+    @Auth.ServiceCall
+    public AgentConnectionPayload connectDevice(@Valid @RequestBody DeviceConnectRequest request,
+                                                Auth.Principal principal) {
+        return agentConnectionService.connectDevice(principal.player().id(), request);
+    }
+
+    @PutMapping("/me/agents/{provider}/credential")
+    @Auth.Authenticated
+    @Auth.ServiceCall
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void refreshCredential(@PathVariable String provider,
+                                  @Valid @RequestBody RefreshCredentialRequest request, Auth.Principal principal) {
+        agentConnectionService.refreshCredential(principal.player().id(), provider, request);
+    }
+
     // --- application ---
 
     /**
@@ -136,7 +155,8 @@ public class AgentConnectionFeature {
 
         public AgentProvidersResponse providers() {
             return new AgentProvidersResponse(settings.all().stream()
-                    .map(provider -> new ProviderPayload(provider.id(), provider.label(), MODES,
+                    .map(provider -> new ProviderPayload(provider.id(), provider.label(), provider.id().equals("codex")
+                            ? List.of(Agents.Mode.DEVICE_OAUTH.wire()) : MODES,
                             provider.oauthEnabled() && provider.clientId() != null))
                     .toList());
         }
@@ -197,7 +217,8 @@ public class AgentConnectionFeature {
                 connection = ensureFreshToken(connection, agentProvider);
             }
             return new CredentialPayload(agentProvider.id(), connection.getMode(),
-                    secretBox.decrypt(connection.getAccessToken()), connection.getAccessTokenExpiresAt());
+                    secretBox.decrypt(connection.getAccessToken()), connection.getAccessTokenExpiresAt(),
+                    connection.getCredentialId());
         }
 
         /**
@@ -208,7 +229,7 @@ public class AgentConnectionFeature {
         @Transactional
         public AgentConnectionPayload connectToken(UUID playerId, String provider, String token) {
             Agents.Provider agentProvider = settings.find(provider).orElseThrow(Agents.AgentsException::unknownProvider);
-            if (token == null || token.isBlank()) {
+            if (provider.equals("codex") || token == null || token.isBlank()) {
                 throw Agents.AgentsException.invalidToken();
             }
             AgentConnection saved = upsert(playerId, agentProvider, Agents.Mode.SETUP_TOKEN,
@@ -216,6 +237,27 @@ public class AgentConnectionFeature {
             Agents.LOG.info("Player {} linked agent provider {} ({})", playerId, agentProvider.id(),
                     Agents.Mode.SETUP_TOKEN.wire());
             return toPayload(saved);
+        }
+
+        @Transactional
+        public AgentConnectionPayload connectDevice(UUID playerId, DeviceConnectRequest request) {
+            Agents.Provider provider = settings.find("codex").orElseThrow(Agents.AgentsException::unknownProvider);
+            if (request.token().length() > 65536 || request.accountLabel() != null && request.accountLabel().length() > 255) {
+                throw Agents.AgentsException.invalidToken();
+            }
+            return toPayload(upsert(playerId, provider, Agents.Mode.DEVICE_OAUTH,
+                    new Grant(request.token(), null, null, null, request.accountLabel())));
+        }
+
+        @Transactional
+        public void refreshCredential(UUID playerId, String provider, RefreshCredentialRequest request) {
+            if (!provider.equals("codex") || request.token().length() > 65536) {
+                throw Agents.AgentsException.reauthorize();
+            }
+            if (agentConnectionRepository.refreshCodex(playerId, request.connectionId(),
+                    secretBox.encrypt(request.token())) != 1) {
+                throw Agents.AgentsException.reauthorize();
+            }
         }
 
         /** Idempotent: disconnecting a provider that was never linked is not an error. */
@@ -242,6 +284,7 @@ public class AgentConnectionFeature {
                         created.setConnectedAt(OffsetDateTime.now(clock));
                         return created;
                     });
+            connection.setCredentialId(UUID.randomUUID());
             connection.setMode(mode.wire());
             connection.setAccountLabel(grant.accountLabel());
             connection.setAccessToken(secretBox.encrypt(grant.accessToken()));
@@ -343,7 +386,10 @@ public class AgentConnectionFeature {
          * AES-256-GCM ciphertext produced by {@code Crypto.SecretBox}, never a usable credential.
          * The plaintext exists only inside the request that needs it.
          */
-        @Column(name = "access_token", nullable = false, length = 2048)
+        @Column(name = "credential_id", nullable = false)
+        private UUID credentialId;
+
+        @Column(name = "access_token", nullable = false, columnDefinition = "text")
         private String accessToken;
 
         /** NULL for a {@code setup_token} credential: it does not expire. */
@@ -371,6 +417,13 @@ public class AgentConnectionFeature {
         List<AgentConnection> findByPlayerIdOrderByProviderAsc(UUID playerId);
 
         Optional<AgentConnection> findByPlayerIdAndProvider(UUID playerId, String provider);
+
+        // The identity check and update must be atomic with a concurrent disconnect/relink.
+        @Modifying
+        @Query("update AgentConnection c set c.accessToken = :token "
+                + "where c.playerId = :playerId and c.provider = 'codex' "
+                + "and c.mode = 'device_oauth' and c.credentialId = :connectionId")
+        int refreshCodex(UUID playerId, UUID connectionId, String token);
     }
 
     // --- contracts ---
@@ -394,7 +447,7 @@ public class AgentConnectionFeature {
      * A usable credential, handed only to another internal service. The single place, across every
      * payload in this feature, where a raw token is ever serialized.
      */
-    public record CredentialPayload(String provider, String mode, String token, OffsetDateTime expiresAt) {
+    public record CredentialPayload(String provider, String mode, String token, OffsetDateTime expiresAt, UUID connectionId) {
     }
 
     /** One provider this application knows how to link, and whether OAuth is actually usable for it. */
@@ -409,6 +462,11 @@ public class AgentConnectionFeature {
 
     public record OauthConnectRequest(@NotBlank String code, @NotBlank String state) {
     }
+
+    public record DeviceConnectRequest(@NotBlank String token, String accountLabel) { }
+
+    public record RefreshCredentialRequest(@NotBlank String token,
+            @jakarta.validation.constraints.NotNull UUID connectionId) { }
 
     public record TokenConnectRequest(@NotBlank String token) {
     }

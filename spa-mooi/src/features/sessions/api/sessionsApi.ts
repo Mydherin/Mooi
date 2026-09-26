@@ -8,10 +8,12 @@ import type { FileDiffPayload } from '@/features/sessions/types/FileDiffPayload'
 import type { SendMessageResponse } from '@/features/sessions/types/SendMessageResponse';
 import type { Session } from '@/features/sessions/types/Session';
 import type { SessionsResponse } from '@/features/sessions/types/SessionsResponse';
+import type { WorkspaceOverview } from '@/features/sessions/types/WorkspaceOverview';
 import { apiErrorMessage } from '@/shared/utils/apiErrorMessage';
 
 const sessionsPath = (projectId?: string) =>
   projectId ? `/sessions?projectId=${encodeURIComponent(projectId)}` : '/sessions';
+const workspacesPath = (projectId: string) => `/sessions/workspaces?projectId=${encodeURIComponent(projectId)}`;
 const sessionPath = (sessionId: string) => `/sessions/${sessionId}`;
 const messagesPath = (sessionId: string) => `/sessions/${sessionId}/messages`;
 const configurationPath = (sessionId: string) => `/sessions/${sessionId}/configuration`;
@@ -187,4 +189,10 @@ export const stopDeployment = async (sessionId: string): Promise<DeploymentSnaps
 export const sendSessionActivity = async (sessionId: string, signal?: AbortSignal): Promise<void> => {
   const response = await sessionsFetch(`${sessionPath(sessionId)}/activity`, { method: 'POST', signal });
   if (!response.ok) throw new Error(await apiErrorMessage(response, 'Could not renew session activity.'));
+};
+
+export const fetchWorkspaces = async (projectId: string): Promise<WorkspaceOverview> => {
+  const response = await sessionsFetch(workspacesPath(projectId));
+  if (!response.ok) throw new Error(await apiErrorMessage(response, 'Could not load the workspaces.'));
+  return (await response.json()) as WorkspaceOverview;
 };

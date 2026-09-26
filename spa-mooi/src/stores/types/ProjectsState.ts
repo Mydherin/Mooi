@@ -7,6 +7,7 @@ export interface ProjectsState {
   error: string | null;
   setProjects: (projects: Project[]) => void;
   upsertProject: (project: Project) => void;
+  replaceProject: (project: Project) => void;
   removeProject: (projectId: string) => void;
   setStatus: (status: ProjectsStatus) => void;
   setError: (error: string | null) => void;

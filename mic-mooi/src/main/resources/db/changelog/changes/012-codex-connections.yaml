@@ -1,0 +1,18 @@
+databaseChangeLog:
+  - changeSet:
+      id: 012-codex-connections
+      author: mooi
+      changes:
+        - modifyDataType:
+            tableName: agent_connections
+            columnName: access_token
+            newDataType: text
+        - addColumn:
+            tableName: agent_connections
+            columns:
+              - column:
+                  name: credential_id
+                  type: uuid
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    nullable: false

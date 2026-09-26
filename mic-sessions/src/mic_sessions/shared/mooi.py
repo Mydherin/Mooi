@@ -11,7 +11,8 @@ those carry information this service should forward verbatim.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from uuid import UUID
 
@@ -31,13 +32,17 @@ class Project:
     default_branch: str
     is_private: bool
     html_url: str
+    # Player-declared in `mic-mooi`; only web applications may be deployed and previewed.
+    web_application: bool
 
 
 @dataclass(frozen=True)
 class Credential:
     mode: str
-    token: str
+    token: str = field(repr=False)
     expires_at: datetime | None
+    connection_id: str | None = None
+    save: Callable[[str], Awaitable[None]] | None = field(default=None, repr=False)
 
 
 def _bearer(caller: Caller) -> dict[str, str]:
@@ -87,6 +92,7 @@ async def fetch_project(caller: Caller, project_id: UUID) -> Project:
                 default_branch=project["defaultBranch"],
                 is_private=project["isPrivate"],
                 html_url=project["htmlUrl"],
+                web_application=bool(project.get("webApplication", False)),
             )
     raise ApiException.not_found("Project not found")
 
@@ -111,8 +117,27 @@ async def fetch_agent_credential(caller: Caller, provider: str) -> Credential:
         "No agent provider linked",
     )
     expires_at = body.get("expiresAt")
+
+    async def save(token: str) -> None:
+        response = await get_http_client().put(
+            f"{settings.mooi_api_base_url}/me/agents/{provider}/credential",
+            headers=_service_headers(caller),
+            json={"token": token, "connectionId": body.get("connectionId")},
+        )
+        _raise_for_status(response, "Agent connection changed; reconnect the session")
+
     return Credential(
         mode=body["mode"],
         token=body["token"],
+        connection_id=body.get("connectionId"),
+        save=save if provider == "codex" else None,
         expires_at=datetime.fromisoformat(expires_at) if expires_at else None,
     )
+
+
+async def link_codex(caller: Caller, token: str, account_label: str | None) -> None:
+    response = await get_http_client().post(
+        f"{get_settings().mooi_api_base_url}/me/agents/codex/device-connection",
+        headers=_service_headers(caller), json={"token": token, "accountLabel": account_label},
+    )
+    _raise_for_status(response, "Could not save the Codex connection")

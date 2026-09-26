@@ -4,7 +4,7 @@
 # name to the small list below; the Artifacts group needs neither, since
 # it is synthesized directly from $(ARTIFACTS).
 
-GLOBAL_TARGETS := dev-start dev-stop dev-status dev-clean
+GLOBAL_TARGETS := dev-start dev-stop dev-restart dev-status dev-clean
 SUPPORT_TARGETS := dev-logs dev-preflight-mic-sessions help
 
 # help-desc(target): the ## comment text following `target:` in any
@@ -26,6 +26,7 @@ help: ## Show this help
 	if [ -n "$(ARTIFACTS)" ]; then
 	  printf '  Artifacts\n'
 	  $(foreach a,$(ARTIFACTS),printf '    %-24s %s\n' "dev-start-$(a)" "Start $(a)"$(NL))
+	  $(foreach a,$(ARTIFACTS),printf '    %-24s %s\n' "dev-restart-$(a)" "Restart $(a)"$(NL))
 	  printf '\n'
 	fi
 	printf '  Support\n'

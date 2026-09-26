@@ -317,7 +317,6 @@ class CreateSessionRequest(BaseModel):
     projectId: UUID
     provider: str
     branch: str = Field(pattern=_BRANCH_PATTERN)
-    title: str | None = None
     model: str | None = None
     effort: str | None = None
 
@@ -335,21 +334,46 @@ class SessionPayload(BaseModel):
     providerLabel: str
     branch: str
     baseBranch: str
-    title: str | None
     status: str
     detail: str | None
     createdAt: datetime
     updatedAt: datetime
     lastSeq: int
+    usage: dict[str, Any] = Field(default_factory=dict)
     pending: PendingPayload | None
     capabilities: dict[str, bool]
     model: str
     effort: str | None
     deployment: DeploymentSnapshot
+    # The session's own clone on this pod's disk; null until provisioning has cloned it.
+    workspacePath: str | None
+    baseCommit: str | None
 
 
 class SessionsResponse(BaseModel):
     sessions: list[SessionPayload]
+
+
+class WorkspacePayload(BaseModel):
+    sessionId: UUID
+    status: str
+    branch: str
+    baseBranch: str
+    path: str | None
+    baseCommit: str | None
+    headCommit: str | None
+    headBranch: str | None
+    dirtyFiles: int
+    sizeBytes: int
+    createdAt: datetime
+    deploymentState: str
+    previewUrl: str | None
+
+
+class WorkspacesResponse(BaseModel):
+    root: str
+    workspaces: list[WorkspacePayload]
+    totalBytes: int
 
 
 class SendMessageRequest(BaseModel):
@@ -428,7 +452,6 @@ class Session:
     branch: str
     base_branch: str
     base_commit: str
-    title: str | None
     status: str
     detail: str | None
     created_at: datetime
@@ -438,6 +461,7 @@ class Session:
     runtime: AgentRuntime | None
     deployment: DeploymentSnapshot
     config: AgentConfig = field(default_factory=lambda: AgentConfig("", None))
+    usage: dict[str, Any] = field(default_factory=dict)
     closing: bool = False
     turn_id: str | None = None
     pending: PendingInfo | None = None
@@ -464,12 +488,12 @@ class Session:
             providerLabel=descriptor.label,
             branch=self.branch,
             baseBranch=self.base_branch,
-            title=self.title,
             status=self.status,
             detail=self.detail,
             createdAt=self.created_at,
             updatedAt=self.updated_at,
             lastSeq=self.log.last_seq,
+            usage=self.usage,
             pending=PendingPayload(kind=self.pending.kind, requestId=self.pending.request_id)
             if self.pending is not None
             else None,
@@ -477,6 +501,8 @@ class Session:
             model=self.config.model,
             effort=self.config.effort,
             deployment=self.deployment,
+            workspacePath=None if self.workspace == _UNSET_PATH else str(self.workspace),
+            baseCommit=self.base_commit or None,
         )
 
 
@@ -488,7 +514,6 @@ def new_session(
     provider: str,
     branch: str,
     base_branch: str,
-    title: str | None,
 ) -> Session:
     """Builds a session in `provisioning`, before any of the slow orchestration steps have run."""
     now = datetime.now(UTC)
@@ -501,7 +526,6 @@ def new_session(
         branch=branch,
         base_branch=base_branch,
         base_commit="",
-        title=title,
         status="provisioning",
         detail=None,
         created_at=now,
@@ -509,6 +533,8 @@ def new_session(
         last_human_activity=now,
         workspace=_UNSET_PATH,
         log=EventLog(),
+        usage={"context": {"percent": None, "usedTokens": 0, "limitTokens": None,
+                           "updatedAt": now.timestamp()}},
         runtime=None,
         deployment=DeploymentSnapshot(
             state="stopped",
@@ -623,7 +649,12 @@ def record(session: Session, type_: str, data: dict[str, Any]) -> Event:
     if type_ == "message.user":
         _touch_activity(session, event.at)
 
-    if type_ == EVENT_SESSION_STATUS:
+    if type_ == "session.usage":
+        previous_quota = session.usage.get("quota")
+        session.usage = {**session.usage, **{key: data[key] for key in ("context", "quota") if key in data}}
+        if isinstance(data.get("quota"), dict):
+            session.usage["quota"] = {**(previous_quota or {}), **data["quota"]}
+    elif type_ == EVENT_SESSION_STATUS:
         session.status = str(data.get("status") or session.status)
         session.detail = data.get("detail")
         if session.status in (STATUS_FAILED, "closed"):
@@ -645,6 +676,8 @@ def record(session: Session, type_: str, data: dict[str, Any]) -> Event:
         session.interactions.clear()
         session.turn_id = None
     elif type_ == EVENT_SESSION_CONFIGURATION:
+        if data.get("model") and data["model"] != session.config.model:
+            session.usage = {**session.usage, "context": None}
         session.config = AgentConfig(
             model=str(data.get("model") or session.config.model),
             effort=data.get("effort"),
@@ -660,8 +693,13 @@ def _record_event(session: Session, event: AgentEvent) -> Event:
 
 
 def _record_status(session: Session, status_: str, detail: str | None = None) -> Event:
-    """Records a `session.status` event, built by the same helper the adapters use."""
-    return _record_event(session, session_status(status_, detail))
+    """Records a `session.status` event, built by the same helper the adapters use. Carries the
+    clone path once it exists, so a live client learns where provisioning placed the workspace."""
+    event = session_status(status_, detail)
+    if session.workspace != _UNSET_PATH:
+        event["data"]["workspacePath"] = str(session.workspace)
+        event["data"]["baseCommit"] = session.base_commit or None
+    return _record_event(session, event)
 
 
 # --- push-based changes refresh ----------------------------------------------------------------
@@ -872,6 +910,7 @@ async def create_session(
     """Reserve a session immediately; provision it in a tracked background task."""
     descriptor = describe(body.provider)
     registry = get_registry()
+    await descriptor.prepare(caller)
     config = descriptor.configure(body.model, body.effort)
     await workspaces.get_workspaces().validate_branch(body.branch)
 
@@ -883,7 +922,6 @@ async def create_session(
         provider=descriptor.id,
         branch=body.branch,
         base_branch="",
-        title=body.title,
     )
 
     session.config = config
@@ -947,7 +985,51 @@ async def _provision(session: Session, caller: Caller, project: mooi.Project) ->
 
 @router.get("/sessions/providers")
 async def session_providers(caller: Annotated[Caller, Depends(current_caller)]) -> dict[str, Any]:
-    return {"providers": [descriptor.configuration() for descriptor in PROVIDERS.values()]}
+    providers = []
+    for descriptor in PROVIDERS.values():
+        try:
+            await descriptor.prepare(caller)
+        except ApiException as error:
+            if error.status_code in (401, 403):
+                raise
+            providers.append({**descriptor.configuration(), "models": [], "unavailable": error.message})
+            continue
+        providers.append(descriptor.configuration())
+    return {"providers": providers}
+
+
+@router.get("/sessions/workspaces")
+async def list_workspaces(
+    caller: Annotated[Caller, Depends(current_caller)], projectId: UUID
+) -> WorkspacesResponse:
+    """Overview of every clone the caller holds for one project, read live from disk."""
+    sessions = get_registry().list_for(caller.player_id, projectId)
+
+    async def describe_workspace(session: Session) -> WorkspacePayload:
+        cloned = session.workspace != _UNSET_PATH
+        inspection = await workspaces.inspect(session.workspace) if cloned else None
+        return WorkspacePayload(
+            sessionId=session.id,
+            status=session.status,
+            branch=session.branch,
+            baseBranch=session.base_branch,
+            path=str(session.workspace) if cloned else None,
+            baseCommit=session.base_commit or None,
+            headCommit=inspection.head_commit if inspection else None,
+            headBranch=inspection.head_branch if inspection else None,
+            dirtyFiles=inspection.dirty_files if inspection else 0,
+            sizeBytes=inspection.size_bytes if inspection else 0,
+            createdAt=session.created_at,
+            deploymentState=session.deployment.state,
+            previewUrl=session.deployment.previewUrl,
+        )
+
+    payloads = await asyncio.gather(*(describe_workspace(session) for session in sessions))
+    return WorkspacesResponse(
+        root=str(workspaces.get_workspaces().root / "sessions"),
+        workspaces=list(payloads),
+        totalBytes=sum(payload.sizeBytes for payload in payloads),
+    )
 
 
 @router.get("/sessions")
@@ -1017,6 +1099,7 @@ async def stream_session_events(
                 last_seq = event.seq
             yield sse_frame(sync)
             last_seq = sync.seq
+            next_usage_check = 0.0
             next_auth_check = time.monotonic()
             while True:
                 if time.monotonic() >= next_auth_check:
@@ -1028,6 +1111,13 @@ async def stream_session_events(
                     next_auth_check = time.monotonic() + settings.introspection_cache_seconds
                 if await request.is_disconnected():
                     return
+                if time.monotonic() >= next_usage_check:
+                    next_usage_check = time.monotonic() + 60
+                    if session.runtime is not None and session.status in (STATUS_READY, STATUS_WORKING, STATUS_WAITING):
+                        try:
+                            await session.runtime.refresh_usage()
+                        except Exception:
+                            LOG.debug("Visible session usage refresh unavailable")
                 try:
                     event = await asyncio.wait_for(queue.get(), settings.sse_heartbeat_seconds)
                 except TimeoutError:
@@ -1067,6 +1157,9 @@ async def send_message(
         # older selection. A failed update leaves the draft and session retryable.
         runtime = _runtime(session)
         try:
+            refresh = getattr(runtime, "refresh_credential", None)
+            if refresh:
+                await refresh(await mooi.fetch_agent_credential(caller, session.provider))
             await runtime.set_configuration(session.config)
         except ApiException:
             raise
@@ -1095,6 +1188,7 @@ async def update_session_configuration(
 ) -> SessionPayload:
     session = get_registry().get_for(caller, session_id)
     descriptor = describe(session.provider)
+    await descriptor.prepare(caller)
     async with session.operation_lock:
         if (session.closing or session.deployment.state == "starting"
                 or session.status not in (STATUS_PROVISIONING, STATUS_READY, STATUS_WORKING, STATUS_WAITING)):
@@ -2142,6 +2236,11 @@ async def get_deployment(session_id: UUID, caller: Annotated[Caller, Depends(cur
 @router.post("/sessions/{session_id}/deployment/start", status_code=status.HTTP_202_ACCEPTED)
 async def start_deployment(session_id: UUID, caller: Annotated[Caller, Depends(current_caller)]) -> DeploymentSnapshot:
     session = get_registry().get_for(caller, session_id)
+    # Read live rather than cached on the session: the player can change the setting at any time.
+    # Stop stays ungated, so a deployment started before the change can always be torn down.
+    project = await mooi.fetch_project(caller, session.project_id)
+    if not project.web_application:
+        raise ApiException.conflict("Deploy and preview are only available for web applications")
     return await _admit_deployment_start(session, lambda operation_id: _run_deployment_start(session, caller, operation_id))
 
 

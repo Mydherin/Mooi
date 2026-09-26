@@ -13,11 +13,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 import dev.mooi.mic.shared.Auth;
 import dev.mooi.mic.shared.Crypto;
@@ -30,6 +32,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -43,6 +46,11 @@ import lombok.Setter;
  * needed to show a repository in a list — id, names, description, branch, link, language, stars —
  * and nothing else: no code, no tree, no archive, no clone. The code stays on GitHub, where it
  * already is, and every heavier read happens live against the player's own grant.
+ *
+ * <p>The one column that is not GitHub's is {@code webApplication}: the player's own answer to
+ * whether the repository is a web application. Nothing can infer it reliably from metadata, so it is
+ * asked when the project is added, can be corrected later, and decides whether the project's
+ * sessions offer deploy and preview at all.
  *
  * <p>That grant is also the authorization rule. A repository is added by name, but the metadata is
  * always fetched from GitHub with the caller's token first, so a name typed into a request body can
@@ -68,7 +76,16 @@ public class ProjectFeature {
     @Auth.Authenticated
     @ResponseStatus(HttpStatus.CREATED)
     public ProjectPayload addProject(@Valid @RequestBody AddProjectRequest request, Auth.Principal principal) {
-        return projectService.add(principal.player().id(), request.fullName());
+        return projectService.add(principal.player().id(), request.fullName(), request.webApplication());
+    }
+
+    /** Only the player-owned setting is editable; GitHub metadata is never taken from a request body. */
+    @PatchMapping("/me/projects/{projectId}")
+    @Auth.Authenticated
+    public ProjectPayload updateProject(@PathVariable UUID projectId,
+                                        @Valid @RequestBody UpdateProjectRequest request,
+                                        Auth.Principal principal) {
+        return projectService.update(principal.player().id(), projectId, request.webApplication());
     }
 
     /** Always 204, present or not: removing something already gone is the outcome that was asked for. */
@@ -116,7 +133,7 @@ public class ProjectFeature {
          * copy of it into the workspace.
          */
         @Transactional
-        public ProjectPayload add(UUID playerId, String fullName) {
+        public ProjectPayload add(UUID playerId, String fullName, boolean webApplication) {
             int separator = fullName.indexOf('/');
             String owner = fullName.substring(0, separator);
             String name = fullName.substring(separator + 1);
@@ -140,11 +157,23 @@ public class ProjectFeature {
             project.setHtmlUrl(repository.htmlUrl());
             project.setLanguage(repository.language());
             project.setStars(repository.stars());
+            project.setWebApplication(webApplication);
             project.setAddedAt(OffsetDateTime.now(clock));
 
             Project saved = projectRepository.save(project);
             Github.LOG.info("Player {} added repository {}", playerId, repository.fullName());
             return toPayload(saved);
+        }
+
+        /** Scoped by player like every other write: someone else's id reads as not found. */
+        @Transactional
+        public ProjectPayload update(UUID playerId, UUID projectId, boolean webApplication) {
+            Project project = projectRepository.findByIdAndPlayerId(projectId, playerId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Project not found"));
+            project.setWebApplication(webApplication);
+            Github.LOG.info("Player {} marked repository {} as {}", playerId, project.getFullName(),
+                    webApplication ? "a web application" : "not a web application");
+            return toPayload(project);
         }
 
         /**
@@ -181,7 +210,8 @@ public class ProjectFeature {
             return new ProjectPayload(project.getId(), project.getGithubRepoId(), project.getOwner(),
                     project.getName(), project.getFullName(), project.getDescription(),
                     project.isPrivateRepository(), project.getDefaultBranch(), project.getHtmlUrl(),
-                    project.getLanguage(), project.getStars(), project.getAddedAt());
+                    project.getLanguage(), project.getStars(), project.isWebApplication(),
+                    project.getAddedAt());
         }
     }
 
@@ -240,6 +270,10 @@ public class ProjectFeature {
 
         @Column(name = "stars", nullable = false)
         private int stars;
+
+        /** The player's answer, not GitHub's: gates deploy and preview for this project's sessions. */
+        @Column(name = "is_web_application", nullable = false)
+        private boolean webApplication;
 
         /** When the player added it here — unrelated to when the repository was created on GitHub. */
         @Column(name = "added_at", nullable = false, updatable = false)
@@ -304,13 +338,19 @@ public class ProjectFeature {
             @NotBlank
             @Pattern(regexp = "^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$",
                     message = "must be a GitHub repository name like owner/repository")
-            String fullName) {
+            String fullName,
+            /** Required rather than defaulted: the answer must be the player's, never assumed. */
+            @NotNull Boolean webApplication) {
+    }
+
+    public record UpdateProjectRequest(@NotNull Boolean webApplication) {
     }
 
     /** Repository metadata only — the same reference-not-copy rule the table is built on. */
     public record ProjectPayload(UUID id, long githubRepoId, String owner, String name, String fullName,
                                  String description, boolean isPrivate, String defaultBranch,
-                                 String htmlUrl, String language, int stars, OffsetDateTime addedAt) {
+                                 String htmlUrl, String language, int stars, boolean webApplication,
+                                 OffsetDateTime addedAt) {
     }
 
     public record ProjectsResponse(List<ProjectPayload> projects) {

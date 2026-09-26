@@ -1,3 +1,4 @@
+import type { SessionUsage } from '@/features/sessions/types/SessionUsage';
 import { mergeDeployment } from './mergeDeployment';
 import type { Session } from '@/features/sessions/types/Session';
 import type { SessionEvent } from '@/features/sessions/types/SessionEvent';
@@ -23,11 +24,19 @@ export const applySessionToSession = (session: Session, event: SessionEvent): Se
   if (type === 'deployment.progress' || type === 'deployment.activity') return { ...session, lastSeq: seq };
   const patch: Partial<Session> = { updatedAt: at, lastSeq: seq };
 
-  if (type === 'session.status') {
+  if (type === 'session.usage') {
+    patch.usage = { ...session.usage, ...Object.fromEntries(Object.entries(data).filter(([key]) => key === 'context' || key === 'quota')) } as SessionUsage;
+    if (data.quota && typeof data.quota === 'object') patch.usage.quota = { ...session.usage?.quota, ...data.quota as SessionUsage['quota'] };
+  } else if (type === 'session.status') {
     patch.status = (data.status as SessionStatus | undefined) ?? session.status;
     patch.detail = (data.detail as string | null | undefined) ?? null;
+    if (typeof data.workspacePath === 'string') {
+      patch.workspacePath = data.workspacePath;
+      patch.baseCommit = (data.baseCommit as string | null | undefined) ?? session.baseCommit;
+    }
   } else if (type === 'session.configuration') {
     patch.model = String(data.model ?? session.model);
+    if (patch.model !== session.model) patch.usage = { ...session.usage, context: null };
     patch.effort = (data.effort as string | null | undefined) ?? null;
   } else if (type === 'permission.request' || type === 'question.request') {
     patch.status = 'waiting';

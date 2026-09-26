@@ -1,25 +1,36 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronRight, ExternalLink, Plus, Trash2 } from 'lucide-react';
+import { ChevronRight, ExternalLink, Globe, Pencil, Trash2 } from 'lucide-react';
 import { ROUTES } from '@/app/routes';
+import { EditProjectDialog } from '@/features/projects/components/EditProjectDialog';
 import type { Project } from '@/features/projects/types/Project';
 import { Badge } from '@/shared/components/Badge';
-import { Button } from '@/shared/components/Button';
 import { Card } from '@/shared/components/Card';
 import { Eyebrow } from '@/shared/components/Eyebrow';
+import { GithubMark } from '@/shared/components/icons/GithubMark';
 import { Initials } from '@/shared/components/Initials';
-import { buttonStyles } from '@/shared/styles/buttonStyles';
+import { cn } from '@/shared/utils/cn';
 import { formatDate } from '@/shared/utils/formatDate';
 
 interface ProjectHeaderProps {
   project: Project;
   busy: boolean;
   onRemove: () => void;
-  onNewSession: () => void;
 }
 
-export const ProjectHeader = ({ project, busy, onRemove, onNewSession }: ProjectHeaderProps) => (
-  <div className="flex flex-col gap-5">
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+const iconAction =
+  'inline-flex size-10 shrink-0 items-center justify-center rounded-[10px] border border-line bg-surface text-ink-muted transition hover:bg-surface-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:pointer-events-none disabled:opacity-50';
+
+/**
+ * Actions live inside the overview card as icons, next to the repository mark, so the page keeps
+ * a single header row on phones. The mark sits above the title, letting the name, visibility badge
+ * and description use the card's full width instead of a column beside the icon.
+ */
+export const ProjectHeader = ({ project, busy, onRemove }: ProjectHeaderProps) => {
+  const [editing, setEditing] = useState(false);
+
+  return (
+    <div className="flex flex-col gap-4">
       <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1.5 text-[13px] font-bold">
         <Link
           to={ROUTES.projects}
@@ -31,46 +42,63 @@ export const ProjectHeader = ({ project, busy, onRemove, onNewSession }: Project
         <span className="min-w-0 truncate text-ink">{project.name}</span>
       </nav>
 
-      <div className="flex flex-wrap items-center gap-2">
-        {project.htmlUrl ? (
-          <a
-            href={project.htmlUrl}
-            target="_blank"
-            rel="noreferrer"
-            className={buttonStyles('secondary', 'sm')}
-          >
-            <ExternalLink className="size-4" />
-            Open on GitHub
-          </a>
-        ) : null}
+      <Card className="flex flex-col gap-5 p-5 sm:p-6">
+        <div className="flex items-center justify-between gap-3">
+          <Initials value={project.name} size="lg" />
 
-        <Button variant="danger" size="sm" onClick={onRemove} disabled={busy}>
-          <Trash2 className="size-4" />
-          Remove project
-        </Button>
+          <div className="flex items-center gap-2">
+            {project.htmlUrl ? (
+              <a
+                href={project.htmlUrl}
+                target="_blank"
+                rel="noreferrer"
+                aria-label="Open on GitHub"
+                title="Open on GitHub"
+                className={iconAction}
+              >
+                <GithubMark className="size-4" />
+              </a>
+            ) : null}
 
-        <Button variant="brand" size="sm" onClick={onNewSession}>
-          <Plus className="size-4" />
-          New session
-        </Button>
-      </div>
-    </div>
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              aria-label="Edit project"
+              title="Edit project"
+              className={iconAction}
+            >
+              <Pencil className="size-4" />
+            </button>
 
-    <Card className="flex flex-col gap-6 p-5 sm:p-6 lg:flex-row lg:items-start">
-      <div className="flex min-w-0 gap-4">
-        <Initials value={project.name} size="lg" />
+            <button
+              type="button"
+              onClick={onRemove}
+              disabled={busy}
+              aria-label="Remove project"
+              title="Remove project"
+              className={cn(iconAction, 'border-danger/35 text-danger hover:bg-danger-soft hover:text-danger')}
+            >
+              <Trash2 className="size-4" />
+            </button>
+          </div>
+        </div>
 
         <div className="min-w-0">
-          <p className="flex flex-wrap items-center gap-2.5">
-            <span className="break-words text-[26px] font-extrabold tracking-[-0.035em] text-ink">
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
+            <h1 className="min-w-0 text-[24px] leading-tight font-extrabold tracking-[-0.035em] [overflow-wrap:anywhere] text-ink sm:text-[26px]">
               {project.name}
-            </span>
+            </h1>
             <Badge tone={project.isPrivate ? 'neutral' : 'info'}>
               {project.isPrivate ? 'Private' : 'Public'}
             </Badge>
-          </p>
+            {project.webApplication ? (
+              <Badge tone="brand" icon={Globe}>
+                Web app
+              </Badge>
+            ) : null}
+          </div>
 
-          <p className="mt-1.5 max-w-xl text-[13px] leading-relaxed text-ink-muted">
+          <p className="mt-1.5 max-w-2xl text-[13px] leading-relaxed text-ink-muted">
             {project.description ?? 'No description on GitHub.'}
           </p>
 
@@ -79,43 +107,45 @@ export const ProjectHeader = ({ project, busy, onRemove, onNewSession }: Project
               href={project.htmlUrl}
               target="_blank"
               rel="noreferrer"
-              className="mt-2 inline-flex max-w-full items-center gap-1.5 break-all font-mono text-[11px] text-ink-subtle transition hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+              className="mt-2 inline-flex max-w-full items-center gap-1.5 font-mono text-[11px] [overflow-wrap:anywhere] text-ink-subtle transition hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
             >
               {project.fullName}
               <ExternalLink className="size-3.5 shrink-0" />
             </a>
           ) : (
-            <p className="mt-2 font-mono text-[11px] text-ink-subtle">{project.fullName}</p>
+            <p className="mt-2 font-mono text-[11px] [overflow-wrap:anywhere] text-ink-subtle">{project.fullName}</p>
           )}
         </div>
-      </div>
 
-      <div className="grid grid-cols-2 gap-x-8 gap-y-4 lg:ml-auto lg:grid-cols-4">
-        <div>
-          <Eyebrow>Default branch</Eyebrow>
-          <p className="mt-1 truncate font-mono text-[15px] font-extrabold text-ink">
-            {project.defaultBranch ?? '—'}
-          </p>
-        </div>
+        <div className="grid grid-cols-2 gap-x-6 gap-y-4 border-t border-line pt-5 sm:grid-cols-4">
+          <div className="min-w-0">
+            <Eyebrow>Default branch</Eyebrow>
+            <p className="mt-1 truncate font-mono text-[15px] font-extrabold text-ink">
+              {project.defaultBranch ?? '—'}
+            </p>
+          </div>
 
-        <div>
-          <Eyebrow>Language</Eyebrow>
-          <p className="mt-1 flex items-center gap-2 truncate text-[15px] font-extrabold text-ink">
-            {project.language ? <span className="size-1.5 shrink-0 rounded-full bg-info-dot" /> : null}
-            {project.language ?? '—'}
-          </p>
-        </div>
+          <div className="min-w-0">
+            <Eyebrow>Language</Eyebrow>
+            <p className="mt-1 flex items-center gap-2 truncate text-[15px] font-extrabold text-ink">
+              {project.language ? <span className="size-1.5 shrink-0 rounded-full bg-info-dot" /> : null}
+              {project.language ?? '—'}
+            </p>
+          </div>
 
-        <div>
-          <Eyebrow>Stars</Eyebrow>
-          <p className="mt-1 text-[15px] font-extrabold text-ink">{String(project.stars)}</p>
-        </div>
+          <div className="min-w-0">
+            <Eyebrow>Stars</Eyebrow>
+            <p className="mt-1 text-[15px] font-extrabold text-ink">{String(project.stars)}</p>
+          </div>
 
-        <div>
-          <Eyebrow>Added</Eyebrow>
-          <p className="mt-1 text-[15px] font-extrabold text-ink">{formatDate(project.addedAt)}</p>
+          <div className="min-w-0">
+            <Eyebrow>Added</Eyebrow>
+            <p className="mt-1 text-[15px] font-extrabold text-ink">{formatDate(project.addedAt)}</p>
+          </div>
         </div>
-      </div>
-    </Card>
-  </div>
-);
+      </Card>
+
+      {editing ? <EditProjectDialog project={project} onClose={() => setEditing(false)} /> : null}
+    </div>
+  );
+};

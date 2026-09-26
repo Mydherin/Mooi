@@ -93,7 +93,8 @@ public class Agents {
     public enum Mode {
 
         OAUTH("oauth"),
-        SETUP_TOKEN("setup_token");
+        SETUP_TOKEN("setup_token"),
+        DEVICE_OAUTH("device_oauth");
 
         private final String wire;
 
@@ -226,7 +227,8 @@ public class Agents {
                 validUrl(claude.tokenUri(), "AGENT_CLAUDE_TOKEN_URI");
                 validUrl(claude.redirectUri(), "AGENT_CLAUDE_REDIRECT_URI");
             }
-            this.providers = Map.of(claude.id(), claude);
+            Provider codex = new Provider("codex", "Codex", false, null, null, null, null, null, null);
+            this.providers = Map.of(claude.id(), claude, codex.id(), codex);
         }
 
         public Optional<Provider> find(String id) {

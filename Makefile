@@ -86,7 +86,7 @@ endef
 
 # --- Global commands -------------------------------------------------------
 
-.PHONY: dev-start dev-stop
+.PHONY: dev-start dev-stop dev-restart
 
 dev-start: ## Start all dependencies and artifacts
 	@$(call dev-start-sequence,Application dev entrypoint,$(ARTIFACTS))
@@ -96,6 +96,10 @@ dev-stop: ## Stop all artifacts and dependencies
 	ui_title "Application dev entrypoint"
 	$(foreach a,$(call reverse,$(ORDERED_ARTIFACTS)),$(call artifact-stop-block,$(a))$(NL))
 	$(call services-stop-block,$(call artifact-services,$(ARTIFACTS)))
+
+dev-restart: ## Restart all dependencies and artifacts
+	@$(MAKE) dev-stop
+	@$(MAKE) dev-start
 
 STRICT ?= 0
 YES ?= 0

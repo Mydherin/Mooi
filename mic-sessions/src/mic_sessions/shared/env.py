@@ -78,12 +78,6 @@ class Settings(BaseSettings):
     # Agent runtime — namespaced per provider (AGENT_<PROVIDER>_*); read by that adapter alone.
     agent_claude_model: str = "sonnet"
     agent_claude_effort: str = "high"
-    # Chat model allowlist; aliases resolve through Claude Code. No frontend vendor constants.
-    agent_claude_models: dict[str, list[str]] = {
-        "sonnet": ["low", "medium", "high"],
-        "opus": ["low", "medium", "high", "max"],
-        "haiku": [],
-    }
     agent_claude_disallowed_tools: Annotated[list[str], NoDecode] = []
 
     # Logging

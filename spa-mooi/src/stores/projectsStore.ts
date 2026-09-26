@@ -16,6 +16,11 @@ export const useProjectsStore = create<ProjectsState>((set) => ({
     set((state) => ({
       projects: [project, ...state.projects.filter((current) => current.id !== project.id)],
     })),
+  // In place: an edited project keeps its position, unlike one that was just added.
+  replaceProject: (project) =>
+    set((state) => ({
+      projects: state.projects.map((current) => (current.id === project.id ? project : current)),
+    })),
   removeProject: (projectId) =>
     set((state) => ({ projects: state.projects.filter((project) => project.id !== projectId) })),
   setStatus: (status) => set({ status }),

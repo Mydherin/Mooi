@@ -9,7 +9,14 @@ import { cn } from '@/shared/utils/cn';
 
 const ChangesPanel = lazy(() => import('./changes/ChangesPanel').then((module) => ({ default: module.ChangesPanel })));
 
-export const SessionWorkspace = ({ sessionId, children }: { sessionId: string; children: ReactNode }) => {
+interface SessionWorkspaceProps {
+  sessionId: string;
+  /** False for projects that are not web applications: no preview tab, no deployment logs. */
+  deployEnabled: boolean;
+  children: ReactNode;
+}
+
+export const SessionWorkspace = ({ sessionId, deployEnabled, children }: SessionWorkspaceProps) => {
   const pane = useSessionsStore((state) => state.byId[sessionId]?.pane ?? 'conversation');
   const setPane = useSessionsStore((state) => state.setPane);
   const logsOpen = useSessionsStore((state) => state.byId[sessionId]?.deploymentLogsOpen ?? false);
@@ -18,8 +25,8 @@ export const SessionWorkspace = ({ sessionId, children }: { sessionId: string; c
   const deployment = useSessionsStore((state) => state.sessions.find((session) => session.id === sessionId)?.deployment);
   const openedOperation = useSessionsStore((state) => state.byId[sessionId]?.previewOpenedOperationId);
   const operationId = deployment?.operationId;
-  const running = deployment?.state === 'running';
-  const hasPreview = Boolean(operationId);
+  const running = deployEnabled && deployment?.state === 'running';
+  const hasPreview = deployEnabled && Boolean(operationId);
 
   useEffect(() => () => useSessionsStore.getState().setDeploymentLogsOpen(sessionId, false), [sessionId]);
 
@@ -62,7 +69,7 @@ export const SessionWorkspace = ({ sessionId, children }: { sessionId: string; c
           <PreviewPanel sessionId={sessionId} deployment={deployment} visible={visiblePane === 'preview'} />
         </section> : null}
       </div>
-      {logsOpen ? <DeployLogsDrawer sessionId={sessionId} /> : null}
+      {deployEnabled && logsOpen ? <DeployLogsDrawer sessionId={sessionId} /> : null}
     </div>
   );
 };

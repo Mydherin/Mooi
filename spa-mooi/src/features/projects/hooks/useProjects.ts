@@ -5,6 +5,7 @@ import {
   removeProject,
 } from '@/features/projects/api/projectsApi';
 import type { Project } from '@/features/projects/types/Project';
+import type { ProjectSettings } from '@/features/projects/types/ProjectSettings';
 import type { ProjectsStatus } from '@/features/projects/types/ProjectsStatus';
 import { useProjectsStore } from '@/stores/projectsStore';
 
@@ -14,7 +15,7 @@ interface UseProjects {
   error: string | null;
   busy: boolean;
   actionError: string | null;
-  add: (fullName: string) => Promise<Project | null>;
+  add: (fullName: string, settings: ProjectSettings) => Promise<Project | null>;
   remove: (projectId: string) => Promise<boolean>;
   reload: () => void;
   clearActionError: () => void;
@@ -34,12 +35,12 @@ export const useProjects = (): UseProjects => {
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  const add = useCallback(async (fullName: string): Promise<Project | null> => {
+  const add = useCallback(async (fullName: string, settings: ProjectSettings): Promise<Project | null> => {
     setBusy(true);
     setActionError(null);
 
     try {
-      const project = await addProject(fullName);
+      const project = await addProject(fullName, settings);
 
       useProjectsStore.getState().upsertProject(project);
 

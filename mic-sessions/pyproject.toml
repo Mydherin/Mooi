@@ -10,6 +10,8 @@ dependencies = [
     "pydantic",
     "pydantic-settings",
     "pyjwt",
+    "openai-codex==0.156.1",
+    "jsonschema>=4.26.0",
 ]
 
 [build-system]
