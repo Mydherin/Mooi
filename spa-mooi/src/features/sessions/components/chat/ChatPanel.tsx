@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import type { SessionConfiguration } from '@/features/sessions/types/SessionConfiguration';
 import type { SessionProvider } from '@/features/sessions/types/SessionProvider';
 import { CircleAlert, LoaderCircle } from 'lucide-react';
@@ -51,7 +52,22 @@ export const ChatPanel = ({
   onAllowPermission,
   onDenyPermission,
   onAnswerQuestion,
-}: ChatPanelProps) => (
+}: ChatPanelProps) => {
+  const [sending, setSending] = useState(false);
+  const working = session.status === 'working' || session.status === 'waiting';
+
+  useEffect(() => {
+    if (working) setSending(false);
+  }, [working]);
+
+  const send = async (text: string) => {
+    setSending(true);
+    const sent = await onSend(text);
+    if (!sent) setSending(false);
+    return sent;
+  };
+
+  return (
   <div className="flex h-full min-h-0 flex-col">
     {streamState === 'reconnecting' ? (
       <p className="flex shrink-0 items-center gap-2 border-b border-line bg-warning-soft px-4 py-2 text-xs text-warning">
@@ -60,7 +76,6 @@ export const ChatPanel = ({
       </p>
     ) : null}
 
-    <p className="shrink-0 truncate px-4 pt-3 text-center text-xs text-ink-subtle">{session.providerLabel} · {session.model}{session.effort ? ` · ${session.effort} effort` : ''}</p>
     {session.detail && session.status !== 'failed' && session.status !== 'closed' ? <p role="status" className="max-h-[20%] shrink-0 overflow-y-auto px-4 py-2 text-sm text-ink-muted [overflow-wrap:anywhere]">{session.detail}</p> : null}
     <ChatMessageList
       key={`transcript-${session.id}`}
@@ -68,7 +83,7 @@ export const ChatPanel = ({
       pending={pending}
       providerLabel={session.providerLabel}
       capabilities={session.capabilities}
-      working={session.status === 'working' || session.status === 'waiting'}
+      working={working || sending}
       loading={streamState === 'reconnecting' && entries.length === 0}
       busy={busy}
       editableToolInput={session.capabilities.editableToolInput}
@@ -97,11 +112,12 @@ export const ChatPanel = ({
       modelError={modelError}
       canInterrupt={session.capabilities.interrupt}
       hasConversation={entries.some((entry) => entry.kind === 'user')}
-      onSend={onSend}
+      onSend={send}
       onInterrupt={onInterrupt}
       onCompact={onCompact}
       onClear={onClear}
       onConfigurationChange={onConfigurationChange}
     />
   </div>
-);
+  );
+};

@@ -1,7 +1,6 @@
-import { Activity, LoaderCircle } from 'lucide-react';
+import { Activity, Eraser, Layers3, LoaderCircle } from 'lucide-react';
 import type { SessionUsage } from '@/features/sessions/types/SessionUsage';
 import type { UsageMetric } from '@/features/sessions/types/UsageMetric';
-import { Tooltip } from '@/shared/components/Tooltip';
 
 const formatTime = (seconds: number) => new Date(seconds * 1000).toLocaleString();
 const percent = (metric?: UsageMetric | null) =>
@@ -27,7 +26,15 @@ const QuotaRow = ({ label, metric }: { label: string; metric?: UsageMetric | nul
   );
 };
 
-export const ChatUsageIndicators = ({ usage, loading = false }: { usage?: SessionUsage; loading?: boolean }) => {
+interface ChatUsageIndicatorsProps {
+  usage?: SessionUsage;
+  loading?: boolean;
+  actionsDisabled: boolean;
+  onCompact: () => Promise<boolean>;
+  onClear: () => Promise<boolean>;
+}
+
+export const ChatUsageIndicators = ({ usage, loading = false, actionsDisabled, onCompact, onClear }: ChatUsageIndicatorsProps) => {
   const quotas = usage?.quota ?? {};
   const fiveHour = quotas.five_hour ?? quotas.primary;
   const weekly = quotas.seven_day ?? quotas.secondary;
@@ -36,20 +43,39 @@ export const ChatUsageIndicators = ({ usage, loading = false }: { usage?: Sessio
   const known = Object.values(quotas).filter((metric) => percent(metric) != null);
   const updatedAt = Math.min(...known.map((metric) => metric.updatedAt));
   return (
-    <Tooltip placement="top" content={
-      <span className="flex min-w-56 flex-col gap-2 font-sans text-xs normal-case">
+    <span className="group/context relative inline-flex shrink-0" onMouseLeave={(event) => {
+      if (event.currentTarget.contains(document.activeElement)) (document.activeElement as HTMLElement).blur();
+    }}>
+      <button type="button" aria-label="Context usage and conversation actions" aria-haspopup="true"
+        className="flex size-9 shrink-0 items-center justify-center rounded-full text-sky-500 transition hover:bg-sky-500/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+      >
+        {loading ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <Activity className="size-4" aria-hidden="true" />}
+      </button>
+      <span className="pointer-events-none invisible absolute bottom-full left-0 z-50 w-max max-w-[calc(100vw-2rem)] pb-2 opacity-0 transition duration-150 group-hover/context:pointer-events-auto group-hover/context:visible group-hover/context:opacity-100 group-focus-within/context:pointer-events-auto group-focus-within/context:visible group-focus-within/context:opacity-100">
+        <span className="flex min-w-56 flex-col gap-2 rounded-xl border border-line-strong bg-surface p-3 font-sans text-xs font-medium normal-case text-ink shadow-[0_12px_32px_rgb(0_0_0/0.2)] dark:shadow-[0_12px_32px_rgb(0_0_0/0.6)]">
         <Row label="Context used" metric={context} loading={loading} />
         {context?.limitTokens != null && <span className="text-ink-subtle">{(context.usedTokens ?? 0).toLocaleString()} / {context.limitTokens.toLocaleString()} tokens</span>}
+        <span className="h-px bg-line" />
+        <span className="flex items-center gap-2">
+          <span className="mr-auto font-semibold text-ink-subtle">Conversation</span>
+          <button type="button" title="Compact context" aria-label="Compact conversation context" disabled={actionsDisabled}
+            onClick={() => void onCompact()}
+            className="flex size-8 items-center justify-center rounded-lg text-ink-muted transition hover:bg-surface-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-brand disabled:cursor-not-allowed disabled:opacity-40">
+            <Layers3 className="size-4" aria-hidden="true" />
+          </button>
+          <button type="button" title="Clear conversation" aria-label="Clear conversation and start fresh" disabled={actionsDisabled}
+            onClick={() => void onClear()}
+            className="flex size-8 items-center justify-center rounded-lg text-ink-muted transition hover:bg-danger-soft hover:text-danger focus-visible:outline-2 focus-visible:outline-brand disabled:cursor-not-allowed disabled:opacity-40">
+            <Eraser className="size-4" aria-hidden="true" />
+          </button>
+        </span>
         {known.length > 0 && <span className="h-px bg-line" />}
         <QuotaRow label="5 hour limit" metric={fiveHour} />
         <QuotaRow label="Weekly limit" metric={weekly} />
         {extras.map(([key, metric]) => <QuotaRow key={key} label={key.replaceAll('_', ' ')} metric={metric} />)}
         {Number.isFinite(updatedAt) && updatedAt > 0 && <span className="text-ink-subtle">Updated {formatTime(updatedAt)}</span>}
+        </span>
       </span>
-    }>
-      <span role="img" aria-label="Session status and usage" className="flex size-9 shrink-0 items-center justify-center rounded-full text-sky-500 hover:bg-sky-500/10">
-        {loading ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <Activity className="size-4" aria-hidden="true" />}
-      </span>
-    </Tooltip>
+    </span>
   );
 };

@@ -42,6 +42,7 @@ export const ChatMessageList = ({
   const visibleEntries = entries.filter((entry) => entry.kind !== 'assistant' ||
     (entry.streaming && working) || entry.result || entry.blocks.some((block) =>
       block.kind === 'step' || ((block.kind !== 'thinking' || capabilities.thinking) && block.text.trim() && !isProviderPlaceholder(block.text))));
+  const hasStreamingAssistant = visibleEntries.some((entry) => entry.kind === 'assistant' && entry.streaming);
 
   useEffect(() => {
     const list = listRef.current;
@@ -80,10 +81,16 @@ export const ChatMessageList = ({
             <span className="flex size-14 items-center justify-center rounded-[14px] bg-surface-2 text-ink-muted">
               {loading || working ? <LoaderCircle className="size-6 animate-spin" /> : <MessagesSquare className="size-6" />}
             </span>
-            <h2 className="mt-5 text-xl font-extrabold tracking-[-0.03em] text-ink">{loading ? 'Loading conversation…' : working ? 'The agent is getting started' : 'What shall we build?'}</h2>
+            <h2 className="mt-5 text-xl font-extrabold tracking-[-0.03em] text-ink">{loading ? 'Loading conversation…' : working ? 'Processing your message…' : 'What shall we build?'}</h2>
             <p className="mt-2 max-w-sm text-sm leading-relaxed text-ink-muted">{loading ? 'Restoring the messages in this session.' : 'Describe an idea, ask about your code, or work through a change together.'}</p>
           </li> : <>
             {visibleEntries.map((entry) => <ChatMessageItem key={entry.id} entry={entry} providerLabel={providerLabel} capabilities={capabilities} working={working} />)}
+            {working && !hasStreamingAssistant && pending.length === 0 ? (
+              <li role="status" aria-live="polite" className="flex items-center gap-3 text-sm text-ink-muted">
+                <LoaderCircle className="size-4 shrink-0 animate-spin text-brand" aria-hidden="true" />
+                <span>Processing your message…</span>
+              </li>
+            ) : null}
             {pending.map((request) => (
               <li key={`pending-${request.requestId}`} aria-label={request.kind === 'question' ? 'Pending question' : 'Pending permission'}>
                 {request.kind === 'permission' ? (
