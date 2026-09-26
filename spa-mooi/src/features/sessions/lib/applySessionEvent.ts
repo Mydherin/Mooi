@@ -1,4 +1,5 @@
 import { isProviderPlaceholder } from './isProviderPlaceholder';
+import { DEPLOYMENT_LOG_LIMIT } from './deploymentLogLimit';
 import type { SessionPendingRequest } from '@/features/sessions/types/SessionPendingRequest';
 import type { AgentQuestion } from '@/features/sessions/types/AgentQuestion';
 import type { ChangesSummary } from '@/features/sessions/types/ChangesSummary';
@@ -16,12 +17,10 @@ import type { TranscriptStep } from '@/features/sessions/types/TranscriptStep';
  * `openSessionStream` itself, not here.
  */
 export const emptyTranscriptState = (): SessionTranscriptState => ({
-  deploymentActivity: [],
-  deploymentActivityOperationId: null,
   pane: 'conversation',
-  deploymentLogsOpen: false,
-  deploymentProgress: null,
   previewOpenedOperationId: null,
+  deploymentLog: [],
+  deploymentLogOpen: false,
   entries: [],
   pending: [],
   changes: null,
@@ -174,7 +173,8 @@ const withResolvedStep = (
 export const applySessionEvent = (state: SessionTranscriptState, event: SessionEvent): SessionTranscriptState => {
   const { seq, at, type, data } = event;
   if (type === 'history.reset') {
-    return { ...emptyTranscriptState(), pane: state.pane, deploymentLogsOpen: state.deploymentLogsOpen, previewOpenedOperationId: state.previewOpenedOperationId, streamState: state.streamState, lastSeq: seq,
+    return { ...emptyTranscriptState(), pane: state.pane, previewOpenedOperationId: state.previewOpenedOperationId,
+      deploymentLog: state.deploymentLog, deploymentLogOpen: state.deploymentLogOpen, streamState: state.streamState, lastSeq: seq,
       entries: [{ id: `gap-${seq}`, kind: 'error', at, text: String(data.message) }] };
   }
   if (type === 'session.sync') {
@@ -185,6 +185,12 @@ export const applySessionEvent = (state: SessionTranscriptState, event: SessionE
         ? closeOpenEntry(state.entries) : state.entries };
   }
   if (seq <= state.lastSeq) return state;
+  if (event.type === 'deployment.log') {
+    const log = event.data;
+    const current = state.deploymentLog[0]?.operationId === log.operationId ? state.deploymentLog : [];
+    return { ...state, lastSeq: seq, deploymentLog: current.some((batch) => batch.index === log.index) ? current
+      : [...current, log].sort((a, b) => a.index - b.index).slice(-DEPLOYMENT_LOG_LIMIT) };
+  }
   let entries = state.entries;
   let pending = state.pending;
   let changes = state.changes;
@@ -309,7 +315,7 @@ export const applySessionEvent = (state: SessionTranscriptState, event: SessionE
     }
     case 'session.cleared': {
       entries = [{ id: `cleared-${seq}`, kind: 'notice', at, tone: 'info', title: 'Conversation cleared',
-        text: 'The agent starts a fresh conversation to resolve the merge conflicts.' }];
+        text: 'The agent starts a fresh conversation for the next task.' }];
       pending = [];
       break;
     }

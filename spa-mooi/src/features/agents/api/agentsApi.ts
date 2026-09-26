@@ -102,11 +102,10 @@ export const renameAgentConnection = async (id: string, name: string): Promise<A
 };
 
 export const saveAgentDefaultModels = async (id: string, sessionModel: string | null,
-  sessionEffort: string | null, deploymentModel: string | null,
-  deploymentEffort: string | null): Promise<AgentConnection> => {
+  sessionEffort: string | null): Promise<AgentConnection> => {
   const response = await authenticatedFetch(`/admin/agents/connections/${encodeURIComponent(id)}/models`, {
     method: 'PUT', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sessionModel, sessionEffort, deploymentModel, deploymentEffort }),
+    body: JSON.stringify({ sessionModel, sessionEffort }),
   });
   if (!response.ok) throw new Error(await apiErrorMessage(response, 'Could not save model defaults.'));
   return (await response.json()) as AgentConnection;

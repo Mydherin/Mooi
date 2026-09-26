@@ -18,10 +18,10 @@ export const applySessionToSession = (session: Session, event: SessionEvent): Se
     return seq >= session.lastSeq ? { ...incoming, deployment: mergeDeployment(session.deployment, incoming.deployment) } : session;
   }
   if (seq <= session.lastSeq || type === 'history.reset') return session;
-  if (type === 'deployment.updated') {
-    return { ...session, lastSeq: seq, deployment: mergeDeployment(session.deployment, data) };
+  if (event.type === 'deployment.updated') {
+    return { ...session, lastSeq: seq, deployment: mergeDeployment(session.deployment, event.data) };
   }
-  if (type === 'deployment.progress' || type === 'deployment.activity') return { ...session, lastSeq: seq };
+  if (type === 'deployment.log') return { ...session, lastSeq: seq };
   const patch: Partial<Session> = { updatedAt: at, lastSeq: seq };
 
   if (type === 'session.usage') {

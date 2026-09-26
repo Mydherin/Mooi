@@ -169,12 +169,6 @@ export const fetchSessionProvider = async (provider: string, connectionId: strin
   return (await response.json()) as SessionProvider;
 };
 
-export const fetchDeployment = async (sessionId: string): Promise<DeploymentSnapshot> => {
-  const response = await sessionsFetch(`${sessionPath(sessionId)}/deployment`);
-  if (!response.ok) throw new Error(await apiErrorMessage(response, 'Could not load the deployment.'));
-  return (await response.json()) as DeploymentSnapshot;
-};
-
 export const startDeployment = async (sessionId: string): Promise<DeploymentSnapshot> => {
   const response = await sessionsFetch(`${sessionPath(sessionId)}/deployment/start`, { method: 'POST' });
   if (!response.ok) throw new Error(await apiErrorMessage(response, 'Could not start the deployment.'));

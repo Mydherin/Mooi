@@ -233,8 +233,7 @@ public class AgentConnectionFeature {
             }
             return new CredentialPayload(agentProvider.id(), connection.getMode(),
                     secretBox.decrypt(connection.getAccessToken()), connection.getAccessTokenExpiresAt(),
-                    connection.getCredentialId(), connection.getSessionModel(), connection.getSessionEffort(),
-                    connection.getDeploymentModel(), connection.getDeploymentEffort());
+                    connection.getCredentialId(), connection.getSessionModel(), connection.getSessionEffort());
         }
 
         /**
@@ -299,8 +298,6 @@ public class AgentConnectionFeature {
                     .orElseThrow(Agents.AgentsException::reauthorize);
             connection.setSessionModel(cleanModel(request.sessionModel()));
             connection.setSessionEffort(cleanEffort(request.sessionEffort()));
-            connection.setDeploymentModel(cleanModel(request.deploymentModel()));
-            connection.setDeploymentEffort(cleanEffort(request.deploymentEffort()));
             return toPayload(agentConnectionRepository.save(connection));
         }
 
@@ -404,7 +401,7 @@ public class AgentConnectionFeature {
             return new AgentConnectionPayload(connection.getId(), connection.getProvider(), label, connection.getName(), connection.getMode(),
                     connection.getAccountLabel(), connection.getScope(), connection.getConnectedAt(),
                     connection.getAccessTokenExpiresAt(), connection.isStale(), connection.getSessionModel(),
-                    connection.getSessionEffort(), connection.getDeploymentModel(), connection.getDeploymentEffort());
+                    connection.getSessionEffort());
         }
     }
 
@@ -446,12 +443,6 @@ public class AgentConnectionFeature {
 
         @Column(name = "session_effort", length = 32)
         private String sessionEffort;
-
-        @Column(name = "deployment_model", length = 120)
-        private String deploymentModel;
-
-        @Column(name = "deployment_effort", length = 32)
-        private String deploymentEffort;
 
         /**
          * AES-256-GCM ciphertext produced by {@code Crypto.SecretBox}, never a usable credential.
@@ -507,8 +498,7 @@ public class AgentConnectionFeature {
      */
     public record AgentConnectionPayload(UUID id, String provider, String label, String name, String mode, String accountLabel,
                                          String scope, OffsetDateTime connectedAt, OffsetDateTime expiresAt,
-                                         boolean stale, String sessionModel, String sessionEffort,
-                                         String deploymentModel, String deploymentEffort) {
+                                         boolean stale, String sessionModel, String sessionEffort) {
     }
 
     /** Where the browser sends the player to authorize. Nothing else is needed to complete the callback. */
@@ -520,8 +510,7 @@ public class AgentConnectionFeature {
      * payload in this feature, where a raw token is ever serialized.
      */
     public record CredentialPayload(String provider, String mode, String token, OffsetDateTime expiresAt, UUID connectionId,
-                                    String sessionModel, String sessionEffort, String deploymentModel,
-                                    String deploymentEffort) {
+                                    String sessionModel, String sessionEffort) {
     }
 
     /** One provider this application knows how to link, and whether OAuth is actually usable for it. */
@@ -548,7 +537,6 @@ public class AgentConnectionFeature {
     public record RenameRequest(@NotBlank String name) {
     }
 
-    public record DefaultModelsRequest(String sessionModel, String sessionEffort,
-                                       String deploymentModel, String deploymentEffort) {
+    public record DefaultModelsRequest(String sessionModel, String sessionEffort) {
     }
 }

@@ -1,17 +1,16 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { X } from 'lucide-react';
 import { useOnEscape } from '@/shared/hooks/useOnEscape';
 import { useSessionsStore } from '@/stores/sessionsStore';
 import { DeployTerminal } from './DeployTerminal';
 
 export const DeployLogsDrawer = ({ sessionId }: { sessionId: string }) => {
-  const transcript = useSessionsStore((state) => state.byId[sessionId]);
+  const log = useSessionsStore((state) => state.byId[sessionId]?.deploymentLog);
   const deployment = useSessionsStore((state) => state.sessions.find((session) => session.id === sessionId)?.deployment);
   const panel = useRef<HTMLElement>(null);
-  const close = () => useSessionsStore.getState().setDeploymentLogsOpen(sessionId, false);
-  const operationId = deployment?.operationId ?? transcript?.deploymentActivityOperationId ?? null;
-  const activity = transcript?.deploymentActivityOperationId === operationId ? transcript.deploymentActivity : [];
-  const truncated = activity.some((item) => item.title === 'Activity log truncated') || (activity[0]?.index ?? 0) > 0;
+  const close = () => useSessionsStore.getState().setDeploymentLogOpen(sessionId, false);
+  const lines = useMemo(() => (log ?? []).flatMap((batch) => batch.lines), [log]);
+  const operationId = log?.[0]?.operationId ?? null;
 
   useOnEscape(close);
   useEffect(() => {
@@ -53,14 +52,13 @@ export const DeployLogsDrawer = ({ sessionId }: { sessionId: string }) => {
           <p className="mt-1 flex flex-wrap gap-x-2 font-mono text-[11px] text-neutral-400" aria-live="polite" aria-atomic="true">
             <span className="capitalize">{deployment?.state ?? 'idle'}</span>
             {deployment?.phase ? <span>{deployment.phase}</span> : null}
-            {operationId ? <span title={operationId}>{operationId.slice(0, 8)}</span> : null}
-            <span>{activity.length} entries{truncated ? ' · truncated' : ''}</span>
+            <span>{lines.length} lines</span>
           </p>
         </div>
         <button data-close-logs type="button" aria-label="Close deployment logs" title="Close deployment logs" onClick={close}
           className="inline-flex size-9 items-center justify-center rounded-md text-neutral-300 hover:bg-neutral-800 hover:text-white focus-visible:outline-2 focus-visible:outline-emerald-400"><X className="size-4" /></button>
       </header>
-      <DeployTerminal activity={activity} operationId={operationId} />
+      <DeployTerminal lines={lines} operationId={operationId} />
     </aside>
   </div>;
 };

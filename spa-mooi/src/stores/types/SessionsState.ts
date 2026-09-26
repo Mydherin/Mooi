@@ -10,8 +10,7 @@ export interface SessionsState {
   setDeployment: (sessionId: string, snapshot: import('@/features/sessions/types/DeploymentSnapshot').DeploymentSnapshot) => void;
   markPreviewOpened: (sessionId: string, operationId: string) => void;
   setPane: (sessionId: string, pane: import('@/features/sessions/types/WorkspacePane').WorkspacePane) => void;
-  setDeploymentLogsOpen: (sessionId: string, open: boolean) => void;
-  toggleDeploymentLogs: (sessionId: string) => void;
+  setDeploymentLogOpen: (sessionId: string, open: boolean) => void;
   setSessions: (sessions: Session[]) => void;
   /** Replaces the sessions in scope (one project, or every one) with a fresh server list, dropping the ones gone. */
   syncSessions: (sessions: Session[], projectId?: string) => void;

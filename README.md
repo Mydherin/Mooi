@@ -175,10 +175,11 @@ Branch protection rules on the default branch still apply to the push.
 
 Install Docker CLI with Compose v2 where `mic-sessions` runs and grant its service user access
 to the configured host Unix socket. Verify with `make dev-preflight-mic-sessions`.
-Deploy uses the session provider: Claude uses `claude-opus-5-5` / `medium`; Codex uses its default model
-with `medium` reasoning and SDK dynamic tools. The linked account must have access to the model.
-Chat model settings do not configure Deploy. Codex dynamic tools are an experimental app-server API;
-the SDK and bundled CLI versions are pinned together.
+Deploy builds and starts the root Docker Compose file of the session checkout, publishing exactly
+one browser port (the web frontend's, or the only one of an API-only product). Its build/up output
+streams to the logs console next to the Deploy button. When the Compose
+setup is missing or fails, the conversation is cleared and the session agent is asked in the chat
+to set it up with the session's model; Deploy again once it finishes.
 Deploy and Preview are only offered for projects marked as web applications (asked when adding
 the project, editable on the project page). Projects added before this setting count as web apps.
 
@@ -195,6 +196,7 @@ Set these values in `mic-sessions/.env`:
 | `PREVIEW_PORT_RANGE` | Empty for engine allocation, or inclusive range such as `49152-49251` |
 | `MAX_DEPLOYMENTS` | Concurrent deployment limit (default 4, no queue) |
 | `DEPLOYMENT_*_TIMEOUT_SECONDS`, `DOCKER_*_TIMEOUT_SECONDS` | Operation limits; see `.env.example` |
+| `DEPLOYMENT_LOG_LINES` | Compose output lines streamed to the logs console per deploy (default 2000) |
 | `SESSION_ACTIVITY_INTERVAL_SECONDS` | Preview activity coalescing interval; default 60 seconds |
 
 The example's loopback addresses are for local development. For external browsers, configure

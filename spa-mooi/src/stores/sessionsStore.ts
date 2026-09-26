@@ -4,14 +4,13 @@ import { create } from 'zustand';
 import { applySessionEvent, emptyTranscriptState } from '@/features/sessions/lib/applySessionEvent';
 import { applySessionToSession } from '@/features/sessions/lib/applySessionToSession';
 import type { SessionsState } from '@/stores/types/SessionsState';
-import { DEPLOYMENT_ACTIVITY_LIMIT } from '@/features/sessions/lib/deploymentActivityLimit';
 
 /**
  * Deliberately not persisted — server state, same reasoning as `agentsStore`/`projectsStore`.
  * `sessions` is the list surface (project screen, headers); `byId` is the live transcript per
  * session, folded from its SSE stream by `applySessionEvent` — the store never assigns transcript
- * chat state directly, only replays events through it. Deployment progress and preview visit
- * metadata live alongside the transcript; the authoritative snapshot lives only in sessions.
+ * chat state directly, only replays events through it. Preview visit metadata and the Compose
+ * log live alongside the transcript; the authoritative deployment snapshot lives only in sessions.
  */
 const mergeSession = (current: Session | undefined, incoming: Session): Session => current
   ? { ...(current.lastSeq >= incoming.lastSeq ? current : incoming), deployment: mergeDeployment(current.deployment, incoming.deployment) }
@@ -25,13 +24,8 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     byId: { ...state.byId, [sessionId]: { ...(state.byId[sessionId] ?? emptyTranscriptState()), pane } },
   })),
 
-  setDeploymentLogsOpen: (sessionId, open) => set((state) => ({
-    byId: { ...state.byId, [sessionId]: { ...(state.byId[sessionId] ?? emptyTranscriptState()), deploymentLogsOpen: open } },
-  })),
-
-  toggleDeploymentLogs: (sessionId) => set((state) => ({
-    byId: { ...state.byId, [sessionId]: { ...(state.byId[sessionId] ?? emptyTranscriptState()),
-      deploymentLogsOpen: !(state.byId[sessionId]?.deploymentLogsOpen ?? false) } },
+  setDeploymentLogOpen: (sessionId, open) => set((state) => ({
+    byId: { ...state.byId, [sessionId]: { ...(state.byId[sessionId] ?? emptyTranscriptState()), deploymentLogOpen: open } },
   })),
 
   setSessions: (sessions) => set((state) => ({ sessions: sessions.map((session) =>
@@ -83,27 +77,8 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
 
   applyEvent: (sessionId, event) =>
     set((state) => {
-      let transcript = applySessionEvent(state.byId[sessionId] ?? emptyTranscriptState(), event);
-      if (event.type === 'deployment.activity' && event.seq > (state.byId[sessionId]?.lastSeq ?? 0)) {
-        const activity = transcript.deploymentActivityOperationId === event.data.operationId
-          ? transcript.deploymentActivity : [];
-        transcript = { ...transcript, deploymentActivityOperationId: event.data.operationId,
-          deploymentActivity: activity.some((item) => item.index === event.data.index) ? activity
-            : [...activity, { ...event.data, at: event.at }].sort((a, b) => a.index - b.index).slice(-DEPLOYMENT_ACTIVITY_LIMIT) };
-      }
-      const current = state.sessions.find((session) => session.id === sessionId);
-      const hasSession = Boolean(current);
-      if (current && event.type === 'deployment.progress' && event.seq > current.lastSeq
-          && event.data.operationId === current.deployment.operationId
-          && (current.deployment.state === 'starting' || current.deployment.state === 'stopping')) {
-        transcript = { ...transcript, deploymentProgress: event.data };
-      }
-
-      const deployment = current ? applySessionToSession(current, event).deployment : undefined;
-      if (deployment && (transcript.deploymentProgress?.operationId !== deployment.operationId
-          || (deployment.state !== 'starting' && deployment.state !== 'stopping'))) {
-        transcript = { ...transcript, deploymentProgress: null };
-      }
+      const transcript = applySessionEvent(state.byId[sessionId] ?? emptyTranscriptState(), event);
+      const hasSession = state.sessions.some((session) => session.id === sessionId);
 
       return {
         byId: { ...state.byId, [sessionId]: transcript },
@@ -161,7 +136,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     }),
 
   resetTranscript: (sessionId) => set((state) => ({ byId: { ...state.byId, [sessionId]: {
-    ...emptyTranscriptState(), deploymentLogsOpen: state.byId[sessionId]?.deploymentLogsOpen ?? false,
+    ...emptyTranscriptState(), deploymentLogOpen: state.byId[sessionId]?.deploymentLogOpen ?? false,
     pane: state.byId[sessionId]?.pane ?? 'conversation',
   } } })),
 

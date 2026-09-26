@@ -17,19 +17,17 @@ graceful shutdown; `main.py`'s lifespan owns calling both.
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import logging
 import os
 import time
-from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine
+from collections.abc import AsyncIterator, Callable, Coroutine
 from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Any, Literal
-from urllib.parse import unquote, urlsplit
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Request, Response, status
@@ -41,7 +39,6 @@ from pydantic import (
     Field,
     HttpUrl,
     TypeAdapter,
-    ValidationError,
     model_validator,
 )
 
@@ -60,13 +57,9 @@ from mic_sessions.shared.agents import (
     Emit,
     PermissionRequest,
     QuestionRequest,
-    StructuredOperation,
-    StructuredOperationError,
-    StructuredTool,
     changes_updated,
     create_runtime,
     describe,
-    execute_structured,
     message_user,
     session_configuration,
     session_status,
@@ -74,7 +67,6 @@ from mic_sessions.shared.agents import (
 from mic_sessions.shared.auth import Caller, current_caller
 from mic_sessions.shared.docker import (
     Docker,
-    DockerComposeBuild,
     DockerError,
     DockerManifestError,
     DockerManifests,
@@ -94,7 +86,7 @@ _LAST_EVENT_ID_HEADER = "Last-Event-ID"
 PENDING_KIND_PERMISSION = "permission"
 PENDING_KIND_QUESTION = "question"
 
-# Event types the fold below reacts to; deployment events are independent of chat turns.
+# Event types the fold below reacts to; deployment updates are independent of chat turns.
 EVENT_SESSION_STATUS = "session.status"
 EVENT_PERMISSION_REQUEST = "permission.request"
 EVENT_QUESTION_REQUEST = "question.request"
@@ -105,8 +97,7 @@ EVENT_TOOL_USE = "tool.use"
 EVENT_TOOL_RESULT = "tool.result"
 EVENT_SESSION_CONFIGURATION = "session.configuration"
 EVENT_DEPLOYMENT_UPDATED = "deployment.updated"
-EVENT_DEPLOYMENT_PROGRESS = "deployment.progress"
-EVENT_DEPLOYMENT_ACTIVITY = "deployment.activity"
+EVENT_DEPLOYMENT_LOG = "deployment.log"
 EVENT_SESSION_CLEARED = "session.cleared"
 EVENT_MERGE_COMPLETED = "merge.completed"
 
@@ -116,10 +107,8 @@ EVENT_MERGE_COMPLETED = "merge.completed"
 DeploymentState = Literal["stopped", "starting", "running", "stopping", "failed"]
 DeploymentAction = Literal["start", "stop"]
 DeploymentErrorCode = Literal[
-    "not_web_application", "missing_configuration", "unsupported_project",
-    "provider_unavailable", "model_unavailable", "docker_unavailable", "invalid_compose",
-    "port_unavailable", "startup_failed", "health_check_failed", "invalid_agent_output",
-    "timeout", "cancelled", "cleanup_failed",
+    "unsupported_project", "docker_unavailable", "invalid_compose", "port_unavailable",
+    "startup_failed", "health_check_failed", "timeout", "cancelled", "cleanup_failed",
 ]
 _PREVIEW_URL = TypeAdapter(HttpUrl)
 
@@ -143,90 +132,6 @@ def _validate_preview_url(value: str | None) -> None:
     if url.username is not None or url.password is not None or url.fragment is not None:
         raise ValueError("Preview URL must not contain credentials or a fragment")
     # Ownership, configured host and inspected port are verified by orchestration.
-
-
-class DeploymentAgentResult(DeploymentContract):
-    success: bool
-    reason: DeploymentReason | None
-    webService: str | None = Field(pattern=r"^[a-zA-Z0-9][a-zA-Z0-9_.-]*$", max_length=128)
-    containerPort: int | None = Field(ge=1, le=65535)
-    path: str | None = Field(max_length=2048)
-
-    @model_validator(mode="after")
-    def validate_agent_result(self) -> DeploymentAgentResult:
-        if self.success:
-            if self.reason is not None or any(value is None for value in
-                                              (self.webService, self.containerPort, self.path)):
-                raise ValueError("Successful agent output needs a web endpoint and no reason")
-            _validate_deployment_path(self.path)
-        elif self.reason is None or any(value is not None for value in
-                                         (self.webService, self.containerPort, self.path)):
-            raise ValueError("Failed agent output needs a reason and null endpoint fields")
-        return self
-
-
-def _validate_deployment_path(path: str) -> None:
-    parts = urlsplit(path)
-    decoded = unquote(path)
-    if (not path.startswith("/") or path.startswith("//") or parts.scheme or parts.netloc
-            or parts.fragment or "\\" in decoded or decoded.startswith("//")
-            or any(ord(char) <= 32 or ord(char) == 127 for char in decoded)):
-        raise ValueError("Preview path must be a local URL path")
-
-
-def _validate_deployment_agent_result(raw: dict[str, Any]) -> DeploymentAgentResult:
-    try:
-        return DeploymentAgentResult.model_validate(raw)
-    except (ValidationError, ValueError):
-        raise StructuredOperationError("invalid_agent_output", "The deployment agent returned an invalid result") from None
-
-
-async def _execute_deployment_agent(provider: str, operation: StructuredOperation) -> DeploymentAgentResult:
-    return _validate_deployment_agent_result(await execute_structured(provider, operation))
-
-
-class DeploymentArtifactCandidate(DeploymentContract):
-    id: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9-]+$")
-    root: str = Field(min_length=1, max_length=512)
-    manifest: str = Field(min_length=1, max_length=512)
-    ecosystem: Literal["java", "node", "python", "go", "rust"]
-
-
-class DeploymentArtifactSelection(DeploymentContract):
-    id: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9-]+$")
-    disposition: Literal["web", "service", "dependency", "ignored"]
-    service: str | None = Field(
-        default=None, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9_.-]*$", max_length=128,
-    )
-    dockerfile: str | None = Field(default=None, min_length=1, max_length=512)
-    reason: str | None = Field(default=None, min_length=1, max_length=500, pattern=r"\S")
-
-    @model_validator(mode="after")
-    def validate_disposition(self) -> DeploymentArtifactSelection:
-        deployable = self.disposition in ("web", "service")
-        if deployable and (self.service is None or self.dockerfile is None or self.reason is not None):
-            raise ValueError("Deployable artifacts require service and Dockerfile only")
-        if not deployable and (self.reason is None or self.service is not None or self.dockerfile is not None):
-            raise ValueError("Non-deployable artifacts require a reason only")
-        return self
-
-
-class DeploymentPortsInput(DeploymentContract):
-    composeFiles: list[str] = Field(min_length=1, max_length=1)
-    webService: str = Field(pattern=r"^[a-zA-Z0-9][a-zA-Z0-9_.-]*$", max_length=128)
-    ports: list[DockerPortRequest] = Field(min_length=1, max_length=32)
-    artifacts: list[DeploymentArtifactSelection] = Field(min_length=1, max_length=64)
-
-
-class DeploymentUpInput(DeploymentContract):
-    containerPort: int = Field(ge=1, le=65535)
-    path: str = Field(min_length=1, max_length=2048)
-    expectation: Literal["html", "http"]
-
-    @model_validator(mode="after")
-    def validate_path(self) -> DeploymentUpInput:
-        _validate_deployment_path(self.path)
-        return self
 
 
 class DeploymentResult(DeploymentContract):
@@ -286,33 +191,13 @@ class DeploymentSnapshot(DeploymentContract):
         return self
 
 
-class DeploymentProgress(DeploymentContract):
-    operationId: UUID
-    phase: str = Field(min_length=1, max_length=120, pattern=r"\S")
-    # Public summary only, never raw SDK/subprocess output.
-    message: str = Field(min_length=1, max_length=1000, pattern=r"\S")
-
-
-class DeploymentActivity(DeploymentContract):
-    """One bounded step of a deployment, for the session owner to follow it live.
-
-    Emitters truncate and redact `detail` before constructing this: it is the only deployment
-    contract carrying agent/engine output, and it never carries credentials or private paths.
-    """
+class DeploymentLog(DeploymentContract):
+    """A batch of redacted Docker Compose command and output lines of one start operation."""
 
     operationId: UUID
     # Monotonic per operation, so clients can order and discard duplicates on replay.
     index: int = Field(ge=0)
-    at: AwareDatetime = Field(default_factory=lambda: datetime.now(UTC))
-    source: Literal["system", "agent", "tool", "docker", "probe"]
-    level: Literal["debug", "info", "warning", "error", "success"]
-    phase: str | None = Field(default=None, max_length=120)
-    kind: Literal["phase", "assistant", "thinking", "tool", "tool_result", "log", "notice"]
-    title: str = Field(min_length=1, max_length=120, pattern=r"\S")
-    detail: str | None = Field(default=None, max_length=12288)
-    status: Literal["running", "done", "failed"] | None = None
-    # Pairs a tool with its result.
-    toolId: str | None = Field(default=None, max_length=64)
+    lines: list[str] = Field(min_length=1, max_length=50)
 
 
 class CreateSessionRequest(BaseModel):
@@ -646,7 +531,7 @@ def record(session: Session, type_: str, data: dict[str, Any]) -> Event:
     derived here from the very events the SPA receives, so server and client can never disagree.
     Nothing else in this feature assigns `session.status` or `session.pending`.
 
-    Deployment events share sequence/replay with chat but never acquire a turnId, mutate chat
+    Deployment updates share sequence/replay with chat but never acquire a turnId, mutate chat
     state or renew idle activity. Their payloads are validated before appending to the log.
     Other events bump display `updated_at`; expiry uses the separate human activity clock.
     Sync on purpose: everything runs on one event loop, so the runtime's pump task and the request
@@ -657,12 +542,8 @@ def record(session: Session, type_: str, data: dict[str, Any]) -> Event:
         event = session.log.append(type_, snapshot.model_dump(mode="json"))
         session.deployment = snapshot
         return event
-    if type_ == EVENT_DEPLOYMENT_PROGRESS:
-        progress = DeploymentProgress.model_validate(data)
-        return session.log.append(type_, progress.model_dump(mode="json"))
-    if type_ == EVENT_DEPLOYMENT_ACTIVITY:
-        activity = DeploymentActivity.model_validate(data)
-        return session.log.append(type_, activity.model_dump(mode="json"))
+    if type_ == EVENT_DEPLOYMENT_LOG:
+        return session.log.append(type_, DeploymentLog.model_validate(data).model_dump(mode="json"))
 
     if type_ == "message.user":
         session.turn_id = uuid4().hex
@@ -1474,617 +1355,121 @@ async def _reserve_deployment(session_id: UUID) -> None:
         _deployment_slots.add(session_id)
 
 
-# --- deployment preparation and admission ------------------------------------------------------
+# --- deployment: deterministic Compose run, agent setup through the chat -----------------------
 
 
-_DEPLOYMENT_MANIFESTS = {
-    "pom.xml": "java",
-    "build.gradle": "java",
-    "build.gradle.kts": "java",
-    "package.json": "node",
-    "pyproject.toml": "python",
-    "go.mod": "go",
-    "Cargo.toml": "rust",
-}
-_DEPLOYMENT_IGNORED_DIRECTORIES = {
-    ".git", ".dev", ".mooi", ".codex", ".idea", ".vscode",
-    "node_modules", "target", "build", "dist", ".venv", "venv",
-    "__pycache__", ".pytest_cache", ".ruff_cache", ".mypy_cache", ".gradle",
-}
-_DEPLOYMENT_ARTIFACT_MAX_DEPTH = 4
-_DEPLOYMENT_ARTIFACT_MAX_CANDIDATES = 64
-_DEPLOYMENT_ARTIFACT_MAX_PATH = 512
+_WEB_DEPENDENCIES = ("vite", "react", "vue", "@angular/core", "next")
+_WEB_SCAN_IGNORED = {"node_modules", "target", "build", "dist", "venv", "__pycache__"}
+_WEB_SCAN_MAX_DEPTH = 4
+
+# Failures the agent can fix by editing the repository's Docker setup; anything else is
+# infrastructure or the player's own decision and stays a plain failed deployment.
+_AGENT_FIXABLE_CODES = frozenset({
+    "invalid_compose", "unsupported_project", "startup_failed", "health_check_failed", "timeout",
+})
+
+PHASE_PREPARING = "Preparing the deployment"
+PHASE_BUILDING = "Building images and starting containers"
+PHASE_PROBING = "Waiting for the application to answer"
+PHASE_STOPPING = "Stopping the application"
 
 
-def _deployment_artifact_candidates(checkout: Path) -> tuple[DeploymentArtifactCandidate, ...]:
-    """Discover a closed, bounded manifest inventory without following checkout escapes."""
-    checkout = checkout.resolve()
-    if not checkout.is_dir():
-        raise StructuredOperationError("unsupported_project", "The project checkout is unavailable")
-    found: list[DeploymentArtifactCandidate] = []
-    for current_value, directories, files in os.walk(checkout, topdown=True, followlinks=False):
+@dataclass(frozen=True)
+class DeploymentPlan:
+    """What the root Compose file says to run: its file, the one browser port and how to probe it."""
+
+    compose: str
+    port: DockerPortRequest
+    expectation: Literal["html", "http"]
+
+
+def _web_roots(checkout: Path) -> set[Path]:
+    """Roots of every web frontend package, so Compose can never leave one out of the preview."""
+    roots: set[Path] = set()
+    for current_value, directories, files in os.walk(checkout, followlinks=False):
         current = Path(current_value)
-        relative_root = current.relative_to(checkout)
-        depth = len(relative_root.parts)
-        directories[:] = sorted(
-            name for name in directories
-            if depth < _DEPLOYMENT_ARTIFACT_MAX_DEPTH
-            and name not in _DEPLOYMENT_IGNORED_DIRECTORIES
-            and not name.startswith(".")
-            and not (current / name).is_symlink()
-        )
-        for manifest_name in sorted(set(files) & _DEPLOYMENT_MANIFESTS.keys()):
-            manifest_path = current / manifest_name
-            try:
-                resolved = manifest_path.resolve(strict=True)
-            except OSError:
-                continue
-            if not resolved.is_file() or not resolved.is_relative_to(checkout):
-                continue
-            root = relative_root.as_posix() if relative_root.parts else "."
-            manifest = (relative_root / manifest_name).as_posix()
-            if len(root) > _DEPLOYMENT_ARTIFACT_MAX_PATH or len(manifest) > _DEPLOYMENT_ARTIFACT_MAX_PATH:
-                continue
-            digest = hashlib.sha256(manifest.encode()).hexdigest()[:16]
-            found.append(DeploymentArtifactCandidate(
-                id=f"artifact-{digest}", root=root, manifest=manifest,
-                ecosystem=_DEPLOYMENT_MANIFESTS[manifest_name],
-            ))
-    found.sort(key=lambda candidate: (candidate.root, candidate.manifest))
-    if len(found) > _DEPLOYMENT_ARTIFACT_MAX_CANDIDATES:
-        raise StructuredOperationError(
-            "unsupported_project", "The project contains too many deployable artifact candidates",
-        )
-    return tuple(found)
+        depth = len(current.relative_to(checkout).parts)
+        directories[:] = [name for name in directories if depth < _WEB_SCAN_MAX_DEPTH
+                          and name not in _WEB_SCAN_IGNORED and not name.startswith(".")]
+        if "package.json" not in files:
+            continue
+        try:
+            package = json.loads((current / "package.json").read_text())
+            dependencies = {**package.get("dependencies", {}), **package.get("devDependencies", {})}
+        except (OSError, ValueError, TypeError, AttributeError):
+            continue
+        if any(name in dependencies for name in _WEB_DEPENDENCIES):
+            roots.add(current)
+    return roots
 
 
-def _validate_artifact_classification(
-    candidates: tuple[DeploymentArtifactCandidate, ...], request: DeploymentPortsInput,
-) -> dict[str, tuple[DeploymentArtifactCandidate, DeploymentArtifactSelection]]:
-    expected = {candidate.id: candidate for candidate in candidates}
-    selected: dict[str, DeploymentArtifactSelection] = {}
-    for selection in request.artifacts:
-        if selection.id in selected:
-            raise DockerError("invalid_compose", "Artifact classification contains duplicate IDs")
-        if selection.id not in expected:
-            raise DockerError("invalid_compose", "Artifact classification contains an unknown ID")
-        selected[selection.id] = selection
-    if set(selected) != set(expected):
-        raise DockerError("invalid_compose", "Every discovered artifact must be classified")
-    deployable = [selection for selection in selected.values()
-                  if selection.disposition in ("web", "service")]
-    if not deployable:
-        raise DockerError("invalid_compose", "At least one artifact must provide the preview")
-    services = [selection.service for selection in deployable]
-    if len(set(services)) != len(services):
-        raise DockerError("invalid_compose", "Each deployable artifact needs its own Compose service")
-    web = [selection for selection in deployable if selection.disposition == "web"]
-    preview = web if web else [selection for selection in deployable
-                               if selection.service == request.webService]
-    if not any(selection.service == request.webService for selection in preview):
-        raise DockerError("invalid_compose", "Preview service does not match the artifact classification")
-    return {candidate_id: (expected[candidate_id], selected[candidate_id])
-            for candidate_id in expected}
-
-
-def _validate_artifact_builds(
-    checkout: Path,
-    classified: dict[str, tuple[DeploymentArtifactCandidate, DeploymentArtifactSelection]],
-    builds: tuple[DockerComposeBuild, ...],
-) -> None:
-    by_service = {build.service: build for build in builds}
+async def _deployment_plan(docker: Docker, checkout: Path, *, deadline: float) -> DeploymentPlan:
+    """Reads the preview straight from the root Compose; anything ambiguous is left to the agent."""
     checkout = checkout.resolve()
-    for candidate, selection in classified.values():
-        if selection.disposition not in ("web", "service"):
-            continue
-        expected_context = checkout if candidate.root == "." else (checkout / candidate.root).resolve()
-        expected_dockerfile = expected_context / "Dockerfile"
-        expected_relative = "Dockerfile" if candidate.root == "." else f"{candidate.root}/Dockerfile"
-        if selection.dockerfile != expected_relative:
-            raise DockerError("invalid_compose", "Artifact Dockerfile must be at its artifact root")
-        build = by_service.get(selection.service)
-        if (build is None or build.context != expected_context
-                or build.dockerfile != expected_dockerfile):
-            raise DockerError("invalid_compose", "Compose must build every deployable artifact Dockerfile")
+    compose = await docker.describe_existing_compose(checkout, deadline=deadline)
+    services = {build.context: build.service for build in compose.builds}
+    web_roots = _web_roots(checkout)
+    if any(root not in services for root in web_roots):
+        raise DockerError("invalid_compose", "Compose does not build every web frontend of the repository")
+    web_services = {services[root] for root in web_roots}
+    ports = [port for port in compose.ports
+             if port.protocol == "tcp" and (not web_services or port.service in web_services)]
+    if len(ports) != 1:
+        raise DockerError("invalid_compose", "Compose must publish exactly one browser port"
+                          + (" on the web frontend service" if web_services else ""))
+    return DeploymentPlan(compose.file, ports[0], "html" if web_services else "http")
 
 
-async def _existing_compose_inputs(
-    docker: Docker, checkout: Path, candidates: tuple[DeploymentArtifactCandidate, ...],
-    *, deadline: float,
-) -> tuple[DeploymentPortsInput, DeploymentUpInput] | None:
-    """Use an unambiguous root Compose directly; leave ambiguous choices to the agent."""
-    compose = next((name for name in (
-        "compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml",
-    ) if (checkout / name).is_file()), None)
-    if compose is None:
-        return None
-    described = await docker.describe_existing_compose(checkout, deadline=deadline)
-    builds = {build.context: build for build in described.builds}
-    classified = []
-    web_services = []
-    for candidate in candidates:
-        root = checkout.resolve() if candidate.root == "." else (checkout / candidate.root).resolve()
-        build = builds.get(root)
-        expected = root / "Dockerfile"
-        is_web = False
-        if candidate.ecosystem == "node":
-            try:
-                package = json.loads((root / "package.json").read_text())
-                dependencies = {**package.get("dependencies", {}), **package.get("devDependencies", {})}
-                is_web = any(name in dependencies for name in ("vite", "react", "vue", "@angular/core", "next"))
-            except (OSError, ValueError, TypeError, AttributeError):
-                return None
-        if build is None or build.dockerfile != expected or not expected.is_file():
-            # Never hide a frontend omitted from an otherwise runnable API Compose.
-            if is_web or expected.is_file():
-                return None
-            classified.append(DeploymentArtifactSelection(
-                id=candidate.id, disposition="ignored", reason="No artifact-root Dockerfile",
-            ))
-            continue
-        if is_web:
-            web_services.append(build.service)
-        classified.append(DeploymentArtifactSelection(
-            id=candidate.id, disposition="web" if is_web else "service",
-            service=build.service, dockerfile=("Dockerfile" if candidate.root == "."
-                                               else f"{candidate.root}/Dockerfile"),
-        ))
-    published = [port for port in described.ports if port.protocol == "tcp"]
-    if len(web_services) > 1 or not published:
-        return None
-    preview_ports = [port for port in published if port.service == web_services[0]] if web_services else published
-    if len(preview_ports) != 1:
-        return None
-    preview = preview_ports[0]
-    request = DeploymentPortsInput(
-        composeFiles=[compose], webService=preview.service,
-        ports=[preview], artifacts=classified,
-    )
-    _validate_artifact_classification(candidates, request)
-    return request, DeploymentUpInput(
-        containerPort=preview.container_port, path="/",
-        expectation="html" if web_services else "http",
-    )
-
-
-def _deployment_prompt(candidates: tuple[DeploymentArtifactCandidate, ...]) -> str:
+def _deployment_prompt(failure: str) -> str:
     settings = get_settings()
-    inventory = json.dumps(
-        [candidate.model_dump(mode="json") for candidate in candidates],
-        ensure_ascii=False, separators=(",", ":"),
-    )
-    return f"""Prepare and deploy the current checkout as a web preview using Docker only.
-If a root Compose file and artifact-root Dockerfiles already exist, inspect and reuse them.
-Repair only the failing deployment files; do not recreate a working configuration.
-Read root AGENTS.md/CLAUDE.md and instructions applicable to files you edit. Preserve existing
-uncommitted work. The backend discovered this CLOSED artifact inventory: {inventory}
-Classify EVERY supplied ID as web, service, dependency or ignored before writing files. Do not
-invent candidates or perform another free-form repository inventory. Treat sibling directories
-as potential parts of the same product. For ignored/dependency entries, provide a concrete reason.
-In check_ports, copy each inventory id exactly. For web/service selections provide service and
-the artifact-root Dockerfile path, with reason=null. For dependency/ignored selections provide
-reason, with service=null and dockerfile=null. Port objects use container_port (snake_case).
-For Node candidates read package.json, Vite/React configuration and .env.example when present.
-For Java candidates read the manifest, runtime configuration and directed public routes. Read
-only candidate dependency manifests, entrypoints, env examples and runtime configuration.
-Do not explore unrelated harnesses, skills, documentation or source trees. Do not delegate.
-If this is not a web application, return not_web_application.
-Create or adapt exactly one Dockerfile at the root of EACH deployable artifact, and exactly
-ONE general Compose file at repository root that builds those Dockerfiles using build.context
-and build.dockerfile. Existing nested development Compose files may remain unchanged; do not
-create extra Compose files or overrides. Remove only redundant files you created yourself.
-Copy code into images, use dependency cache layers and artifact-specific .dockerignore files.
-Prefer compatible slim/alpine images, multistage builds and built static frontends without HMR.
-Include dependencies, healthchecks and named data volumes. Database/cache credentials for
-services created by this Compose are yours to choose and wire consistently; they are not missing
-external secrets. Give every Compose variable an explicit literal value: no unset interpolation.
-Use existing health endpoints or a container-level TCP/process check. Do not add endpoints,
-dependencies, or authentication exceptions to the application for a healthcheck.
-Use 127.0.0.1 instead of localhost for healthchecks inside containers; some images resolve
-localhost to IPv6 while the application listens only on IPv4.
-For third-party OAuth/API credentials, use harmless non-secret placeholders only if the app can
-start and offer a useful preview; otherwise return missing_configuration. Never fabricate real
-credentials, request input, or wait for permissions. Do not read or edit credential files or .git.
-For SPA + API, create a Dockerfile for BOTH artifacts and prefer ONE public frontend port with a
-static server proxying the app's API routes
-to the backend Compose service name and internal port. Set frontend build-time API configuration
-to relative same-origin routes. If impossible, use runtime API configuration with reachable public
-URLs. Only return unsupported_project for build-time public ports when neither approach works.
-Listen on 0.0.0.0; dependencies communicate by service name and internal port, without published
-DB/cache ports. No container_name, external resources, env_file, profiles, scaling, code bind
-mounts, privileged containers, host networking, Docker sockets or global runtime installations.
-Only edit deployment-related files. Never edit application source, dependency manifests,
-authentication rules or runtime application configuration. No commits, push or cloud publishing. Never build, start or
-stop services via shell: use the managed tools only. If adaptation is impossible, return
-unsupported_project with a safe actionable explanation.
-Public host: {settings.preview_public_host}; scheme: {settings.preview_scheme}.
-Preview embedding origin: {settings.cors_origin}. Prepare app-specific frame headers compatible
-with this origin; do not alter Mooi headers. HTTPS requires real TLS at the published endpoint.
-Use the frontend service as Preview whenever a web artifact exists; use `/` and HTML readiness.
-Only for a genuinely API-only product may Preview use a public unauthenticated GET endpoint.
-Call check_ports exactly once per attempt with the complete artifact classification, exactly ONE
-root Compose file, the web service and ALL browser-required publications
-(service/container_port/protocol);
-omit DB/cache publications. It freezes config
-and replaces every published port with managed engine allocation. This does NOT reserve or
-prove availability. Do not change the configuration after that call.
-Then call start_project with the web containerPort, local URL path and readiness expectation.
-Use expectation `html` whenever the classification contains a web artifact. Only a genuinely
-API-only product may use expectation `http` for a public unauthenticated GET endpoint. The backend builds,
-starts, inspects ALL actual bindings and verifies HTTP readiness. Review its evidence before
-reporting success. If start_project fails with retriesLeft > 0, use its log to fix the indicated
-files, then call check_ports again and start_project again. Never retry unchanged configuration.
-Otherwise return the failure immediately. Never claim success without the tool's readiness result.
-Return exactly the supplied structured schema: success, reason, webService, containerPort, path.
-Success needs reason=null and the verified endpoint; failure needs a reason and null endpoint
-fields. Never include credentials, private file paths or raw command output in any reason.
-The backend, not your response, determines the final deployment state and preview URL.
-"""
+    return f"""Set up this repository so Mooi can deploy it as a live web preview.
+
+Mooi's last deployment attempt failed:
+{failure}
+
+How Mooi deploys once the user deploys again:
+- It resolves the single Compose file at the repository root (`compose.yaml`, `compose.yml`, `docker-compose.yaml` or `docker-compose.yml`), with the root `.env` when present.
+- It builds every service with a `build` section and starts all of them.
+- It keeps exactly one published TCP port and drops every other publication: the one of the service building the web frontend (a Vite, React, Vue, Angular or Next package), or the only one of an API-only product.
+- It waits for every container healthcheck, then expects `GET /` on that port to answer 2xx/3xx, with an HTML document when there is a frontend.
+- The preview is served from `{settings.preview_scheme}://{settings.preview_public_host}` on a port Mooi assigns, embedded in an iframe from `{settings.cors_origin}`.
+
+1. Read the root AGENTS.md/CLAUDE.md and the instructions that apply to the files you edit, then find the cause of the failure. Repair what exists instead of recreating a working configuration.
+2. Give each deployable artifact its own Dockerfile at its root, with a `.dockerignore`, dependency cache layers, slim or alpine multistage images, and frontends built as static files without dev servers or HMR.
+3. Keep ONE root Compose file that builds those Dockerfiles through `build.context` and `build.dockerfile`. Databases and caches run as services with named volumes and credentials you choose yourself; give every variable an explicit literal value.
+4. Prefer one public frontend port: a static server that proxies the API routes to the backend by its Compose service name, allows being framed by `{settings.cors_origin}`, and a frontend that calls the API through relative same-origin routes.
+5. Every service listens on 0.0.0.0 and has a healthcheck on an existing endpoint or a TCP/process check against 127.0.0.1, never localhost. Never add endpoints, dependencies or authentication exceptions for it.
+6. Do not use `container_name`, `env_file`, `profiles`, bind mounts, external networks or volumes, `privileged`, host networking or the Docker socket.
+7. Only edit deployment files: never application source, dependency manifests, authentication rules or runtime application configuration. Use harmless placeholders for third-party credentials only when the application still starts; never fabricate real ones.
+8. Never build, start or stop containers yourself, and do not commit or push: Mooi runs the deployment when the user deploys again.
+9. Finish with a short summary of what you changed and anything the user must still provide."""
 
 
-def _deployment_activity_emitter(session: Session, operation_id: UUID, secrets: list[str] | None = None) -> Callable[..., None]:
-    """Bounded publisher of `deployment.activity` for one operation.
-
-    The activity log shares the session event log with the chat, so it must not be able to
-    evict the conversation: it stops after `deployment_activity_limit` entries and says so once.
-    Emission is best effort — a deployment never fails because its narration could not be
-    published — and stale operations are dropped rather than interleaved with a newer one.
-    """
-    settings = get_settings()
-    state = {"index": 0, "bytes": 0, "stopped": False, "notice_sent": False}
-
-    def emit(kind: str, title: str, detail: str | None = None, *,
-             status: str | None = None, tool_id: str | None = None, final: bool = False,
-             source: str = "system", level: str = "info", phase: str | None = None) -> None:
-        if (state["stopped"] and not final) or session.closing:
-            return
-        if session.deployment.operationId != operation_id:
-            return
-        index = state["index"]
-        sensitive = tuple(secrets or ()) + (str(session.workspace), str(get_settings().workspace_root))
-        title = redact_deployment_output(title, sensitive)
-        if detail is not None:
-            detail = redact_deployment_output(detail, sensitive)
-            detail = detail.encode("utf-8")[:min(12288, settings.deployment_activity_text_bytes)].decode("utf-8", "ignore")
-            detail = detail if detail.strip() else None
-        estimated = len(title.encode("utf-8")) + len((detail or "").encode("utf-8")) + 192
-        over_budget = (index >= settings.deployment_activity_limit
-                       or state["bytes"] + estimated > settings.deployment_activity_bytes)
-        if over_budget and not final:
-            state["stopped"] = True
-            if state["notice_sent"]:
-                return
-            state["notice_sent"] = True
-            kind, title, detail, status, tool_id = "notice", "Activity log truncated", None, None, None
-            source, level = "system", "warning"
-            estimated = len(title.encode("utf-8")) + 192
-        state["index"] = index + 1
-        try:
-            record(session, EVENT_DEPLOYMENT_ACTIVITY, DeploymentActivity(
-                operationId=operation_id, index=index, source=source, level=level,
-                phase=phase or session.deployment.phase, kind=kind, title=title[:120].strip() or kind,
-                detail=detail, status=status, toolId=tool_id).model_dump())
-            state["bytes"] += estimated
-        except (ValidationError, ValueError):
-            LOG.debug("Deployment %s dropped an invalid activity entry", session.id, exc_info=True)
-
-    return emit
+def _failure_detail(error: DockerError) -> str:
+    """The public failure plus its redacted output tail: what the agent needs to diagnose it."""
+    tail = redact_deployment_output(error.detail or "").strip()
+    return f"{error}\n\n```\n{tail}\n```" if tail else str(error)
 
 
-class _DeploymentLogBuffer:
-    """Batch redacted Docker lines without delaying or coupling the engine process."""
-
-    _MAX_LINES = 50
-    _MAX_BYTES = 12 * 1024
-    _FLUSH_SECONDS = 0.25
-
-    def __init__(self, emit: Callable[..., None]) -> None:
-        self._emit = emit
-        self._lines: list[str] = []
-        self._bytes = 0
-        self._last: str | None = None
-        self._repeats = 0
-        self._timer: asyncio.TimerHandle | None = None
-
-    def add(self, line: str) -> None:
-        if line == self._last:
-            self._repeats += 1
-            return
-        self._append_repeat()
-        self._last = line
-        self._repeats = 1
-        if self._timer is None:
-            self._timer = asyncio.get_running_loop().call_later(self._FLUSH_SECONDS, self.flush)
-        if len(self._lines) >= self._MAX_LINES or self._bytes >= self._MAX_BYTES:
-            self.flush()
-
-    def _append_repeat(self) -> None:
-        if self._last is None:
-            return
-        line = self._last if self._repeats == 1 else f"{self._last} ×{self._repeats}"
-        self._lines.append(line)
-        self._bytes += len(line.encode("utf-8")) + 1
-        self._last = None
-        self._repeats = 0
-
-    def flush(self) -> None:
-        if self._timer is not None:
-            self._timer.cancel()
-            self._timer = None
-        self._append_repeat()
-        if not self._lines:
-            return
-        lines, self._lines = self._lines, []
-        self._bytes = 0
-        self._emit("log", "Docker", "\n".join(lines), source="docker")
+async def _hand_off_to_agent(session: Session, caller: Caller, failure: str) -> bool:
+    """Clears the conversation and asks the agent to set the deployment up, the same way merge
+    conflicts are resolved; the caller holds the operation lock."""
+    if session.closing or session.status != STATUS_READY or session.pending is not None or session.runtime is None:
+        return False
+    try:
+        runtime = await _reset_conversation(session, caller)
+        await _deliver(session, runtime, _deployment_prompt(failure))
+    except Exception:
+        # The deployment must still finish as failed: never leave it `starting`.
+        LOG.warning("Session %s could not hand its deployment setup to the agent", session.id, exc_info=True)
+        return False
+    return True
 
 
-def _publish_deployment_phase(
-    session: Session, operation_id: UUID, emit: Callable[..., None], phase: str, message: str,
-) -> None:
-    """Publish one authoritative phase to snapshot, progress and activity in one sync turn."""
-    if (session.closing or session.deployment.operationId != operation_id
-            or session.deployment.state not in ("starting", "stopping")):
-        return
-    snapshot = session.deployment.model_copy(update={
-        "phase": phase[:120], "updatedAt": datetime.now(UTC),
-    })
-    record(session, EVENT_DEPLOYMENT_UPDATED, snapshot.model_dump())
-    record(session, EVENT_DEPLOYMENT_PROGRESS, DeploymentProgress(
-        operationId=operation_id, phase=phase[:120], message=message[:1000],
-    ).model_dump())
-    emit("phase", phase, message, source="system", phase=phase)
+async def _admit_deployment_start(session: Session, caller: Caller) -> DeploymentSnapshot:
+    """Atomically admit once; the spawned worker owns finalization and rollback.
 
-
-def _deployment_tools(
-    session: Session, operation_id: UUID, docker: Docker, manifests: DockerManifests,
-    candidates: tuple[DeploymentArtifactCandidate, ...], *, deadline: float,
-    emit: Callable[..., None], verified_endpoint: dict[str, Any],
-) -> tuple[StructuredTool, ...]:
-    """Capabilities bound to one admitted operation, not identifiers provided by the model.
-
-    The worker is the sole Docker owner until stop cancels AND joins it (task 22). The
-    capability lock serializes concurrent MCP calls without holding the chat operation lock.
-    Caller creates/rearms the manifest before execution (task 19), and rolls back on failure.
-    """
-    lock = asyncio.Lock()
-    configured: DeploymentPortsInput | None = None
-    evidence: dict[str, Any] | None = None
-    started_input: DeploymentUpInput | None = None
-    last_start_error: DockerError | None = None
-    configured_fingerprint: str | None = None
-    failed_fingerprint: str | None = None
-    attempts_used = 0
-    settings = get_settings()
-
-    def deployment_files_fingerprint(request: DeploymentPortsInput) -> str:
-        paths = [*request.composeFiles, *(
-            selection.dockerfile for selection in request.artifacts if selection.dockerfile is not None
-        )]
-        digest = hashlib.sha256()
-        checkout = session.workspace.resolve()
-        for relative in sorted(set(paths)):
-            try:
-                path = (checkout / relative).resolve(strict=True)
-            except OSError:
-                raise DockerError("invalid_compose", "Deployment file is unavailable") from None
-            if not path.is_file() or not path.is_relative_to(checkout):
-                raise DockerError("invalid_compose", "Deployment file path is invalid")
-            try:
-                content = path.read_bytes()
-            except OSError:
-                raise DockerError("invalid_compose", "Deployment file is unavailable") from None
-            digest.update(relative.encode())
-            digest.update(content)
-        return digest.hexdigest()
-
-    def require_current() -> None:
-        if session.closing or session.deployment.state != "starting" or session.deployment.operationId != operation_id:
-            raise DockerError("startup_failed", "The deployment operation is no longer active")
-
-    async def invoke(kind: str, arguments: dict[str, Any]) -> dict[str, Any]:
-        nonlocal configured, evidence, started_input, attempts_used, last_start_error
-        nonlocal configured_fingerprint, failed_fingerprint
-        try:
-            async with lock:
-                require_current()
-                async with asyncio.timeout_at(deadline):
-                    if kind == "ports":
-                        request = DeploymentPortsInput.model_validate(arguments)
-                        classified = _validate_artifact_classification(candidates, request)
-                        fingerprint = deployment_files_fingerprint(request)
-                        if failed_fingerprint is not None and fingerprint == failed_fingerprint:
-                            raise DockerError(
-                                "invalid_compose",
-                                "Change the failed deployment configuration before retrying",
-                            )
-                        if configured is not None:
-                            if configured != request:
-                                raise DockerError("invalid_compose", "Deployment ports are already configured")
-                        else:
-                            _publish_deployment_phase(
-                                session, operation_id, emit, "freezing",
-                                "Freezing the Compose configuration",
-                            )
-                            manifest = await docker.freeze_compose(
-                                manifests=manifests, session_id=session.id, checkout=session.workspace,
-                                compose_files=tuple(Path(path) for path in request.composeFiles),
-                                web_service=request.webService, deadline=deadline)
-                            try:
-                                _validate_artifact_builds(
-                                    session.workspace, classified,
-                                    docker.inspect_builds(manifests=manifests, manifest=manifest),
-                                )
-                            except DockerError:
-                                docker.discard_prepared_configuration(
-                                    manifests=manifests, session_id=session.id,
-                                )
-                                raise
-                            await docker.configure_ports(manifests=manifests, session_id=session.id,
-                                                         ports=tuple(request.ports), deadline=deadline)
-                            configured = request
-                            configured_fingerprint = fingerprint
-                            _publish_deployment_phase(
-                                session, operation_id, emit, "ports_configured",
-                                "Browser publications configured",
-                            )
-                        return {"success": True, "phase": "ports_configured", "bound": False,
-                                "message": "All publications replaced; engine binding is verified during start"}
-                    request = DeploymentUpInput.model_validate(arguments)
-                    if configured is None:
-                        raise DockerError("invalid_compose", "Check all published ports before requesting start")
-                    has_web_artifact = any(
-                        selection.disposition == "web" for selection in configured.artifacts
-                    )
-                    required_expectation = "html" if has_web_artifact else "http"
-                    if request.expectation != required_expectation:
-                        raise DockerError(
-                            "invalid_compose",
-                            "Web previews require HTML readiness"
-                            if has_web_artifact
-                            else "API-only previews require HTTP readiness",
-                        )
-                    if not any(port.service == configured.webService and port.container_port == request.containerPort
-                               and port.protocol == "tcp" for port in configured.ports):
-                        raise DockerError("invalid_compose", "The requested web port was not configured")
-                    if evidence is not None:
-                        if started_input != request:
-                            raise DockerError("startup_failed", "Deployment has already started with another endpoint")
-                        return evidence
-                    _publish_deployment_phase(
-                        session, operation_id, emit, "building",
-                        "Building images and starting containers",
-                    )
-                    attempts_used += 1
-                    docker_logs = _DeploymentLogBuffer(emit)
-                    try:
-                        manifest = await docker.up(manifests=manifests, session_id=session.id,
-                                                   deadline=deadline,
-                                                   on_line=docker_logs.add)
-                        docker_logs.flush()
-                        _publish_deployment_phase(
-                            session, operation_id, emit, "starting",
-                            "Containers started; waiting for the endpoint",
-                        )
-                        _publish_deployment_phase(
-                            session, operation_id, emit, "probing",
-                            "Probing the application endpoint",
-                        )
-                        readiness = await docker.readiness(
-                            manifests=manifests, session_id=session.id,
-                            container_port=request.containerPort, path=request.path,
-                            expectation=request.expectation, deadline=deadline,
-                            on_observation=lambda observation: emit(
-                                "log", "Probe", observation,
-                                status="failed" if "returned HTTP 4" in observation else None,
-                                source="probe",
-                                level="warning" if "returned HTTP 4" in observation else "info",
-                            ),
-                        )
-                    except DockerError as error:
-                        # A build failure is recoverable inside this operation: give the agent the
-                        # real cause, put the deployment back to `prepared`, and let it correct the
-                        # files. Without this the agent retries blindly until the budget expires.
-                        last_start_error = error
-                        failed_fingerprint = configured_fingerprint
-                        excerpt = error.detail or ""
-                        if excerpt:
-                            emit("log", "Docker", excerpt, status="failed", source="docker", level="error")
-                        retries_left = settings.deployment_start_attempts - attempts_used
-                        if retries_left <= 0:
-                            raise
-                        try:
-                            await docker.down(manifests=manifests, session_id=session.id, deadline=deadline)
-                            await docker.rearm(manifests=manifests, session_id=session.id)
-                        except (DockerError, DockerManifestError):
-                            LOG.warning("Deployment %s could not be reset for a retry", session.id, exc_info=True)
-                            attempts_used = settings.deployment_start_attempts
-                            raise DockerError(
-                                "cleanup_failed", "Deployment resources could not be reset for another attempt",
-                            ) from None
-                        # Rearmed: the frozen configuration is gone, so ports must be set again.
-                        configured = evidence = started_input = None
-                        configured_fingerprint = None
-                        emit("notice", "Deployment attempt failed",
-                             f"{retries_left} attempt(s) left after {error.code}", level="warning")
-                        return {"success": False, "reason": {"code": error.code, "message": str(error)},
-                                "retriesLeft": retries_left, "log": excerpt,
-                                "message": "Fix the reported files, then call check_ports and start_project again"}
-                    finally:
-                        docker_logs.flush()
-                        _schedule_changes_refresh(session, debounce=False)
-                    require_current()
-                    last_start_error = None
-                    _publish_deployment_phase(
-                        session, operation_id, emit, "ready",
-                        "The application answered on its published port",
-                    )
-                    started_input = request
-                    evidence = {"success": True, "ready": True, "webService": manifest.web_service,
-                                "containerPort": request.containerPort, "path": request.path,
-                                "expectation": request.expectation,
-                                "previewUrl": readiness.preview_url,
-                                "ports": [port.model_dump(mode="json") for port in manifest.ports]}
-                    verified_endpoint.update({
-                        "webService": manifest.web_service,
-                        "containerPort": request.containerPort,
-                        "path": request.path,
-                        "expectation": request.expectation,
-                    })
-                    return evidence
-        except ValidationError as error:
-            # Field locations and error types are safe to return; Pydantic's full
-            # messages can echo model input, including Compose configuration.
-            problems = []
-            for issue in error.errors()[:4]:
-                location = '.'.join(map(str, issue['loc'])) or 'input'
-                kind = issue['type']
-                # The model validator below emits only these fixed strings. Return
-                # them to help the agent correct a classification without echoing data.
-                if kind == "value_error" and location.startswith("artifacts."):
-                    message = str(issue.get("ctx", {}).get("error", ""))
-                    if message in (
-                        "Deployable artifacts require service and Dockerfile only",
-                        "Non-deployable artifacts require a reason only",
-                    ):
-                        kind = message
-                problems.append(f"{location}: {kind}")
-            return {"success": False, "reason": {"code": "invalid_compose",
-                                                  "message": "Invalid deployment tool arguments: "
-                                                  + "; ".join(problems)}}
-        except DockerError as error:
-            return {"success": False, "reason": {"code": error.code, "message": str(error)}}
-        except DockerManifestError:
-            return {"success": False, "reason": {"code": "cleanup_failed",
-                                                  "message": "Deployment recovery record is unavailable"}}
-        except TimeoutError:
-            if last_start_error is not None:
-                return {"success": False, "reason": {
-                    "code": last_start_error.code, "message": str(last_start_error),
-                }, "log": last_start_error.detail or ""}
-            return {"success": False, "reason": {"code": "timeout", "message": "Deployment deadline expired"}}
-
-    async def ports(arguments: dict[str, Any]) -> dict[str, Any]:
-        return await invoke("ports", arguments)
-
-    async def start(arguments: dict[str, Any]) -> dict[str, Any]:
-        return await invoke("start", arguments)
-
-    return (
-        StructuredTool("check_ports", "Freeze Compose and configure ALL browser publications; no reservation yet",
-                       DeploymentPortsInput.model_json_schema(), ports),
-        StructuredTool("start_project", "Build, start and verify the managed project; returns all real port bindings",
-                       DeploymentUpInput.model_json_schema(), start),
-    )
-
-
-async def _admit_deployment_start(
-    session: Session, run: Callable[[UUID], Awaitable[None]],
-) -> DeploymentSnapshot:
-    """Atomically admit once; the supplied worker owns finalization/rollback (tasks 19–20).
-
-    No provider/Docker I/O under operation_lock. All worker exceptions must be finalized by
-    run; this primitive is internal until the REST integration in task 21.
+    No provider/Docker I/O under operation_lock.
     """
     async with session.operation_lock:
         if session.closing:
@@ -2098,48 +1483,97 @@ async def _admit_deployment_start(
         if (session.status != STATUS_READY or session.pending is not None or session.interactions
                 or session.runtime is None or session.workspace == _UNSET_PATH):
             raise ApiException.conflict("The chat must be ready with no pending requests before deploying")
-        if describe(session.provider).structured_executor is None:
-            raise ApiException.conflict("This provider does not support deployment operations")
         await _reserve_deployment(session.id)
         operation_id = uuid4()
-        snapshot = DeploymentSnapshot(state="starting", operationId=operation_id, phase="preparing",
+        snapshot = DeploymentSnapshot(state="starting", operationId=operation_id, phase=PHASE_PREPARING,
                                       previewUrl=None, result=None, cleanupRequired=False,
                                       updatedAt=datetime.now(UTC))
-
-        async def worker() -> None:
-            await run(operation_id)
-
         # The event-loop cannot execute the worker until this lock scope has returned.
         record(session, EVENT_DEPLOYMENT_UPDATED, snapshot.model_dump())
         _touch_activity(session, snapshot.updatedAt)
-        session.deployment_task = _spawn(session, worker())
+        session.deployment_task = _spawn(session, _run_deployment_start(session, caller, operation_id))
         return snapshot
 
 
-
-# Public reasons are selected by code: model/provider diagnostics never cross the API boundary.
+# Public reasons are selected by code: engine diagnostics never cross the API boundary.
 _DEPLOYMENT_MESSAGES: dict[str, str] = {
-    "not_web_application": "This repository does not contain a deployable web application",
-    "missing_configuration": "Provide the application's required configuration and secrets before deploying",
-    "unsupported_project": "Adapt the project to image builds, named volumes and browser-accessible configuration",
-    "provider_unavailable": "Reconnect the session's agent provider and retry Deploy",
-    "model_unavailable": "The deployment model is unavailable for this provider account",
+    "unsupported_project": "The Docker setup uses features Mooi cannot run",
     "docker_unavailable": "Check Docker Compose and access to the configured Docker engine",
-    "invalid_compose": "Correct the project's Docker Compose configuration and retry Deploy",
+    "invalid_compose": "The repository has no usable root Docker Compose setup",
     "port_unavailable": "No permitted publication port is available; check the engine and configured range",
-    "startup_failed": "The application could not start; review its Docker configuration",
-    "health_check_failed": "The application did not become ready; check healthchecks and the web endpoint",
-    "invalid_agent_output": "The agent did not return a verified deployment endpoint; retry Deploy",
-    "timeout": "Deployment timed out; check the application build and readiness configuration",
+    "startup_failed": "The application could not be built or started",
+    "health_check_failed": "The application did not become ready",
+    "timeout": "The deployment timed out",
     "cancelled": "Deployment was cancelled",
     "cleanup_failed": "Resources may remain; restore Docker access and retry Stop before deploying again",
 }
 
 
-def _deployment_reason(code: str) -> DeploymentReason:
+def _deployment_reason(code: str, delegated: bool = False) -> DeploymentReason:
     if code not in _DEPLOYMENT_MESSAGES:
         code = "startup_failed"
-    return DeploymentReason(code=code, message=_DEPLOYMENT_MESSAGES[code])
+    message = _DEPLOYMENT_MESSAGES[code]
+    if delegated:
+        message += ". The agent is setting it up in the chat; deploy again once it finishes"
+    return DeploymentReason(code=code, message=message)
+
+
+def _publish_deployment_phase(session: Session, operation_id: UUID, phase: str) -> None:
+    if (session.closing or session.deployment.operationId != operation_id
+            or session.deployment.state not in ("starting", "stopping")):
+        return
+    record(session, EVENT_DEPLOYMENT_UPDATED, session.deployment.model_copy(update={
+        "phase": phase, "updatedAt": datetime.now(UTC),
+    }).model_dump())
+
+
+class _DeploymentLogWriter:
+    """Publishes the Compose output of one start operation as batched `deployment.log` events.
+
+    The log shares the session event log with the chat, so it must not be able to evict the
+    conversation: it stops after `deployment_log_lines` lines and says so once. Publication is
+    best effort and stale operations are dropped rather than interleaved with a newer one.
+    """
+
+    _BATCH_LINES = 50
+    _LINE_CHARS = 2000
+    _FLUSH_SECONDS = 0.25
+
+    def __init__(self, session: Session, operation_id: UUID) -> None:
+        self._session = session
+        self._operation_id = operation_id
+        self._sensitive = (str(session.workspace), str(get_settings().workspace_root))
+        self._remaining = get_settings().deployment_log_lines
+        self._truncated = False
+        self._lines: list[str] = []
+        self._index = 0
+        self._timer: asyncio.TimerHandle | None = None
+
+    def __call__(self, line: str) -> None:
+        if self._truncated:
+            return
+        if self._remaining:
+            self._remaining -= 1
+            self._lines.append(redact_deployment_output(line, self._sensitive)[:self._LINE_CHARS])
+        else:
+            self._truncated = True
+            self._lines.append("… log truncated")
+        if len(self._lines) >= self._BATCH_LINES or self._truncated:
+            self.flush()
+        elif self._timer is None:
+            self._timer = asyncio.get_running_loop().call_later(self._FLUSH_SECONDS, self.flush)
+
+    def flush(self) -> None:
+        if self._timer is not None:
+            self._timer.cancel()
+            self._timer = None
+        lines, self._lines = self._lines, []
+        if (not lines or self._session.closing
+                or self._session.deployment.operationId != self._operation_id):
+            return
+        record(self._session, EVENT_DEPLOYMENT_LOG,
+               {"operationId": self._operation_id, "index": self._index, "lines": lines})
+        self._index += 1
 
 
 def _deployment_finish(session: Session, operation_id: UUID, action: DeploymentAction, *,
@@ -2219,15 +1653,14 @@ async def _settle_deployment_cleanup(session: Session) -> bool:
     return True
 
 
+
 async def _run_deployment_start(session: Session, caller: Caller, operation_id: UUID) -> None:
-    reason = None
-    secrets: list[str] = []
-    emit = _deployment_activity_emitter(session, operation_id, secrets)
+    """Deploys the root Compose deterministically. A failure the agent can fix is handed to the
+    chat in a fresh conversation, which ends with the deployment set up for the next Deploy."""
+    failure: str | None = None
+    log = _DeploymentLogWriter(session, operation_id)
     try:
         deadline = asyncio.get_running_loop().time() + get_settings().deployment_timeout_seconds
-        _publish_deployment_phase(
-            session, operation_id, emit, "preparing", "Preparing deployment configuration",
-        )
         async with asyncio.timeout_at(deadline):
             docker, manifests = Docker(), _deployment_storage()
             await docker.preflight(cwd=session.workspace, deadline=deadline)
@@ -2239,154 +1672,49 @@ async def _run_deployment_start(session: Session, caller: Caller, operation_id: 
                 await docker.rearm(manifests=manifests, session_id=session.id)
             else:
                 manifests.create(session.id, session.player_id)
-            candidates = _deployment_artifact_candidates(session.workspace)
-            verified_endpoint: dict[str, Any] = {}
-
-            async def progress(update) -> None:
-                if session.deployment.operationId != operation_id or session.closing:
-                    return
-                _publish_deployment_phase(
-                    session, operation_id, emit, update.phase, update.message,
-                )
-
-            async def activity(item) -> None:
-                emit(item.kind, item.title, item.detail, status=item.status, tool_id=item.tool_id,
-                     source=item.source, level=item.level)
-                if item.kind == "tool_result" and item.mutates_workspace:
-                    _schedule_changes_refresh(session, debounce=True)
-
-            deployment_tools = _deployment_tools(
-                session, operation_id, docker, manifests, candidates,
-                deadline=deadline, emit=emit, verified_endpoint=verified_endpoint,
-            )
-            result: DeploymentAgentResult | None = None
-            direct_error: str | None = None
+            plan = await _deployment_plan(docker, session.workspace, deadline=deadline)
+            _publish_deployment_phase(session, operation_id, PHASE_BUILDING)
+            await docker.freeze_compose(manifests=manifests, session_id=session.id, checkout=session.workspace,
+                                        compose_files=(Path(plan.compose),), web_service=plan.port.service,
+                                        deadline=deadline)
+            await docker.configure_ports(manifests=manifests, session_id=session.id, ports=(plan.port,),
+                                         deadline=deadline)
             try:
-                existing = await _existing_compose_inputs(
-                    docker, session.workspace, candidates, deadline=deadline,
-                )
-                if existing is not None:
-                    ports_input, up_input = existing
-                    emit("notice", "Reusing existing Compose configuration")
-                    checked = await deployment_tools[0].execute(ports_input.model_dump(mode="json"))
-                    started = (await deployment_tools[1].execute(up_input.model_dump(mode="json"))
-                               if checked.get("success") else checked)
-                    if started.get("success") and started.get("ready"):
-                        result = DeploymentAgentResult(
-                            success=True, reason=None, webService=ports_input.webService,
-                            containerPort=up_input.containerPort, path=up_input.path,
-                        )
-                    else:
-                        reason = started.get("reason", {})
-                        direct_error = reason.get("message") or "Managed deployment failed"
-                        if started.get("log"):
-                            direct_error += "\n" + redact_deployment_output(
-                                str(started["log"])[-2000:], tuple(secrets),
-                            )
-                        emit("notice", "Existing Compose needs repair", direct_error,
-                             level="warning")
-            except DockerError as error:
-                direct_error = str(error)
-                emit("notice", "Existing Compose needs repair", direct_error, level="warning")
-            except (ValidationError, ValueError, OSError):
-                direct_error = "Existing Compose needs deployment configuration repair"
-                emit("notice", "Existing Compose needs repair", direct_error, level="warning")
-            if result is None:
-                # A failed direct attempt may have frozen configuration or started resources.
-                # Reset only this session's owned project before giving the agent fresh tools.
-                manifest = _owned_deployment(session, manifests)
-                if manifest.compose_files:
-                    await docker.down(manifests=manifests, session_id=session.id, deadline=deadline)
-                    await docker.rearm(manifests=manifests, session_id=session.id)
-                deployment_tools = _deployment_tools(
-                    session, operation_id, docker, manifests, candidates,
-                    deadline=deadline, emit=emit, verified_endpoint=verified_endpoint,
-                )
-                verified_endpoint.clear()
-                try:
-                    credential = await mooi.fetch_agent_credential(caller, str(session.connection_id))
-                    secrets.append(credential.token)
-                except Exception:
-                    LOG.debug("Background operation encountered an exception", exc_info=True)
-                    raise StructuredOperationError("provider_unavailable", "Provider credential unavailable") from None
-                try:
-                    loader = getattr(describe(session.provider).runtime_class, "load_configuration")
-                    await loader(credential, refresh=True)
-                    catalog = describe(session.provider).configuration()
-                    available = {entry["id"] for entry in catalog["models"]}
-                    deployment_model = (credential.deployment_model if credential.deployment_model in available
-                                        else catalog["defaultModel"])
-                    if not deployment_model:
-                        raise StructuredOperationError("model_unavailable", "No deployment model available")
-                    model_entry = next(entry for entry in catalog["models"] if entry["id"] == deployment_model)
-                    efforts = model_entry.get("efforts") or []
-                    requested_effort = (credential.deployment_effort if not credential.deployment_model
-                                        or credential.deployment_model == deployment_model else None)
-                    deployment_effort = next((value for value in (
-                        requested_effort, model_entry.get("defaultEffort"), catalog.get("defaultEffort"),
-                        "medium", *efforts) if value and value in efforts), None)
-                except StructuredOperationError:
-                    raise
-                except Exception:
-                    raise StructuredOperationError("provider_unavailable", "Could not load deployment models") from None
-                result = await _execute_deployment_agent(session.provider, StructuredOperation(
-                    credential=credential, model=deployment_model, effort=deployment_effort, cwd=session.workspace,
-                    prompt=_deployment_prompt(candidates)
-                    + (f"\nPrevious managed attempt failed: {direct_error}. Diagnose and fix it."
-                       if direct_error else ""),
-                    output_schema=DeploymentAgentResult.model_json_schema(), progress=progress,
-                    activity=activity, tools=deployment_tools,
-                ))
-            if not result.success:
-                raise StructuredOperationError(result.reason.code, "Agent could not deploy project")
-            manifest = _owned_deployment(session, manifests)
-            if (manifest.cleanup_state != "required" or manifest.web_service != result.webService
-                    or verified_endpoint.get("webService") != result.webService
-                    or verified_endpoint.get("containerPort") != result.containerPort
-                    or verified_endpoint.get("path") != result.path
-                    or not any(port.service == result.webService and port.protocol == "tcp"
-                               and port.container_port == result.containerPort for port in manifest.ports)):
-                raise StructuredOperationError("invalid_agent_output", "Endpoint was not started by managed tools")
+                await docker.up(manifests=manifests, session_id=session.id, deadline=deadline, on_line=log)
+            finally:
+                log.flush()
+            _publish_deployment_phase(session, operation_id, PHASE_PROBING)
             readiness = await docker.readiness(
-                manifests=manifests, session_id=session.id,
-                container_port=result.containerPort, path=result.path,
-                expectation=verified_endpoint["expectation"], deadline=deadline,
+                manifests=manifests, session_id=session.id, container_port=plan.port.container_port,
+                expectation=plan.expectation, deadline=deadline,
             )
             if session.closing or session.deployment.operationId != operation_id:
                 raise asyncio.CancelledError
-            _schedule_changes_refresh(session, debounce=False)
-            emit("notice", "Deployment ready", final=True, level="success")
             _deployment_finish(session, operation_id, "start", url=readiness.preview_url)
             session.deployment_monitor = _spawn(session, _monitor_deployment(session, operation_id))
             return
     except asyncio.CancelledError:
-        reason = _deployment_reason("cancelled")
-        LOG.warning("Deployment %s start failed with %s", session.id, reason.code, exc_info=True)
+        code = "cancelled"
     except TimeoutError:
-        reason = _deployment_reason("timeout")
-        LOG.warning("Deployment %s start failed with %s", session.id, reason.code, exc_info=True)
-    except (DockerError, StructuredOperationError) as error:
-        reason = _deployment_reason(error.code)
-        LOG.warning("Deployment %s start failed with %s", session.id, reason.code, exc_info=True)
-        if isinstance(error, DockerError) and error.detail:
-            LOG.debug("Deployment %s: %s", session.id, error.detail)
+        code = "timeout"
+        failure = f"The deployment did not finish within {get_settings().deployment_timeout_seconds} seconds"
+    except DockerError as error:
+        code, failure = error.code, _failure_detail(error)
     except DockerManifestError:
-        reason = _deployment_reason("cleanup_failed")
-        LOG.warning("Deployment %s start failed with %s", session.id, reason.code, exc_info=True)
+        code = "cleanup_failed"
     except Exception:
-        reason = _deployment_reason("startup_failed")
-        LOG.warning("Deployment %s start failed with %s", session.id, reason.code, exc_info=True)
+        code = "startup_failed"
+    LOG.warning("Deployment %s start failed with %s", session.id, code, exc_info=True)
     # Rollback has its own stop deadline, independent of the exhausted start deadline.
     # Shield AND join it: stop/close must wait for every possible engine mutation.
     cleanup = await _settle_deployment_cleanup(session)
-    _schedule_changes_refresh(session, debounce=False)
-    emit("notice", reason.message, status="failed", final=True, level="error")
-    _deployment_finish(session, operation_id, "start", reason=reason, cleanup=cleanup)
-
-
-@router.get("/sessions/{session_id}/deployment")
-async def get_deployment(session_id: UUID, caller: Annotated[Caller, Depends(current_caller)]) -> DeploymentSnapshot:
-    return get_registry().get_for(caller, session_id).deployment
+    delegated = False
+    # A closing session holds the lock while it joins this worker: never wait for it then.
+    if failure and code in _AGENT_FIXABLE_CODES and not cleanup and not session.closing:
+        async with session.operation_lock:
+            delegated = (session.deployment.operationId == operation_id
+                         and await _hand_off_to_agent(session, caller, failure))
+    _deployment_finish(session, operation_id, "start", reason=_deployment_reason(code, delegated), cleanup=cleanup)
 
 
 @router.post("/sessions/{session_id}/deployment/start", status_code=status.HTTP_202_ACCEPTED)
@@ -2397,14 +1725,10 @@ async def start_deployment(session_id: UUID, caller: Annotated[Caller, Depends(c
     project = await mooi.fetch_project(caller, session.project_id)
     if not project.web_application:
         raise ApiException.conflict("Deploy and preview are only available for web applications")
-    return await _admit_deployment_start(session, lambda operation_id: _run_deployment_start(session, caller, operation_id))
+    return await _admit_deployment_start(session, caller)
 
 
 async def _run_deployment_stop(session: Session, operation_id: UUID, previous: asyncio.Task | None) -> None:
-    emit = _deployment_activity_emitter(session, operation_id)
-    _publish_deployment_phase(
-        session, operation_id, emit, "stopping", "Stopping deployment",
-    )
     # Failed/cancelled workers must not skip cleanup. Join them before any new engine mutation.
     for task in (previous, session.deployment_monitor):
         if task is None:
@@ -2419,8 +1743,6 @@ async def _run_deployment_stop(session: Session, operation_id: UUID, previous: a
     cleanup = await _settle_deployment_cleanup(session)
     if cleanup:
         LOG.warning("Deployment %s stop failed with cleanup_failed", session.id)
-    emit("notice", _deployment_reason("cleanup_failed").message if cleanup else "Deployment stopped",
-         status="failed" if cleanup else "done", final=True)
     _deployment_finish(session, operation_id, "stop",
                        reason=_deployment_reason("cleanup_failed") if cleanup else None,
                        cleanup=cleanup)
@@ -2440,7 +1762,7 @@ async def stop_deployment(session_id: UUID, response: Response,
             return session.deployment
         previous = session.deployment_task
         operation_id = uuid4()
-        snapshot = DeploymentSnapshot(state="stopping", operationId=operation_id, phase="stopping",
+        snapshot = DeploymentSnapshot(state="stopping", operationId=operation_id, phase=PHASE_STOPPING,
                                       previewUrl=None, result=None,
                                       cleanupRequired=session.deployment.cleanupRequired,
                                       updatedAt=datetime.now(UTC))

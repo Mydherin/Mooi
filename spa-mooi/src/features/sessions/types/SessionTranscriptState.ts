@@ -6,12 +6,11 @@ import type { SessionStreamState } from '@/features/sessions/lib/openSessionStre
 import type { TranscriptEntry } from '@/features/sessions/types/TranscriptEntry';
 
 export interface SessionTranscriptState {
-  deploymentActivity: import('./DeploymentActivity').DeploymentActivity[];
-  deploymentActivityOperationId: string | null;
   pane: import('./WorkspacePane').WorkspacePane;
-  deploymentLogsOpen: boolean;
-  deploymentProgress: import('./DeploymentProgress').DeploymentProgress | null;
   previewOpenedOperationId: string | null;
+  /** Compose output of the latest start operation, folded from `deployment.log`. */
+  deploymentLog: import('./DeploymentLog').DeploymentLog[];
+  deploymentLogOpen: boolean;
   entries: TranscriptEntry[];
   pending: SessionPendingRequest[];
   changes: ChangesSummary | null;

@@ -62,11 +62,8 @@ class Settings(BaseSettings):
     deployment_probe_timeout_seconds: int = Field(default=5, gt=0)
     deployment_monitor_interval_seconds: int = Field(default=15, gt=0)
     deployment_port_attempts: int = Field(default=3, ge=1, le=3)
-    deployment_start_attempts: int = Field(default=2, gt=0, le=3)
-    deployment_activity_limit: int = Field(default=400, gt=0)
-    deployment_activity_bytes: int = Field(default=512 * 1024, gt=0)
-    deployment_activity_text_bytes: int = Field(default=12 * 1024, gt=0)
     deployment_log_tail_lines: int = Field(default=40, gt=0)
+    deployment_log_lines: int = Field(default=2000, gt=0)
     max_deployments: int = Field(default=4, gt=0)
     preview_public_host: str = "127.0.0.1"
     preview_scheme: Literal["http", "https"] = "http"

@@ -21,7 +21,6 @@ from datetime import UTC, datetime
 from ipaddress import ip_address
 from pathlib import Path
 from typing import Literal
-from urllib.parse import unquote, urlsplit
 from uuid import UUID, uuid4
 
 import httpx
@@ -35,9 +34,9 @@ LOG = logging.getLogger("docker")
 class DockerError(Exception):
     """Public-safe infrastructure failure; never includes CLI output or private paths.
 
-    `detail` carries a redacted, bounded output tail for the caller to hand to the deployment
-    agent or a debug log. It is never part of the exception message and never reaches a user
-    without the domain emitter bounding and redacting it again.
+    `detail` carries a redacted, bounded output tail for the caller to hand to the session agent
+    or a debug log. It is never part of the exception message and never reaches a user without
+    the caller redacting it again.
     """
 
     def __init__(self, code: Literal["docker_unavailable", "timeout", "invalid_compose", "unsupported_project", "port_unavailable", "startup_failed", "health_check_failed", "cleanup_failed"], message: str, detail: str | None = None) -> None:
@@ -73,6 +72,7 @@ class DockerComposeBuild:
 class DockerComposeCandidate:
     """Non-secret deployment inputs from an existing root Compose file."""
 
+    file: str
     builds: tuple[DockerComposeBuild, ...]
     ports: tuple[DockerPortRequest, ...]
 
@@ -329,7 +329,6 @@ def _freeze_compose(model: dict, checkout: Path, project: str, web_service: str)
             if resource.get("driver") not in (None, "bridge" if kind == "networks" else "local"):
                 unsupported()
             resource["name"] = f"{project}_{name}"
-    build_sources: dict[str, dict[str, str]] = {}
     for name, service in services.items():
         if not isinstance(service, dict):
             unsupported()
@@ -359,11 +358,7 @@ def _freeze_compose(model: dict, checkout: Path, project: str, web_service: str)
                 dockerfile = _compose_path(build.pop("dockerfile", "Dockerfile"), context)
                 if dockerfile.stat().st_size > 262144:
                     unsupported()
-                build_sources[name] = {"context": str(context), "dockerfile": str(dockerfile)}
                 build["dockerfile_inline"] = dockerfile.read_text()
-            else:
-                # Coverage validation requires a real Dockerfile rooted in the artifact.
-                build_sources[name] = {"context": str(context), "dockerfile": ""}
             service["image"] = f"{project}-{name}"
         elif name == web_service:
             raise DockerError("unsupported_project", "The web service must build from a Dockerfile")
@@ -376,9 +371,6 @@ def _freeze_compose(model: dict, checkout: Path, project: str, web_service: str)
             raise DockerError("invalid_compose", "Compose has unresolved environment variables")
         if not isinstance(service.get("ports", []), list):
             unsupported()
-    # Compose extension metadata remains private and preserves the source relationship after
-    # Dockerfile contents are frozen inline. Docker ignores x-* fields.
-    model["x-mooi-builds"] = build_sources
     return model
 
 
@@ -442,7 +434,7 @@ class Docker:
 
         on_line observes complete lines while they are drained, already redacted and inside the
         same byte budget as the captured output. It never changes the return value, and its own
-        failures never interrupt draining: progress reporting must not break a deployment.
+        failures never interrupt draining: log streaming must not break a deployment.
         """
         limit = self.settings.docker_output_limit_bytes
         duration = self.settings.docker_command_timeout_seconds if timeout is None else timeout
@@ -477,8 +469,8 @@ class Docker:
             def publish(line: bytes) -> None:
                 try:
                     on_line(_redact(line.decode("utf-8", "replace").rstrip("\r"), secrets))
-                except Exception:  # A reporting failure must never abort the command.
-                    LOG.debug("Background operation encountered an exception", exc_info=True)
+                except Exception:  # A streaming failure must never abort the command.
+                    LOG.debug("Docker output line could not be published", exc_info=True)
 
             async def drain(stream: asyncio.StreamReader, buffer: bytearray, partial: bytearray) -> None:
                 nonlocal remaining, truncated
@@ -498,7 +490,6 @@ class Docker:
                 # complete trailing line, i.e. one the stream itself ended.
                 if on_line is not None and partial and not truncated:
                     publish(bytes(partial))
-                    partial.clear()
 
             async def finish() -> None:
                 if process is not None:
@@ -596,7 +587,7 @@ class Docker:
                     for port in service.get("ports", []):
                         ports.append(DockerPortRequest(service=name, container_port=int(port["target"]),
                                                        protocol=port.get("protocol", "tcp")))
-                return DockerComposeCandidate(tuple(builds), tuple(ports))
+                return DockerComposeCandidate(compose.name, tuple(builds), tuple(ports))
             except (OSError, ValueError, TypeError, KeyError, AttributeError):
                 raise DockerError("invalid_compose", "Existing Compose configuration is invalid") from None
 
@@ -679,37 +670,9 @@ class Docker:
         except (OSError, ValueError, KeyError, TypeError):
             raise DockerError('invalid_compose', 'Frozen Compose configuration is unavailable') from None
 
-    @classmethod
-    def inspect_builds(
-        cls, *, manifests: DockerManifests, manifest: DockerManifest,
-    ) -> tuple[DockerComposeBuild, ...]:
-        """Return normalized build sources without exposing the effective Compose document."""
-        model = cls._effective(manifests, manifest)
-        sources = model.get("x-mooi-builds")
-        if not isinstance(sources, dict):
-            raise DockerError("invalid_compose", "Frozen Compose build metadata is unavailable")
-        builds = []
-        try:
-            for service, source in sources.items():
-                if (not isinstance(service, str) or not isinstance(source, dict)
-                        or set(source) != {"context", "dockerfile"}
-                        or not isinstance(source["context"], str)
-                        or not isinstance(source["dockerfile"], str)):
-                    raise ValueError
-                context = Path(source["context"])
-                dockerfile = Path(source["dockerfile"]) if source["dockerfile"] else None
-                if not context.is_absolute() or (dockerfile is not None and not dockerfile.is_absolute()):
-                    raise ValueError
-                builds.append(DockerComposeBuild(
-                    service=service, context=context, dockerfile=dockerfile,
-                ))
-        except (TypeError, ValueError):
-            raise DockerError("invalid_compose", "Frozen Compose build metadata is invalid") from None
-        return tuple(sorted(builds, key=lambda build: build.service))
-
     async def _compose(
-        self, manifest: DockerManifest, *args: str, deadline: float,
-        timeout: float | None = None, on_line: Callable[[str], None] | None = None,
+        self, manifest: DockerManifest, *args: str, deadline: float, timeout: float | None = None,
+        on_line: Callable[[str], None] | None = None,
     ) -> DockerOutput:
         directory = Path(manifest.cwd)
         # Never discover .env in the checkout or inherit ambient Compose options.
@@ -718,8 +681,10 @@ class Docker:
                        '--project-directory', str(directory), '--env-file', empty.name]
             for name in manifest.compose_files:
                 command.extend(('--file', str(directory / name)))
-            return await self._run(*command, *args, cwd=directory,
-                                   deadline=deadline, timeout=timeout, on_line=on_line)
+            if on_line is not None:
+                on_line(f'$ docker compose {" ".join(args)}')
+            return await self._run(*command, *args, cwd=directory, deadline=deadline,
+                                   timeout=timeout, on_line=on_line)
 
     async def configure_ports(
         self, *, manifests: DockerManifests, session_id: UUID,
@@ -764,28 +729,6 @@ class Docker:
             raise DockerError('invalid_compose', 'Dynamic port configuration is invalid')
         manifests.save(updated)
         return updated
-
-    def discard_prepared_configuration(
-        self, *, manifests: DockerManifests, session_id: UUID,
-    ) -> DockerManifest:
-        """Remove a frozen config rejected before any engine resource was created."""
-        manifest = manifests.load(session_id)
-        if manifest.cleanup_state != "prepared":
-            raise DockerError("cleanup_failed", "Active deployment configuration cannot be discarded")
-        directory = manifests.directory(session_id)
-        try:
-            for name in manifest.compose_files:
-                path = directory / name
-                if path.is_symlink() or not path.is_file():
-                    raise OSError
-                path.unlink()
-        except OSError:
-            raise DockerError("cleanup_failed", "Deployment configuration could not be discarded") from None
-        prepared = manifest.model_copy(update={
-            "compose_files": (), "web_service": None, "ports": (), "updated_at": datetime.now(UTC),
-        })
-        manifests.save(prepared)
-        return prepared
 
     def _expected_ports(self, model: dict, manifest: DockerManifest) -> set[tuple[str, int, str]]:
         expected = set()
@@ -890,10 +833,9 @@ class Docker:
         """Build once, start and inspect, retrying only real host port allocation failures.
 
         Caller serializes operations; on any failure/cancellation the required manifest stays
-        available for rollback. Success is binding evidence, NOT readiness (task 10).
-
-        Build and start output reaches on_line live, and a failure carries a redacted tail in
-        `DockerError.detail` so the caller can hand the real cause back to the agent.
+        available for rollback. Success is binding evidence, NOT readiness. Build and start
+        commands and their redacted output reach on_line live, and a failure carries a redacted
+        output tail in `DockerError.detail` so the caller can hand the cause to the agent.
         """
         manifest = manifests.load(session_id)
         if manifest.cleanup_state != 'prepared':
@@ -906,15 +848,13 @@ class Docker:
         manifests.save(manifest)  # Durable ownership BEFORE the first engine mutation.
         tail = self.settings.deployment_log_tail_lines
         built = await self._compose(manifest, 'build', deadline=deadline,
-                                    timeout=self.settings.docker_build_timeout_seconds,
-                                    on_line=on_line)
+                                    timeout=self.settings.docker_build_timeout_seconds, on_line=on_line)
         if built.returncode:
             raise DockerError('startup_failed', 'Docker images could not be built',
                               _tail(f'{built.stdout}\n{built.stderr}', tail))
         for attempt in range(self.settings.deployment_port_attempts):
             result = await self._compose(manifest, 'up', '--detach', '--no-build', deadline=deadline,
-                                         timeout=self.settings.docker_build_timeout_seconds,
-                                         on_line=on_line)
+                                         timeout=self.settings.docker_build_timeout_seconds, on_line=on_line)
             if not result.returncode:
                 return await self.inspect(manifests=manifests, session_id=session_id, deadline=deadline)
             collision = re.search(
@@ -998,20 +938,15 @@ class Docker:
 
     async def readiness(
         self, *, manifests: DockerManifests, session_id: UUID, container_port: int,
-        path: str = '/', expectation: Literal['html', 'http'] = 'http',
-        deadline: float | None = None, on_observation: Callable[[str], None] | None = None,
+        expectation: Literal['html', 'http'] = 'http',
+        deadline: float | None = None,
     ) -> DockerReadiness:
-        """Return bounded engine and HTTP evidence for a browser-visible endpoint.
+        """Return bounded engine and HTTP evidence for the root of the browser-visible endpoint.
 
-        The caller alone publishes running. No chat state or activity is touched here.
-        Redirects count as HTTP responses but are never followed to another endpoint.
+        The caller alone publishes running. No chat state is touched here. Redirects count as
+        HTTP responses but are never followed to another endpoint. The last observation becomes
+        the failure detail.
         """
-        parts = urlsplit(path)
-        decoded = unquote(path)
-        if (not path.startswith('/') or path.startswith('//') or parts.scheme or parts.netloc
-                or parts.fragment or '\\' in decoded or decoded.startswith('//')
-                or any(ord(char) <= 32 or ord(char) == 127 for char in decoded)):
-            raise DockerError('health_check_failed', 'The preview path must be a local URL path')
         loop = asyncio.get_running_loop()
         end = loop.time() + self.settings.deployment_readiness_timeout_seconds
         if deadline is not None:
@@ -1024,14 +959,7 @@ class Docker:
 
         def observe(value: str) -> None:
             nonlocal last_observation
-            if value == last_observation:
-                return
             last_observation = value
-            if on_observation is not None:
-                try:
-                    on_observation(value)
-                except Exception:
-                    LOG.debug('Readiness observation callback failed', exc_info=True)
         manifest = manifests.load(session_id)
         if manifest.cleanup_state != 'required':
             raise DockerError('startup_failed', 'Deployment is not awaiting readiness')
@@ -1042,7 +970,7 @@ class Docker:
             raise DockerError('health_check_failed', 'The preview endpoint is not a verified web port')
         def url(host: str) -> str:
             authority = f'[{host}]' if ':' in host else host
-            return f'{self.settings.preview_scheme}://{authority}:{matches[0].published_port}{path}'
+            return f'{self.settings.preview_scheme}://{authority}:{matches[0].published_port}/'
         try:
             async with asyncio.timeout_at(end):
                 async with httpx.AsyncClient(trust_env=False, follow_redirects=False) as client:
@@ -1069,15 +997,15 @@ class Docker:
                                         html = (content_type in ('text/html', 'application/xhtml+xml')
                                                 and ('<!doctype html' in prefix or '<html' in prefix))
                                     if not accepted:
-                                        observe(f'GET {path} returned HTTP {status_code}')
+                                        observe(f'GET / returned HTTP {status_code}')
                                     elif expectation == 'html' and content_type not in (
                                         'text/html', 'application/xhtml+xml',
                                     ):
-                                        observe(f'GET {path} returned {content_type or "no content type"}; HTML preview required')
+                                        observe(f'GET / returned {content_type or "no content type"}; HTML preview required')
                                     elif expectation == 'html' and not html:
-                                        observe(f'GET {path} did not return an HTML document')
+                                        observe(f'GET / did not return an HTML document')
                                     else:
-                                        observe(f'GET {path} returned HTTP {status_code}')
+                                        observe(f'GET / returned HTTP {status_code}')
                                 if (accepted and (expectation == 'http' or html)
                                         and await self._containers_ready(manifest, model, deadline=end)):
                                     await self.inspect(manifests=manifests, session_id=session_id, deadline=end)
@@ -1087,7 +1015,7 @@ class Docker:
                                         expectation=expectation,
                                     )
                             except httpx.HTTPError:
-                                observe(f'No HTTP response received from GET {path}')
+                                observe(f'No HTTP response received from GET /')
                         await asyncio.sleep(min(1, max(0, end - loop.time())))
         except TimeoutError:
             if last_observation and not last_observation.startswith('No HTTP response'):

@@ -1,0 +1,12 @@
+databaseChangeLog:
+  - changeSet:
+      id: 017-drop-agent-deployment-defaults
+      author: mooi
+      changes:
+        - dropColumn:
+            tableName: agent_connections
+            columns:
+              - column:
+                  name: deployment_model
+              - column:
+                  name: deployment_effort

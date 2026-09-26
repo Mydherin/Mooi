@@ -34,7 +34,7 @@ def decline(method: str) -> dict[str, Any]:
 class Client:
     """Offload the SDK's synchronous public client, including its approval callback."""
 
-    def __init__(self, home: Path, cwd: Path, handler=None, *, structured: bool = False):
+    def __init__(self, home: Path, cwd: Path, handler=None):
         self.home = home
         self._loop = asyncio.get_running_loop()
         self._requests = set()
@@ -69,9 +69,6 @@ class Client:
         overrides = ['cli_auth_credentials_store="file"', 'model_provider="openai"',
                      'shell_environment_policy.inherit="none"',
                      'shell_environment_policy.set.PATH=' + json.dumps(os.environ.get("PATH", ""))]
-        if structured:
-            overrides += ['features.shell_tool=false', 'features.unified_exec=false',
-                          'features.apply_patch_freeform=false', 'web_search="disabled"']
         # The SDK merges env with the host environment. Launch through env -i so host
         # API keys, endpoints, proxy credentials and Mooi secrets cannot reach Codex.
         path_dir = bundled_path_dir()
@@ -207,8 +204,8 @@ def release(account: Account):
 
 
 @asynccontextmanager
-async def connected(account: Account, cwd: Path, handler=None, *, structured=False):
-    client = Client(account.home, cwd, handler, structured=structured)
+async def connected(account: Account, cwd: Path, handler=None):
+    client = Client(account.home, cwd, handler)
     try:
         async with account.lock:
             await client.start()

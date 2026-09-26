@@ -1,16 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { fetchDeployment, startDeployment, stopDeployment } from '@/features/sessions/api/sessionsApi';
+import { startDeployment, stopDeployment } from '@/features/sessions/api/sessionsApi';
 import type { DeploymentAction } from '@/features/sessions/types/DeploymentAction';
 import { useSessionsStore } from '@/stores/sessionsStore';
 
-/** Only request state is local; snapshots always come from the session store. */
+/** Only request state is local; snapshots always come from the session store, kept live by its stream. */
 export const useDeployment = (sessionId: string) => {
-  const session = useSessionsStore((state) => state.sessions.find((item) => item.id === sessionId));
-  const progress = useSessionsStore((state) => state.byId[sessionId]?.deploymentProgress);
-  const streamState = useSessionsStore((state) => state.byId[sessionId]?.streamState);
+  const deployment = useSessionsStore((state) => state.sessions.find((item) => item.id === sessionId)?.deployment);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [refreshError, setRefreshError] = useState<string | null>(null);
   const pending = useRef(false);
   const generation = useRef(0);
 
@@ -19,23 +16,8 @@ export const useDeployment = (sessionId: string) => {
     pending.current = false;
     setBusy(false);
     setError(null);
-    setRefreshError(null);
     return () => { generation.current += 1; };
   }, [sessionId]);
-
-  useEffect(() => {
-    if (streamState && streamState !== 'open' && streamState !== 'closed') return;
-    let cancelled = false;
-    void fetchDeployment(sessionId).then((snapshot) => {
-      if (!cancelled) {
-        useSessionsStore.getState().setDeployment(sessionId, snapshot);
-        setRefreshError(null);
-      }
-    }).catch((failure: unknown) => {
-      if (!cancelled) setRefreshError(failure instanceof Error ? failure.message : 'Could not load the deployment.');
-    });
-    return () => { cancelled = true; };
-  }, [sessionId, streamState]);
 
   const run = useCallback(async (action: DeploymentAction): Promise<boolean> => {
     if (pending.current) return false;
@@ -63,12 +45,5 @@ export const useDeployment = (sessionId: string) => {
     }
   }, [sessionId]);
 
-  const deployment = session?.deployment;
-  return {
-    deployment, busy, error: error ?? refreshError,
-    progress: progress?.operationId === deployment?.operationId
-      && (deployment?.state === 'starting' || deployment?.state === 'stopping') ? progress : null,
-    start: () => run('start'),
-    stop: () => run('stop'),
-  };
+  return { deployment, busy, error, start: () => run('start'), stop: () => run('stop') };
 };

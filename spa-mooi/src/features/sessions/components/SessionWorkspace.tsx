@@ -19,7 +19,7 @@ interface SessionWorkspaceProps {
 export const SessionWorkspace = ({ sessionId, deployEnabled, children }: SessionWorkspaceProps) => {
   const pane = useSessionsStore((state) => state.byId[sessionId]?.pane ?? 'conversation');
   const setPane = useSessionsStore((state) => state.setPane);
-  const logsOpen = useSessionsStore((state) => state.byId[sessionId]?.deploymentLogsOpen ?? false);
+  const logOpen = useSessionsStore((state) => state.byId[sessionId]?.deploymentLogOpen ?? false);
   const [visitedOperation, setVisitedOperation] = useState<string | null>(null);
   const changes = useSessionsStore((state) => state.byId[sessionId]?.changes);
   const deployment = useSessionsStore((state) => state.sessions.find((session) => session.id === sessionId)?.deployment);
@@ -28,7 +28,7 @@ export const SessionWorkspace = ({ sessionId, deployEnabled, children }: Session
   const running = deployEnabled && deployment?.state === 'running';
   const hasPreview = deployEnabled && Boolean(operationId);
 
-  useEffect(() => () => useSessionsStore.getState().setDeploymentLogsOpen(sessionId, false), [sessionId]);
+  useEffect(() => () => useSessionsStore.getState().setDeploymentLogOpen(sessionId, false), [sessionId]);
 
   useEffect(() => {
     if (running && operationId && openedOperation !== operationId) {
@@ -69,7 +69,7 @@ export const SessionWorkspace = ({ sessionId, deployEnabled, children }: Session
           <PreviewPanel sessionId={sessionId} deployment={deployment} visible={visiblePane === 'preview'} />
         </section> : null}
       </div>
-      {deployEnabled && logsOpen ? <DeployLogsDrawer sessionId={sessionId} /> : null}
+      {deployEnabled && logOpen ? <DeployLogsDrawer sessionId={sessionId} /> : null}
     </div>
   );
 };
