@@ -193,7 +193,9 @@ the project, editable on the project page). Projects added before this setting c
   shell default are required. Release data comes as `MOOI_PRODUCTION_RELEASE_TAG|SHA|URL`.
 - **Setup / change / fix**: **Deploy** (first time), **Change deployment settings** or **Fix with agent** open a
   dialog for agent account, model and request. It starts the production chat (replacing any previous one); the
-  agent writes the files, asks for missing values and stores them.
+  agent writes the files, asks for missing values and stores them, then tests them with a real deploy of the
+  currently deployed release (or `v1.0.0`, created on the default branch when nothing was deployed yet). Once the
+  test succeeds, the chat can be closed (✕ on its tab); it reopens only with a new setup, change or fix.
 - **Environment**: set values under **Environment** (write-only). Server-wide fallbacks: `MOOI_PRODUCTION_*` in
   `mic-sessions/.env`. Install any SSH keys or CLIs the scripts need on the mic-sessions host.
 - **Deploy**: choose an existing GitHub release or publish a new one from the default branch. `deploy.sh` runs from

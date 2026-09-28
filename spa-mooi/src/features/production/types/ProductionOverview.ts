@@ -11,4 +11,6 @@ export interface ProductionOverview {
   environment: ProductionEnvironmentVariable[];
   snapshot: ProductionSnapshot;
   chatSessionId: string | null;
+  /** The live chat's configuration succeeded in a real deployment since its last draft, so it can be closed. */
+  chatTested: boolean;
 }

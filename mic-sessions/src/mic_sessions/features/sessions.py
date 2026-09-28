@@ -284,6 +284,8 @@ class ProductionOverview(BaseModel):
     environment: list[ProductionEnvironmentVariable]
     snapshot: ProductionSnapshot
     chatSessionId: UUID | None
+    # The live chat's configuration succeeded in a real deployment since its last draft: it may be closed.
+    chatTested: bool = False
 
 
 class ProductionEnvironmentUpdate(BaseModel):
@@ -353,6 +355,29 @@ async def _resolve_production_release(project: mooi.Project, caller: Caller,
     if body.create and release_sha != main_sha:
         raise ApiException.conflict("The new release tag does not point to the selected default branch commit")
     return release, release_sha
+
+
+_FIRST_RELEASE_TAG = "v1.0.0"
+
+
+async def _test_release(caller: Caller, project: mooi.Project) -> StartProductionRequest:
+    """The release a chat tests with: the one currently deployed (latest successful deployment) or,
+    before any, v1.0.0 — created on the default branch with the linked GitHub account when missing."""
+    for page in range(10):
+        data = await mooi.fetch_production_deployments(caller, project.id, page)
+        deployed = next((item["releaseTag"] for item in data.get("deployments", [])
+                         if item.get("state") == "succeeded"), None)
+        if deployed:
+            return StartProductionRequest(tag=deployed)
+        if not data.get("hasMore"):
+            break
+    try:
+        await _github_api(caller, project.full_name, "GET", f"releases/tags/{_FIRST_RELEASE_TAG}")
+    except ApiException as error:
+        if error.status_code != status.HTTP_404_NOT_FOUND:
+            raise
+        return StartProductionRequest(tag=_FIRST_RELEASE_TAG, create=True)
+    return StartProductionRequest(tag=_FIRST_RELEASE_TAG)
 
 
 async def _production_documents(caller: Caller, project_id: UUID) -> ProductionDocuments:
@@ -535,6 +560,7 @@ class Session:
     deployment: DeploymentSnapshot
     production_edit_token: str = field(default_factory=lambda: secrets.token_urlsafe(32), repr=False)
     production_caller: Caller | None = field(default=None, repr=False)
+    production_tested: bool = False
     config: AgentConfig = field(default_factory=lambda: AgentConfig("", None))
     usage: dict[str, Any] = field(default_factory=dict)
     closing: bool = False
@@ -1750,10 +1776,22 @@ def _production_context(session: Session) -> str:
         "(null removes a variable).\n"
         f"- GET {base}/deployments/{{operationId}}: read-only detail of a past attempt (files, result, redacted "
         "output).\n\n"
-        "Never deploy, run deploy.sh against production, publish releases or modify the repository yourself. "
-        "The user deploys from the Overview tab by choosing a GitHub release; the draft becomes the active "
-        "configuration after its first successful deployment. When the draft is saved and every required "
-        "variable is stored, tell the user clearly that production is ready to deploy from the Overview tab.\n\n"
+        f"- POST {base}/deployments with an empty JSON body {{}}: runs a real test deployment of the draft (or the "
+        "active configuration when there is no draft). The platform chooses the release itself: the release "
+        "currently deployed in production (latest successful deployment) or, when nothing was ever deployed, "
+        f"{_FIRST_RELEASE_TAG}, which it creates on the default branch with the user's linked GitHub account when "
+        "missing. It returns the deployment snapshot.\n"
+        f"- GET {base}/deployment?wait=120: waits up to 120 seconds while a deployment runs, then returns its "
+        "snapshot (state running, succeeded or failed; message; releaseTag) and the latest redacted output. Repeat "
+        "it while the state is running.\n\n"
+        "Testing is mandatory: finish every setup, update or fix with a successful test deployment. Once the draft "
+        "is saved and every required variable is stored, start the test and wait for its result. If it fails, "
+        "find the cause in the output, save a corrected draft (ask the user for anything missing) and test again. "
+        "A successful test deploys that release to production and makes the draft the active configuration. Only "
+        "after a successful test tell the user clearly that the deployment is tested and working: they can deploy "
+        "any release with the Deploy button and close this chat.\n\n"
+        "Never run deploy.sh yourself, never choose, create or publish releases yourself (the test endpoint does "
+        "it) and never modify the repository.\n\n"
         "User message:\n"
     )
 
@@ -1825,6 +1863,7 @@ async def production_overview(project_id: UUID, caller: Annotated[Caller, Depend
                                                    required=name in required)
                      for name in sorted(required | stored)],
         snapshot=run.snapshot, chatSessionId=chat.id if chat else None,
+        chatTested=bool(chat and chat.production_tested),
     )
 
 
@@ -1929,6 +1968,12 @@ async def production_releases(project_id: UUID, caller: Annotated[Caller, Depend
 async def start_production(project_id: UUID, body: StartProductionRequest,
                            caller: Annotated[Caller, Depends(current_caller)]) -> ProductionSnapshot:
     project, run = await _owned_production(caller, project_id)
+    return await _start_production(run, caller, project, body)
+
+
+async def _start_production(run: ProductionRun, caller: Caller, project: mooi.Project,
+                            body: StartProductionRequest) -> ProductionSnapshot:
+    project_id = project.id
     async with run.lock:
         if run.snapshot.state == "running":
             return run.snapshot
@@ -2029,6 +2074,9 @@ async def _run_production(run: ProductionRun, caller: Caller, project: mooi.Proj
         if publish_draft:
             documents = ProductionDocuments.model_validate(await mooi.publish_production_recipe(caller, project.id))
             _notify_production_configuration(run, documents)
+        chat = _production_chat(run.player_id, run.project_id)
+        if chat is not None:
+            chat.production_tested = True
         await conclude("succeeded", "Production deployment completed")
     except asyncio.CancelledError:
         await conclude("failed", "Production deployment interrupted")
@@ -2191,7 +2239,9 @@ async def agent_production_documents(session_id: UUID, request: Request) -> Prod
 async def agent_save_production_documents(session_id: UUID, request: Request,
                                           body: ProductionFiles) -> ProductionDocuments:
     session, caller = _agent_recipe_access(session_id, request)
-    return await _save_production_draft(caller, session.project_id, body)
+    documents = await _save_production_draft(caller, session.project_id, body)
+    session.production_tested = False
+    return documents
 
 
 @router.put("/sessions/{session_id}/production/agent/environment")
@@ -2205,6 +2255,26 @@ async def agent_save_production_environment(session_id: UUID, request: Request,
 async def agent_production_deployment_detail(session_id: UUID, operation_id: UUID, request: Request) -> dict:
     session, caller = _agent_recipe_access(session_id, request)
     return await mooi.fetch_production_deployment_detail(caller, session.project_id, operation_id)
+
+
+@router.post("/sessions/{session_id}/production/agent/deployments", status_code=status.HTTP_202_ACCEPTED)
+async def agent_test_production(session_id: UUID, request: Request) -> ProductionSnapshot:
+    """A real deployment of the current configuration with the release `_test_release` picks."""
+    session, caller = _agent_recipe_access(session_id, request)
+    project = await mooi.fetch_project(caller, session.project_id)
+    run = _production_run(caller, session.project_id)
+    return await _start_production(run, caller, project, await _test_release(caller, project))
+
+
+@router.get("/sessions/{session_id}/production/agent/deployment")
+async def agent_production_deployment(session_id: UUID, request: Request, wait: int = 0) -> dict:
+    """The live deployment snapshot and its latest output, optionally waiting while it runs."""
+    session, caller = _agent_recipe_access(session_id, request)
+    run = _production_run(caller, session.project_id)
+    task = run.task
+    if wait > 0 and run.snapshot.state == "running" and task is not None and not task.done():
+        await asyncio.wait({task}, timeout=min(wait, 120))
+    return {"snapshot": run.snapshot.model_dump(mode="json"), "output": run.logs[-200:]}
 
 
 async def close_productions() -> None:

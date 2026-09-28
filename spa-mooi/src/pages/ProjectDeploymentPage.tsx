@@ -26,6 +26,7 @@ import type { ProductionAgentIntent } from '@/features/production/types/Producti
 import type { ProductionDeployment } from '@/features/production/types/ProductionDeployment';
 import type { ProductionTab } from '@/features/production/types/ProductionTab';
 import type { ReleaseChoice } from '@/features/production/types/ReleaseChoice';
+import { closeSession } from '@/features/sessions/api/sessionsApi';
 import { useSessionsSync } from '@/features/sessions/hooks/useSessionsSync';
 import { Card } from '@/shared/components/Card';
 import { EmptyState } from '@/shared/components/EmptyState';
@@ -68,15 +69,33 @@ export const ProjectDeploymentPage = () => {
   const [deploying, setDeploying] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
+  // The chat only lives while the script is being (re)written; once tested for real it may be closed.
+  const chatTested = Boolean(chat && overview?.chatTested && overview.chatSessionId === chat.id);
+  const chatClosable = chatTested && chat?.status === 'ready' && !chat.pending && stage !== 'deploying';
+
   const tabs: TabItem[] = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
-    ...(chat ? [{ id: 'chat', label: 'Chat', icon: MessagesSquare, dot: chat.status === 'working' || chat.status === 'waiting' || chat.status === 'provisioning' }] : []),
+    ...(chat ? [{ id: 'chat', label: 'Chat', icon: MessagesSquare, dot: chat.status === 'working' || chat.status === 'waiting' || chat.status === 'provisioning',
+      ...(chatClosable ? { onClose: () => void closeChat(), closeLabel: 'Close deployment chat' } : {}) }] : []),
     ...(snapshot?.operationId ? [{ id: 'console', label: 'Console', icon: Terminal, dot: snapshot.state === 'running' }] : []),
     ...(configured || chat ? [{ id: 'files', label: 'Files', icon: FileCode2 }] : []),
   ];
   const requested = searchParams.get('tab');
   const tab = (tabs.some((item) => item.id === requested) ? requested : 'overview') as ProductionTab;
   const openTab = (next: string) => setSearchParams(next === 'overview' ? {} : { tab: next }, { replace: true });
+
+  const closeChat = async () => {
+    if (!chat) return;
+    setActionError(null);
+    try {
+      await closeSession(chat.id);
+      useSessionsStore.getState().removeSession(chat.id);
+      if (tab === 'chat') openTab('overview');
+      reload();
+    } catch (failure) {
+      setActionError((failure as Error).message);
+    }
+  };
 
   if (!project) {
     if (status === 'loading' || status === 'idle') {
@@ -134,7 +153,8 @@ export const ProjectDeploymentPage = () => {
           onOpenDeployment={setDetail} onRedeploy={(deployment) => void deploy({ tag: deployment.releaseTag, create: false })} /> : null}
 
         {chat ? <div className={cn('h-full', tab !== 'chat' && 'hidden')}>
-          <ProductionChatPanel key={chat.id} sessionId={chat.id} deployable={configured && missing === 0 && stage !== 'deploying'} onDeploy={requestDeploy} />
+          <ProductionChatPanel key={chat.id} sessionId={chat.id} deployable={configured && missing === 0 && stage !== 'deploying'}
+            tested={chatClosable} onDeploy={requestDeploy} onClose={() => void closeChat()} />
         </div> : null}
 
         {tab === 'console' ? <ProductionConsolePanel snapshot={snapshot} logs={stream.logs} hasChat={Boolean(chat)}

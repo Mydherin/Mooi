@@ -1,3 +1,4 @@
+import { X } from 'lucide-react';
 import type { TabItem } from '@/shared/types/TabItem';
 import { cn } from '@/shared/utils/cn';
 
@@ -19,7 +20,7 @@ export const Tabs = ({ items, value, onChange, ariaLabel, className }: TabsProps
       const Icon = item.icon;
       const isActive = item.id === value;
 
-      return (
+      const tab = (
         <button
           key={item.id}
           type="button"
@@ -45,6 +46,18 @@ export const Tabs = ({ items, value, onChange, ariaLabel, className }: TabsProps
           ) : null}
           {item.dot ? <span aria-hidden className="size-1.5 rounded-full bg-success-dot" /> : null}
         </button>
+      );
+      if (!item.onClose) return tab;
+      const closeLabel = item.closeLabel ?? `Close ${item.label}`;
+
+      return (
+        <div key={item.id} className="flex shrink-0 items-center gap-0.5">
+          {tab}
+          <button type="button" onClick={item.onClose} aria-label={closeLabel} title={closeLabel}
+            className="flex size-6 items-center justify-center rounded-md text-ink-subtle transition hover:bg-surface-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand">
+            <X className="size-3.5" />
+          </button>
+        </div>
       );
     })}
   </div>

@@ -137,6 +137,12 @@ async def fetch_production_deployment_detail(caller: Caller, project_id: UUID, o
                       _service_headers(caller), "Deployment not found")
 
 
+async def fetch_production_deployments(caller: Caller, project_id: UUID, page: int = 0) -> dict:
+    return await _get(get_http_client(),
+                      f"{get_settings().mooi_api_base_url}/me/projects/{project_id}/production/deployments?page={page}",
+                      _service_headers(caller), "Project not found")
+
+
 async def delete_production_deployment(caller: Caller, project_id: UUID, operation_id: UUID) -> None:
     try:
         response = await get_http_client().delete(
