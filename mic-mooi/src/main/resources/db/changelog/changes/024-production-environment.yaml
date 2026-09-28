@@ -1,0 +1,25 @@
+databaseChangeLog:
+  - changeSet:
+      id: 024-production-environment
+      author: mooi
+      changes:
+        - dropColumn:
+            tableName: production_recipes
+            columns:
+              - column:
+                  name: active_config
+              - column:
+                  name: draft_config
+        - addColumn:
+            tableName: production_recipes
+            columns:
+              - column:
+                  name: environment
+                  type: text
+        - dropColumn:
+            tableName: production_deployment_files
+            columnName: config
+        - dropNotNullConstraint:
+            tableName: production_deployments
+            columnName: session_id
+            columnDataType: uuid

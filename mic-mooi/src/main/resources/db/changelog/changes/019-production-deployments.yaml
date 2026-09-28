@@ -1,0 +1,62 @@
+databaseChangeLog:
+  - changeSet:
+      id: 019-production-deployments
+      author: mooi
+      changes:
+        - createTable:
+            tableName: production_deployments
+            columns:
+              - column:
+                  name: operation_id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: player_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: project_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: session_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: release_tag
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: state
+                  type: varchar(16)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: started_at
+                  type: timestamp with time zone
+                  constraints:
+                    nullable: false
+              - column:
+                  name: finished_at
+                  type: timestamp with time zone
+        - addForeignKeyConstraint:
+            constraintName: fk_production_deployments_project
+            baseTableName: production_deployments
+            baseColumnNames: project_id
+            referencedTableName: projects
+            referencedColumnNames: id
+            onDelete: CASCADE
+        - createIndex:
+            indexName: idx_production_deployments_player_started
+            tableName: production_deployments
+            columns:
+              - column:
+                  name: player_id
+              - column:
+                  name: started_at

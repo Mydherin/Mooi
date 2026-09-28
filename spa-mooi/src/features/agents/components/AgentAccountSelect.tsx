@@ -1,4 +1,5 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Check, ChevronDown } from 'lucide-react';
 import type { AgentConnection } from '@/features/agents/types/AgentConnection';
 
@@ -13,6 +14,8 @@ const titleFor = (account: AgentConnection) => account.name || account.accountLa
 export const AgentAccountSelect = ({ connections, value, onChange }: AgentAccountSelectProps) => {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
+  const popup = useRef<HTMLDivElement>(null);
+  const [placement, setPlacement] = useState({ top: 0, left: 0, width: 0, maxHeight: 256 });
   const options = useRef<Array<HTMLButtonElement | null>>([]);
   const listId = useId();
   const selected = connections.find((account) => account.id === value);
@@ -20,10 +23,28 @@ export const AgentAccountSelect = ({ connections, value, onChange }: AgentAccoun
   useEffect(() => {
     if (!open) return;
     const closeOutside = (event: PointerEvent) => {
-      if (!root.current?.contains(event.target as Node)) setOpen(false);
+      if (!root.current?.contains(event.target as Node) && !popup.current?.contains(event.target as Node)) setOpen(false);
     };
     document.addEventListener('pointerdown', closeOutside);
     return () => document.removeEventListener('pointerdown', closeOutside);
+  }, [open]);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const position = () => {
+      const bounds = root.current?.getBoundingClientRect();
+      if (!bounds) return;
+      const below = window.innerHeight - bounds.bottom - 12;
+      const above = bounds.top - 12;
+      const upward = below < 180 && above > below;
+      const maxHeight = Math.max(64, Math.min(256, upward ? above : below));
+      setPlacement({ top: upward ? bounds.top - maxHeight - 4 : bounds.bottom + 4,
+        left: bounds.left, width: bounds.width, maxHeight });
+    };
+    position();
+    window.addEventListener('resize', position);
+    window.addEventListener('scroll', position, true);
+    return () => { window.removeEventListener('resize', position); window.removeEventListener('scroll', position, true); };
   }, [open]);
 
   const openAt = (index: number) => {
@@ -47,8 +68,9 @@ export const AgentAccountSelect = ({ connections, value, onChange }: AgentAccoun
       </span>
       <ChevronDown className={`size-4 shrink-0 text-ink-muted transition ${open ? 'rotate-180' : ''}`} />
     </button>
-    {open && <div id={listId} role="listbox" aria-label="Agent accounts"
-      className="absolute inset-x-0 top-full z-20 mt-1 max-h-64 overflow-y-auto rounded-xl border border-line bg-surface p-1 shadow-[0_18px_40px_-16px_rgba(0,0,0,0.35)]">
+    {open && createPortal(<div ref={popup} id={listId} role="listbox" aria-label="Agent accounts"
+      style={{ position: 'fixed', top: placement.top, left: placement.left, width: placement.width, maxHeight: placement.maxHeight }}
+      className="z-50 overflow-y-auto overscroll-contain rounded-xl border border-line bg-surface p-1 shadow-[0_18px_40px_-16px_rgba(0,0,0,0.35)]">
       {connections.map((account, index) => <button key={account.id} ref={(element) => { options.current[index] = element; }}
         type="button" role="option" aria-selected={account.id === value}
         onClick={() => { onChange(account.id); setOpen(false); root.current?.querySelector<HTMLButtonElement>('[aria-haspopup="listbox"]')?.focus(); }}
@@ -68,6 +90,6 @@ export const AgentAccountSelect = ({ connections, value, onChange }: AgentAccoun
         </span>
         {account.id === value && <Check className="size-4 shrink-0 text-brand" />}
       </button>)}
-    </div>}
+    </div>, root.current?.closest('dialog') ?? document.body)}
   </div>;
 };

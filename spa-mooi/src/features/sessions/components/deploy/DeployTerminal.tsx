@@ -3,7 +3,7 @@ import { DeployEmptyTerminal } from './DeployEmptyTerminal';
 import { DeployTerminalLine } from './DeployTerminalLine';
 import { DeployTerminalToolbar } from './DeployTerminalToolbar';
 
-export const DeployTerminal = ({ lines, operationId }: { lines: string[]; operationId: string | null }) => {
+export const DeployTerminal = ({ lines, operationId, label = 'Docker Compose output', emptyMessage }: { lines: string[]; operationId: string | null; label?: string; emptyMessage?: string }) => {
   const viewport = useRef<HTMLDivElement>(null);
   const previousOperation = useRef(operationId);
   const [following, setFollowing] = useState(true);
@@ -33,7 +33,7 @@ export const DeployTerminal = ({ lines, operationId }: { lines: string[]; operat
   return <div className="flex min-h-0 flex-1 flex-col bg-neutral-950 font-mono text-xs text-neutral-100">
     <DeployTerminalToolbar following={following} copied={copied} onCopy={() => void copy()}
       onToggleFollow={() => { shouldFollow.current = !shouldFollow.current; setFollowing(shouldFollow.current); if (shouldFollow.current) latest(); }} onLatest={latest} />
-    <div ref={viewport} role="log" aria-label="Docker Compose output" aria-live="off" tabIndex={0}
+    <div ref={viewport} role="log" aria-label={label} aria-live="off" tabIndex={0}
       className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-emerald-400"
       onScroll={(event) => {
         if (!shouldFollow.current) return;
@@ -42,7 +42,7 @@ export const DeployTerminal = ({ lines, operationId }: { lines: string[]; operat
       }}>
       <pre>{lines.length
         ? lines.map((line, index) => <DeployTerminalLine key={index} line={line} />)
-        : <DeployEmptyTerminal />}</pre>
+        : <DeployEmptyTerminal message={emptyMessage} />}</pre>
     </div>
   </div>;
 };

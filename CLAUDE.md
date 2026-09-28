@@ -10,7 +10,7 @@ This is a monorepository which contains a whole application with different techn
 
 - Do not be so verbose when you are thinking and/or giving an anwser to the user. Just use essential meaningful words with really concise sentences without almost connectors
 
-- Do not make browser testing after each implementation. You must test through web browser only when the user uses `--browser-tests`. Then you must use the built in web browser tool if you have and try to test the changes. You must try to test without mocks but if you find a stopper for any test, like auth or entity dependencies, you must mock everything that you need at web browser level tool to test what you want, even if you could not reproduce the case with related mocks you could mock the affected elements to see the ui/ux behavior
+- Do not make browser testing after each implementation. You must test through web browser only when the user asks for it explicitly
 
 - If in the user prompt appear `--no-verbose-thinking`, do not say any word while you are thinking about user request. You could give an anwser at the end but wiht minimum essentials words
 
@@ -18,7 +18,9 @@ This is a monorepository which contains a whole application with different techn
 
 - Just preserve a single README.md at project root with only information about how to run and set up the application. Information must be properly structured and be so concise with just essentials words covering all aspects
 
-- The application in dev must be handled only through the root `Makefile`. Use `make dev-start`, `make dev-stop`, `make dev-status` and `make dev-clean` for the whole application, and their `dev-<command>-<artifact-name>` variants for a single artifact. Never run a package manager, a build tool, docker or docker compose directly to start, stop, inspect or clean the application in dev
+- The application in dev must be handled only through the root `Makefile`. Use `make dev-start`, `make dev-stop`, `make dev-restart`, `make dev-status` and `make dev-clean` for the whole application, and their `dev-<command>-<artifact-name>` variants for a single artifact. Never run a package manager, a build tool, docker or docker compose directly to start, stop, inspect or clean the application in dev
+
+- After each iteration you must make a whole restart of the application
 
 # Tech Aspects
 
@@ -55,6 +57,8 @@ This is a monorepository which contains a whole application with different techn
 - Application must be totally responsive with awesome view in desktop and mobile
 
 - For compact groups of actions, use the project detail view's icon-button pattern: distinct Lucide icons, accessible labels and hover titles. If actions do not fit comfortably, group secondary ones in an icon-triggered context menu
+
+- Dropdown panels must layer above surrounding cards and scroll containers, with a viewport-bound maximum height and internal scrolling. Portal custom panels to the nearest modal dialog (or document body) when an ancestor clips overflow; preserve keyboard focus and outside-click dismissal. Native selects use the browser's own overlay and scrolling.
 
 ## mic-mooi
 

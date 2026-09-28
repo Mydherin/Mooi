@@ -4,9 +4,10 @@ import { Button } from '@/shared/components/Button';
 
 interface ChangesSummaryProps {
   summary: ChangesSummaryData | null;
+  showMerge?: boolean;
 }
 
-export const ChangesSummary = ({ summary }: ChangesSummaryProps) => {
+export const ChangesSummary = ({ summary, showMerge = true }: ChangesSummaryProps) => {
   const fileCount = summary?.files.length ?? 0;
 
   return (
@@ -17,10 +18,10 @@ export const ChangesSummary = ({ summary }: ChangesSummaryProps) => {
       <span className="font-mono text-[11px] font-medium text-success">+{summary?.added ?? 0}</span>
       <span className="font-mono text-[11px] font-medium text-danger">−{summary?.removed ?? 0}</span>
 
-      <Button variant="secondary" size="sm" disabled ariaLabel="Merge to main — not available yet" className="ml-auto hidden sm:inline-flex">
+      {showMerge ? <Button variant="secondary" size="sm" disabled ariaLabel="Merge to main — not available yet" className="ml-auto hidden sm:inline-flex">
         <GitMerge className="size-4" />
         Merge to main
-      </Button>
+      </Button> : null}
     </div>
   );
 };

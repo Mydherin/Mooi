@@ -16,7 +16,7 @@ export const SESSION_FILTERS: SessionFilter[] = [
   { id: 'attention', label: 'Needs you', icon: BellRing,
     matches: (session) => session.status === 'waiting' || session.status === 'failed' },
   { id: 'ready', label: 'Ready', icon: CircleCheck, matches: (session) => displayOf(session) === 'ready' },
-  { id: 'deployments', label: 'Deployments', icon: Rocket, matches: hasDeployment },
+  { id: 'deployments', label: 'Previews', icon: Rocket, matches: hasDeployment },
 ];
 
 export const sessionFilter = (id: string | null): SessionFilter =>

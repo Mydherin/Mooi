@@ -21,7 +21,7 @@ export const SessionsOverviewStats = ({ sessions }: SessionsOverviewStatsProps) 
         hint={`${projects} ${projects === 1 ? 'project' : 'projects'}`} />
       <WorkspaceStat icon={LoaderCircle} label="Working" value={String(count(sessions, 'working'))} hint="Agents on a turn" />
       <WorkspaceStat icon={BellRing} label="Needs you" value={String(count(sessions, 'attention'))} hint="Questions or failures" />
-      <WorkspaceStat icon={Rocket} label="Deployments" value={String(count(sessions, 'deployments'))}
+      <WorkspaceStat icon={Rocket} label="Previews" value={String(count(sessions, 'deployments'))}
         hint={deploying ? `${deploying} deploying` : 'Previews running'} />
     </div>
   );

@@ -119,6 +119,109 @@ async def fetch_github_token(caller: Caller) -> str:
     return body["token"]
 
 
+async def fetch_production_recipe(caller: Caller, project_id: UUID) -> dict:
+    return await _get(get_http_client(),
+                      f"{get_settings().mooi_api_base_url}/me/projects/{project_id}/production/recipe",
+                      _service_headers(caller), "Project not found")
+
+
+async def fetch_production_recipe_status(caller: Caller, project_id: UUID) -> dict:
+    return await _get(get_http_client(),
+                      f"{get_settings().mooi_api_base_url}/me/projects/{project_id}/production/recipe/status",
+                      _service_headers(caller), "Project not found")
+
+
+async def fetch_production_deployment_detail(caller: Caller, project_id: UUID, operation_id: UUID) -> dict:
+    return await _get(get_http_client(),
+                      f"{get_settings().mooi_api_base_url}/me/projects/{project_id}/production/deployments/{operation_id}",
+                      _service_headers(caller), "Deployment not found")
+
+
+async def delete_production_deployment(caller: Caller, project_id: UUID, operation_id: UUID) -> None:
+    try:
+        response = await get_http_client().delete(
+            f"{get_settings().mooi_api_base_url}/me/projects/{project_id}/production/deployments/{operation_id}",
+            headers=_service_headers(caller))
+    except httpx.HTTPError:
+        raise ApiException.bad_gateway() from None
+    _raise_for_status(response, "Deployment not found")
+
+
+async def write_production_recipe(caller: Caller, project_id: UUID, recipe: dict) -> dict:
+    try:
+        response = await get_http_client().put(
+            f"{get_settings().mooi_api_base_url}/me/projects/{project_id}/production/recipe/draft",
+            headers=_service_headers(caller), json=recipe)
+    except httpx.HTTPError:
+        raise ApiException.bad_gateway() from None
+    _raise_for_status(response, "Project not found")
+    return response.json()
+
+
+async def publish_production_recipe(caller: Caller, project_id: UUID) -> dict:
+    try:
+        response = await get_http_client().post(
+            f"{get_settings().mooi_api_base_url}/me/projects/{project_id}/production/recipe/publish",
+            headers=_service_headers(caller))
+    except httpx.HTTPError:
+        raise ApiException.bad_gateway() from None
+    _raise_for_status(response, "Project not found")
+    return response.json()
+
+
+async def delete_production_recipe(caller: Caller, project_id: UUID) -> None:
+    try:
+        response = await get_http_client().delete(
+            f"{get_settings().mooi_api_base_url}/me/projects/{project_id}/production/recipe",
+            headers=_service_headers(caller))
+    except httpx.HTTPError:
+        raise ApiException.bad_gateway() from None
+    _raise_for_status(response, "Project not found")
+
+
+async def fetch_production_environment(caller: Caller, project_id: UUID) -> dict[str, str]:
+    """Stored environment values; only the deploy and status runners may read them."""
+    payload = await _get(get_http_client(),
+                         f"{get_settings().mooi_api_base_url}/me/projects/{project_id}/production/recipe/environment",
+                         _service_headers(caller), "Project not found")
+    return {str(key): str(value) for key, value in (payload.get("values") or {}).items()}
+
+
+async def write_production_environment(caller: Caller, project_id: UUID, values: dict[str, str | None]) -> dict:
+    try:
+        response = await get_http_client().put(
+            f"{get_settings().mooi_api_base_url}/me/projects/{project_id}/production/recipe/environment",
+            headers=_service_headers(caller), json={"values": values})
+    except httpx.HTTPError:
+        raise ApiException.bad_gateway() from None
+    _raise_for_status(response, "Project not found")
+    return response.json()
+
+
+async def start_production_deployment(caller: Caller, project_id: UUID, operation_id: UUID,
+                                      session_id: UUID | None, release_tag: str, files: dict) -> None:
+    try:
+        response = await get_http_client().post(
+            f"{get_settings().mooi_api_base_url}/me/projects/{project_id}/production/deployments",
+            headers=_service_headers(caller),
+            json={"operationId": str(operation_id), "sessionId": str(session_id) if session_id else None,
+                  "releaseTag": release_tag, "files": files})
+    except httpx.HTTPError:
+        raise ApiException.bad_gateway() from None
+    _raise_for_status(response, "Project not found")
+
+
+async def finish_production_deployment(caller: Caller, project_id: UUID, operation_id: UUID,
+                                       state: str, message: str, logs: list[str]) -> None:
+    try:
+        response = await get_http_client().put(
+            f"{get_settings().mooi_api_base_url}/me/projects/{project_id}/production/deployments/{operation_id}",
+            headers=_service_headers(caller), json={"state": state, "message": message, "logs": logs})
+    except httpx.HTTPError:
+        raise ApiException.bad_gateway() from None
+    _raise_for_status(response, "Deployment not found")
+
+
 async def fetch_github_identity(caller: Caller) -> GitIdentity:
     """The linked GitHub account as a commit author, using GitHub's private noreply address so the
     player's real email is never written into repository history."""

@@ -1,0 +1,13 @@
+databaseChangeLog:
+  - changeSet:
+      id: 021-production-deployments-project-index
+      author: mooi
+      changes:
+        - createIndex:
+            indexName: idx_production_deployments_project_started
+            tableName: production_deployments
+            columns:
+              - column:
+                  name: project_id
+              - column:
+                  name: started_at

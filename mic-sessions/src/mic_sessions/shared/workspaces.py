@@ -1,6 +1,6 @@
-"""Session-owned Git clones, ephemeral credentials and index-preserving diffs.
+"""Managed session directories, Git clones, release checkouts and index-preserving diffs.
 
-Only marked directories in sessions/<UUID> belong to this implementation.
+Only marked directories in sessions/<UUID> and production/<operation UUID> belong to this implementation.
 Legacy caches, workspaces and reservations are never reconciled.
 """
 
@@ -206,6 +206,58 @@ class Workspaces:
             await self._remove_directory(directory)
             raise
 
+    async def create_production_workspace(self, session_id: UUID) -> Path:
+        """Give the agent an isolated working directory without cloning or creating a branch."""
+        directory = self._session_directory(session_id)
+        directory.parent.mkdir(parents=True, exist_ok=True)
+        directory.mkdir()
+        try:
+            (directory / ".mooi-session").write_text(str(session_id))
+            workspace = directory / "repository"
+            workspace.mkdir()
+            return workspace
+        except BaseException:
+            await self._remove_directory(directory)
+            raise
+
+    def _release_directory(self, operation_id: UUID) -> Path:
+        production = self.root / "production"
+        if production.is_symlink():
+            raise RuntimeError("Managed production root cannot be a symlink")
+        return production / str(operation_id)
+
+    async def create_release_checkout(self, operation_id: UUID, project_full_name: str,
+                                      tag: str, sha: str, token: str) -> Path:
+        """Fetch only the selected release into a disposable, detached, marked checkout."""
+        directory = self._release_directory(operation_id)
+        directory.parent.mkdir(parents=True, exist_ok=True)
+        directory.mkdir()
+        try:
+            (directory / ".mooi-release").write_text(str(operation_id))
+            checkout = directory / "repository"
+            checkout.mkdir()
+            await self._git("-C", str(checkout), "init", "-q")
+            await self._git("-C", str(checkout), "remote", "add", "origin",
+                            f"https://github.com/{project_full_name}.git")
+            await self._git(*_NO_CREDENTIAL_HELPER, "-C", str(checkout), "fetch", "--depth", "1",
+                            "--no-tags", "origin", f"refs/tags/{tag}", auth=token)
+            fetched = (await self._git("-C", str(checkout), "rev-parse", "FETCH_HEAD^{commit}")).strip()
+            if fetched != sha:
+                raise ApiException.conflict("The selected release changed while preparing the deployment")
+            await self._git("-C", str(checkout), "checkout", "--detach", "--force", fetched)
+            return checkout
+        except BaseException:
+            await asyncio.to_thread(shutil.rmtree, directory)
+            raise
+
+    async def remove_release_checkout(self, operation_id: UUID) -> None:
+        directory = self._release_directory(operation_id)
+        if directory.is_symlink():
+            raise RuntimeError("Refusing a symlink in the release checkout path")
+        marker = directory / ".mooi-release"
+        if directory.exists() and marker.is_file() and not marker.is_symlink() and marker.read_text() == str(operation_id):
+            await asyncio.to_thread(shutil.rmtree, directory)
+
     async def _remove_directory(self, directory: Path) -> None:
         def remove() -> None:
             # Keep ownership evidence until all potentially large deletions succeed.
@@ -252,6 +304,12 @@ class Workspaces:
     async def reconcile(self, *, preserve: set[UUID] | None = None) -> None:
         """Remove marked leftovers except sessions whose deployment cleanup failed at boot."""
         preserved = preserve or set()
+        production = self.root / "production"
+        if production.is_dir() and not production.is_symlink():
+            for directory in production.iterdir():
+                with_uuid = re.fullmatch(r"[0-9a-f-]{36}", directory.name)
+                if with_uuid and directory.is_dir() and not directory.is_symlink():
+                    await self.remove_release_checkout(UUID(directory.name))
         sessions = self.root / "sessions"
         if sessions.is_symlink():
             raise RuntimeError("Managed sessions root cannot be a symlink")

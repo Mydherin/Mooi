@@ -1,0 +1,14 @@
+databaseChangeLog:
+  - changeSet:
+      id: 020-production-status-script
+      author: mooi
+      changes:
+        - addColumn:
+            tableName: production_recipes
+            columns:
+              - column:
+                  name: active_status_script
+                  type: text
+              - column:
+                  name: draft_status_script
+                  type: text

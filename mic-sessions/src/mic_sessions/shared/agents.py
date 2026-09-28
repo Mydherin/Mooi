@@ -377,6 +377,13 @@ def _validate_agent_workspace(workspace_path: Path, expected_branch: str) -> Pat
         or not workspace.is_relative_to(managed_root)
     ):
         raise RuntimeError("The session workspace is outside the managed workspace root")
+    if not expected_branch:
+        marker = workspace.parent / ".mooi-session"
+        if (workspace.name != "repository" or workspace.parent.parent != managed_root
+                or marker.is_symlink() or not marker.is_file()
+                or marker.read_text() != workspace.parent.name or (workspace / ".git").exists()):
+            raise RuntimeError("The production workspace is not a private branchless directory")
+        return workspace
     git_dir = workspace / ".git"
     if (
         not git_dir.is_dir()
@@ -1147,7 +1154,7 @@ class CodexAgentRuntime:
 
     async def start(self):
         from mic_sessions.shared import codex
-        # Both adapters enforce the same managed clone and branch precondition.
+        # Both adapters enforce the appropriate managed workspace contract.
         await asyncio.to_thread(_validate_agent_workspace, self._workspace, self._branch)
         self._account = codex.acquire(self._credential)
         window = codex.context_window(self._credential.connection_id, self._config.model)

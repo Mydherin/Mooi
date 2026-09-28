@@ -6,6 +6,7 @@ import type { SessionStatus } from '@/features/sessions/types/SessionStatus';
 
 export interface Session {
   id: string;
+  kind: 'session' | 'production';
   projectId: string;
   projectFullName: string;
   provider: string;

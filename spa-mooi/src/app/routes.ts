@@ -9,6 +9,8 @@ export const ROUTES = {
   project: '/projects/:projectId',
   session: '/projects/:projectId/sessions/:sessionId',
   sessions: '/sessions',
+  deployments: '/deployments',
+  deployment: '/deployments/:projectId',
   account: '/account',
   githubCallback: '/account/github/callback',
   agentCallback: '/account/agents/:provider/callback',

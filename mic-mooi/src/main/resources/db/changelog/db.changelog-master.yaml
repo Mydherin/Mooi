@@ -33,3 +33,17 @@ databaseChangeLog:
       file: db/changelog/changes/016-agent-default-efforts.yaml
   - include:
       file: db/changelog/changes/017-drop-agent-deployment-defaults.yaml
+  - include:
+      file: db/changelog/changes/018-production-recipes.yaml
+  - include:
+      file: db/changelog/changes/019-production-deployments.yaml
+  - include:
+      file: db/changelog/changes/020-production-status-script.yaml
+  - include:
+      file: db/changelog/changes/021-production-deployments-project-index.yaml
+  - include:
+      file: db/changelog/changes/022-production-deployment-files.yaml
+  - include:
+      file: db/changelog/changes/023-production-deployment-output.yaml
+  - include:
+      file: db/changelog/changes/024-production-environment.yaml

@@ -4,10 +4,14 @@ The whole feature — wire contracts, in-memory registry, orchestration and REST
 lives in this single file (project architecture rule): it may only import transversal aspects from
 `shared/`.
 
-A session pairs one player, one project, one agent provider and one Git workspace: `Session` is the
+A session pairs one player, one project and one agent provider with a managed workspace: `Session` is the
 in-memory record of that pairing, `SessionRegistry` is the process-wide table of live sessions
 (there is no database), and `record` is the one fold that turns events into session state — every
 endpoint below goes through it and nothing else assigns a session's status.
+
+Ordinary sessions own a Git clone; production chats use an empty, branchless directory. Production
+deployments themselves are project-scoped (see the production section): they run without a chat and
+fetch only the selected release into a temporary checkout.
 
 Sessions and their event logs are memory-resident. After an ungraceful restart they cannot be
 resumed; marked on-disk session directories are reconciled at startup. `start_reaper()` closes idle sessions and `close_all()` closes sessions during a
@@ -17,9 +21,15 @@ graceful shutdown; `main.py`'s lifespan owns calling both.
 from __future__ import annotations
 
 import asyncio
+import difflib
+import hmac
 import json
 import logging
 import os
+import re
+import secrets
+import signal
+import tempfile
 import time
 from collections.abc import AsyncIterator, Callable, Coroutine
 from contextlib import suppress
@@ -29,6 +39,9 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Any, Literal
 from uuid import UUID, uuid4
+from urllib.parse import quote
+
+import httpx
 
 from fastapi import APIRouter, Depends, Request, Response, status
 from fastapi.responses import StreamingResponse
@@ -74,7 +87,7 @@ from mic_sessions.shared.docker import (
     DockerPortRequest,
     redact_deployment_output,
 )
-from mic_sessions.shared.env import get_settings
+from mic_sessions.shared.env import get_settings, production_environment
 from mic_sessions.shared.events import Event, EventLog, sse_frame, sse_heartbeat
 from mic_sessions.shared.web import ApiException
 
@@ -99,6 +112,7 @@ EVENT_TOOL_RESULT = "tool.result"
 EVENT_SESSION_CONFIGURATION = "session.configuration"
 EVENT_DEPLOYMENT_UPDATED = "deployment.updated"
 EVENT_DEPLOYMENT_LOG = "deployment.log"
+EVENT_PRODUCTION_UPDATED = "production.updated"
 EVENT_SESSION_CLEARED = "session.cleared"
 EVENT_SESSION_COMPACTION = "session.compaction"
 EVENT_MERGE_COMPLETED = "merge.completed"
@@ -206,9 +220,160 @@ class CreateSessionRequest(BaseModel):
     projectId: UUID
     provider: str
     connectionId: UUID
-    branch: str = Field(pattern=_BRANCH_PATTERN)
+    branch: str | None = Field(default=None, pattern=_BRANCH_PATTERN)
     model: str | None = None
     effort: str | None = None
+    kind: Literal["session", "production"] = "session"
+    # Delivered as the first user message once the agent is ready, exactly as if the user sent it.
+    initialMessage: str | None = Field(default=None, min_length=1, max_length=100_000)
+
+
+class ProductionSnapshot(BaseModel):
+    """The live deployment state of one project in this process; output travels separately."""
+
+    state: Literal["idle", "running", "succeeded", "failed"] = "idle"
+    operationId: UUID | None = None
+    message: str | None = None
+    releaseTag: str | None = None
+    releaseUrl: str | None = None
+    releaseCommit: str | None = None
+    startedAt: datetime | None = None
+    updatedAt: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class ProductionStatusResult(BaseModel):
+    state: Literal["healthy", "unhealthy"]
+    output: str
+    checkedAt: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class ProductionStoredFiles(BaseModel):
+    """DEPLOYMENT.md, deploy.sh and status.sh as stored: virtual documents living only in the platform."""
+
+    manifest: str
+    script: str
+    statusScript: str = ""
+
+
+class ProductionFiles(ProductionStoredFiles):
+    """A complete draft as written by the user or the agent."""
+
+    manifest: str = Field(min_length=1, max_length=65536, pattern=r"\S")
+    script: str = Field(min_length=1, max_length=65536, pattern=r"\S")
+    statusScript: str = Field(min_length=1, max_length=65536, pattern=r"\S")
+
+
+class ProductionDocuments(BaseModel):
+    active: ProductionStoredFiles | None = None
+    draft: ProductionStoredFiles | None = None
+    revision: int = 0
+    environment: list[str] = Field(default_factory=list)
+
+
+class ProductionEnvironmentVariable(BaseModel):
+    name: str
+    configured: bool
+    required: bool
+
+
+class ProductionOverview(BaseModel):
+    configured: bool
+    deployed: bool
+    hasDraft: bool
+    revision: int
+    environment: list[ProductionEnvironmentVariable]
+    snapshot: ProductionSnapshot
+    chatSessionId: UUID | None
+
+
+class ProductionEnvironmentUpdate(BaseModel):
+    """A null value removes the variable; values are write-only."""
+
+    values: dict[str, str | None] = Field(max_length=100)
+
+
+class GithubRelease(BaseModel):
+    tag: str
+    name: str
+    url: str
+    publishedAt: datetime | None = None
+
+
+class ReleaseList(BaseModel):
+    releases: list[GithubRelease]
+
+
+class StartProductionRequest(BaseModel):
+    tag: str = Field(min_length=1, max_length=120)
+    create: bool = False
+
+
+_PRODUCTION_PLATFORM_ENVIRONMENT = frozenset({
+    "MOOI_PRODUCTION_RELEASE_TAG", "MOOI_PRODUCTION_RELEASE_SHA", "MOOI_PRODUCTION_RELEASE_URL",
+})
+_PRODUCTION_VARIABLE = re.compile(r"\bMOOI_PRODUCTION_[A-Z0-9_]+\b")
+_PRODUCTION_DEFAULTED = re.compile(r"\$\{(MOOI_PRODUCTION_[A-Z0-9_]+):?[-=+]")
+_PRODUCTION_FILE_NAMES = {"DEPLOYMENT.md": "manifest", "deploy.sh": "script", "status.sh": "statusScript"}
+
+
+def _required_environment(files: ProductionStoredFiles | None) -> list[str]:
+    """Variables the scripts mention, minus shell-defaulted ones and the platform's release data."""
+    if files is None:
+        return []
+    scripts = (files.script, files.statusScript)
+    names = {name for text in scripts for name in _PRODUCTION_VARIABLE.findall(text)}
+    defaulted = {name for text in scripts for name in _PRODUCTION_DEFAULTED.findall(text)}
+    return sorted(names - defaulted - _PRODUCTION_PLATFORM_ENVIRONMENT)
+
+
+async def _resolve_production_release(project: mooi.Project, caller: Caller,
+                                      body: StartProductionRequest) -> tuple[dict, str]:
+    if body.create:
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,119}", body.tag):
+            raise ApiException.bad_request("Invalid release version")
+        branch = quote(project.default_branch or "main", safe="")
+        main = await _github_api(caller, project.full_name, "GET", f"branches/{branch}")
+        main_sha = main["commit"]["sha"]
+        try:
+            await _github_api(caller, project.full_name, "GET", f"git/ref/tags/{quote(body.tag, safe='')}")
+        except ApiException as error:
+            if error.status_code != status.HTTP_404_NOT_FOUND:
+                raise
+        else:
+            raise ApiException.conflict("This GitHub version already exists; choose another version")
+        release = await _github_api(caller, project.full_name, "POST", "releases", {
+            "tag_name": body.tag, "target_commitish": main_sha, "name": body.tag,
+            "draft": False, "prerelease": False, "generate_release_notes": True})
+    else:
+        release = await _github_api(caller, project.full_name, "GET", f"releases/tags/{quote(body.tag, safe='')}")
+        if release.get("draft") or release.get("tag_name") != body.tag:
+            raise ApiException.conflict("The selected GitHub release is not published")
+    commit = await _github_api(caller, project.full_name, "GET", f"commits/{quote(body.tag, safe='')}")
+    release_sha = commit["sha"]
+    if body.create and release_sha != main_sha:
+        raise ApiException.conflict("The new release tag does not point to the selected default branch commit")
+    return release, release_sha
+
+
+async def _production_documents(caller: Caller, project_id: UUID) -> ProductionDocuments:
+    return ProductionDocuments.model_validate(await mooi.fetch_production_recipe(caller, project_id))
+
+
+async def _github_api(caller: Caller, full_name: str, method: str, path: str,
+                      payload: dict | None = None) -> Any:
+    token = await mooi.fetch_github_token(caller)
+    url = f"https://api.github.com/repos/{full_name}/{path}"
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            response = await client.request(method, url, headers={
+                "Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28"}, json=payload)
+    except httpx.HTTPError:
+        raise ApiException.bad_gateway("Could not reach GitHub") from None
+    if response.status_code >= 400:
+        raise ApiException(response.status_code if response.status_code < 500 else 502,
+                           "GitHub could not complete the release request")
+    return response.json()
 
 
 class PendingPayload(BaseModel):
@@ -218,6 +383,7 @@ class PendingPayload(BaseModel):
 
 class SessionPayload(BaseModel):
     id: UUID
+    kind: Literal["session", "production"]
     projectId: UUID
     projectFullName: str
     provider: str
@@ -236,7 +402,7 @@ class SessionPayload(BaseModel):
     model: str
     effort: str | None
     deployment: DeploymentSnapshot
-    # The session's own clone on this pod's disk; null until provisioning has cloned it.
+    # A normal session's clone; production uses a private, branchless agent directory.
     workspacePath: str | None
     baseCommit: str | None
 
@@ -350,6 +516,7 @@ class Session:
     """
 
     id: UUID
+    kind: Literal["session", "production"]
     player_id: UUID
     project_id: UUID
     project_full_name: str
@@ -366,6 +533,8 @@ class Session:
     log: EventLog
     runtime: AgentRuntime | None
     deployment: DeploymentSnapshot
+    production_edit_token: str = field(default_factory=lambda: secrets.token_urlsafe(32), repr=False)
+    production_caller: Caller | None = field(default=None, repr=False)
     config: AgentConfig = field(default_factory=lambda: AgentConfig("", None))
     usage: dict[str, Any] = field(default_factory=dict)
     closing: bool = False
@@ -388,6 +557,7 @@ class Session:
         descriptor = describe(self.provider)
         return SessionPayload(
             id=self.id,
+            kind=self.kind,
             projectId=self.project_id,
             projectFullName=self.project_full_name,
             provider=self.provider,
@@ -408,7 +578,7 @@ class Session:
             model=self.config.model,
             effort=self.config.effort,
             deployment=self.deployment,
-            workspacePath=None if self.workspace == _UNSET_PATH else str(self.workspace),
+            workspacePath=None if self.kind == "production" or self.workspace == _UNSET_PATH else str(self.workspace),
             baseCommit=self.base_commit or None,
         )
 
@@ -422,11 +592,13 @@ def new_session(
     connection_id: UUID,
     branch: str,
     base_branch: str,
+    kind: Literal["session", "production"] = "session",
 ) -> Session:
     """Builds a session in `provisioning`, before any of the slow orchestration steps have run."""
     now = datetime.now(UTC)
     return Session(
         id=session_id,
+        kind=kind,
         player_id=player_id,
         project_id=project_id,
         project_full_name=project_full_name,
@@ -479,6 +651,12 @@ class SessionRegistry:
     async def add(self, session: Session) -> None:
         settings = get_settings()
         async with self._lock:
+            if session.kind == "production" and any(
+                existing.player_id == session.player_id and existing.project_id == session.project_id
+                and existing.kind == "production" and not existing.closing
+                for existing in self._sessions.values()
+            ):
+                raise ApiException.conflict("A production deployment chat already exists for this project")
             if len(self._sessions) >= settings.max_sessions:
                 raise ApiException.conflict("The pod has reached its session limit")
             owned = sum(1 for existing in self._sessions.values() if existing.player_id == session.player_id)
@@ -606,7 +784,7 @@ def _record_status(session: Session, status_: str, detail: str | None = None) ->
     """Records a `session.status` event, built by the same helper the adapters use. Carries the
     clone path once it exists, so a live client learns where provisioning placed the workspace."""
     event = session_status(status_, detail)
-    if session.workspace != _UNSET_PATH:
+    if session.kind != "production" and session.workspace != _UNSET_PATH:
         event["data"]["workspacePath"] = str(session.workspace)
         event["data"]["baseCommit"] = session.base_commit or None
     return _record_event(session, event)
@@ -656,7 +834,7 @@ def _observe_changes(session: Session, type_: str, data: dict[str, Any]) -> None
 
 def _schedule_changes_refresh(session: Session, *, debounce: bool) -> None:
     """Ensures one trailing worker exists and preserves signals that arrive while it calculates."""
-    if session.workspace == _UNSET_PATH or session.closing:
+    if session.kind == "production" or session.workspace == _UNSET_PATH or session.closing:
         return
     session.changes_revision += 1
     session.changes_dirty = True
@@ -822,7 +1000,15 @@ async def create_session(
     registry = get_registry()
     await descriptor.prepare(caller, str(body.connectionId))
     config = descriptor.configure(body.model, body.effort)
-    await workspaces.get_workspaces().validate_branch(body.branch)
+    if body.kind == "session":
+        if body.branch is None:
+            raise ApiException.bad_request("A branch is required for a session")
+        await workspaces.get_workspaces().validate_branch(body.branch)
+    if body.kind == "production":
+        # A new deployment chat always replaces the project's previous one.
+        for existing in registry.list_for(caller.player_id, body.projectId):
+            if existing.kind == "production" and not existing.closing:
+                await close_session(existing.id)
 
     session = new_session(
         session_id=uuid4(),
@@ -831,21 +1017,26 @@ async def create_session(
         project_full_name="",
         provider=descriptor.id,
         connection_id=body.connectionId,
-        branch=body.branch,
+        branch=body.branch if body.kind == "session" else "",
         base_branch="",
+        kind=body.kind,
     )
 
     session.config = config
+    session.production_caller = caller if body.kind == "production" else None
     project = await mooi.fetch_project(caller, body.projectId)
     session.project_full_name = project.full_name
     session.base_branch = project.default_branch
+    if session.kind == "production":
+        session.branch = project.default_branch
     await registry.add(session)
     _record_status(session, STATUS_PROVISIONING, "Preparing the workspace")
-    _spawn(session, _provision(session, caller, project))
+    _spawn(session, _provision(session, caller, project, body.initialMessage))
     return session.to_payload()
 
 
-async def _provision(session: Session, caller: Caller, project: mooi.Project) -> None:
+async def _provision(session: Session, caller: Caller, project: mooi.Project,
+                     initial_message: str | None = None) -> None:
     descriptor = describe(session.provider)
     started_at = time.perf_counter()
     try:
@@ -853,23 +1044,27 @@ async def _provision(session: Session, caller: Caller, project: mooi.Project) ->
         session.project_full_name = project.full_name
         session.base_branch = project.default_branch
 
-        _record_status(session, STATUS_PROVISIONING, f"Loading {descriptor.label} and repository credentials")
-        credential, github_token = await asyncio.gather(
-            mooi.fetch_agent_credential(caller, str(session.connection_id)),
-            mooi.fetch_github_token(caller),
-        )
-
-        _record_status(session, STATUS_PROVISIONING, f"Cloning {project.full_name}")
-        workspace = await workspaces.create_workspace(project, session.id, session.branch, github_token)
-        session.workspace = workspace.path
-        session.base_commit = workspace.base_commit
+        if session.kind == "production":
+            _record_status(session, STATUS_PROVISIONING, f"Preparing {descriptor.label}")
+            credential = await mooi.fetch_agent_credential(caller, str(session.connection_id))
+            session.workspace = await workspaces.get_workspaces().create_production_workspace(session.id)
+        else:
+            _record_status(session, STATUS_PROVISIONING, f"Loading {descriptor.label} and repository credentials")
+            credential, github_token = await asyncio.gather(
+                mooi.fetch_agent_credential(caller, str(session.connection_id)),
+                mooi.fetch_github_token(caller),
+            )
+            _record_status(session, STATUS_PROVISIONING, f"Cloning {project.full_name}")
+            workspace = await workspaces.create_workspace(project, session.id, session.branch, github_token)
+            session.workspace = workspace.path
+            session.base_commit = workspace.base_commit
 
         _record_status(session, STATUS_PROVISIONING, f"Starting {descriptor.label}")
         runtime = create_runtime(
             descriptor.id,
             credential,
-            workspace.path,
-            session.branch,
+            session.workspace,
+            session.branch if session.kind == "session" else "",
             _emitter(session),
             _asker(session),
             session.config,
@@ -880,6 +1075,12 @@ async def _provision(session: Session, caller: Caller, project: mooi.Project) ->
         if session.closing:
             return
         _record_status(session, STATUS_READY)
+        if initial_message:
+            async with session.operation_lock:
+                if not session.closing and session.status == STATUS_READY:
+                    # A failed delivery is already recorded on the session by `_deliver`.
+                    with suppress(ApiException):
+                        await _deliver(session, runtime, initial_message)
     except asyncio.CancelledError:
         await _cleanup_workspace(session)
         raise
@@ -907,7 +1108,8 @@ async def list_workspaces(
     caller: Annotated[Caller, Depends(current_caller)], projectId: UUID
 ) -> WorkspacesResponse:
     """Overview of every clone the caller holds for one project, read live from disk."""
-    sessions = get_registry().list_for(caller.player_id, projectId)
+    sessions = [session for session in get_registry().list_for(caller.player_id, projectId)
+                if session.kind == "session"]
 
     async def describe_workspace(session: Session) -> WorkspacePayload:
         cloned = session.workspace != _UNSET_PATH
@@ -1051,6 +1253,8 @@ async def send_message(
     session_id: UUID, body: SendMessageRequest, caller: Annotated[Caller, Depends(current_caller)]
 ) -> SendMessageResponse:
     session = get_registry().get_for(caller, session_id)
+    if session.kind == "production":
+        session.production_caller = caller
     if not body.text.strip():
         raise ApiException.bad_request("Message cannot be blank")
     async with session.operation_lock:
@@ -1080,7 +1284,8 @@ async def _deliver(session: Session, runtime: AgentRuntime, text: str) -> SendMe
     event = _record_event(session, message_user(uuid4().hex, text))
     _record_status(session, STATUS_WORKING)
     try:
-        await runtime.send(text)
+        production_context = _production_context(session) if session.kind == "production" else ""
+        await runtime.send(production_context + text)
     except Exception:
         LOG.debug("Background operation encountered an exception", exc_info=True)
         record(session, "error", {"message": "The message could not be delivered to the agent"})
@@ -1226,6 +1431,8 @@ async def resolve_question(
 @router.get("/sessions/{session_id}/changes")
 async def get_changes(session_id: UUID, caller: Annotated[Caller, Depends(current_caller)]) -> ChangesPayload:
     session = get_registry().get_for(caller, session_id)
+    if session.kind == "production":
+        return _production_changes_payload(await _production_documents(caller, session.project_id))
     async with session.operation_lock:
         if session.workspace == _UNSET_PATH:
             return _changes_payload(session, workspaces.ChangesSummary(files=[], added=0, removed=0))
@@ -1245,6 +1452,8 @@ async def get_file_diff(
     session_id: UUID, path: str, caller: Annotated[Caller, Depends(current_caller)]
 ) -> FileDiffPayload:
     session = get_registry().get_for(caller, session_id)
+    if session.kind == "production":
+        return _production_file_diff(await _production_documents(caller, session.project_id), path)
     async with session.operation_lock:
         if session.workspace == _UNSET_PATH:
             raise ApiException.conflict("The workspace is still being prepared")
@@ -1258,6 +1467,8 @@ async def get_file_diff(
 
 def _require_mergeable(session: Session) -> None:
     """Merging reads the whole working tree, so no turn, question or deployment may be mid-flight."""
+    if session.kind == "production":
+        raise ApiException.conflict("Production deployment methods are published after a successful deployment")
     if session.workspace == _UNSET_PATH:
         raise ApiException.conflict("The workspace is still being prepared")
     if (session.status != STATUS_READY or session.closing or session.pending is not None
@@ -1298,7 +1509,8 @@ async def _reset_conversation(session: Session, caller: Caller) -> AgentRuntime:
     await previous.close()
     session.runtime = None
     record(session, EVENT_SESSION_CLEARED, {})
-    runtime = create_runtime(session.provider, credential, session.workspace, session.branch,
+    runtime = create_runtime(session.provider, credential, session.workspace,
+                             session.branch if session.kind == "session" else "",
                              _emitter(session), _asker(session), session.config)
     session.runtime = runtime
     try:
@@ -1406,6 +1618,603 @@ async def _reserve_deployment(session_id: UUID) -> None:
         if len(_deployment_slots) >= get_settings().max_deployments:
             raise ApiException(status.HTTP_429_TOO_MANY_REQUESTS, "Deployment capacity is full; stop an active deployment")
         _deployment_slots.add(session_id)
+
+
+# --- production: project-scoped configuration, deployments and GitHub releases -----------------
+#
+# A project's production configuration (DEPLOYMENT.md, deploy.sh, status.sh and environment values)
+# lives encrypted in mic-mooi. Deployments and status checks are project-scoped: they never need a
+# chat. The optional production chat (a `kind="production"` session) edits the configuration through
+# the token-guarded agent endpoints below; a failed deployment is handed to it when one is live.
+
+
+EVENT_PRODUCTION_SYNC = "production.sync"
+EVENT_PRODUCTION_LOG = "production.log"
+EVENT_PRODUCTION_CONFIGURATION = "production.configuration"
+_PRODUCTION_LOG_LIMIT = 2000
+_PRODUCTION_BASE_ENVIRONMENT = ("PATH", "HOME", "USER", "LANG", "SSH_AUTH_SOCK")
+
+
+@dataclass
+class ProductionRun:
+    """One project's live production state in this process: at most one deployment at a time,
+    its output kept in memory for the console and persisted with the history entry when done."""
+
+    project_id: UUID
+    player_id: UUID
+    snapshot: ProductionSnapshot = field(default_factory=ProductionSnapshot)
+    logs: list[str] = field(default_factory=list)
+    log: EventLog = field(default_factory=lambda: EventLog(limit=256))
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    task: asyncio.Task[None] | None = None
+
+
+_production_runs: dict[UUID, ProductionRun] = {}
+_production_capacity_lock = asyncio.Lock()
+_production_status_capacity = asyncio.Semaphore(16)
+
+
+def _production_run(caller: Caller, project_id: UUID) -> ProductionRun:
+    """Only call after mic-mooi has confirmed the caller owns the project."""
+    run = _production_runs.get(project_id)
+    if run is None:
+        run = _production_runs[project_id] = ProductionRun(project_id=project_id, player_id=caller.player_id)
+    elif run.player_id != caller.player_id:
+        raise ApiException.not_found("Project not found")
+    return run
+
+
+async def _owned_production(caller: Caller, project_id: UUID) -> tuple[mooi.Project, ProductionRun]:
+    project = await mooi.fetch_project(caller, project_id)
+    return project, _production_run(caller, project_id)
+
+
+def _production_chat(player_id: UUID, project_id: UUID) -> Session | None:
+    return next((session for session in get_registry().list_for(player_id, project_id)
+                 if session.kind == "production" and not session.closing), None)
+
+
+def _publish_production(run: ProductionRun, snapshot: ProductionSnapshot) -> None:
+    run.snapshot = snapshot
+    run.log.append(EVENT_PRODUCTION_UPDATED, snapshot.model_dump(mode="json"))
+
+
+def _publish_production_sync(run: ProductionRun) -> None:
+    run.log.append(EVENT_PRODUCTION_SYNC, {"snapshot": run.snapshot.model_dump(mode="json"), "logs": run.logs})
+
+
+def _publish_production_output(run: ProductionRun, operation_id: UUID, lines: list[str]) -> None:
+    run.logs = [*run.logs, *lines][-_PRODUCTION_LOG_LIMIT:]
+    run.log.append(EVENT_PRODUCTION_LOG, {"operationId": str(operation_id), "lines": lines})
+
+
+def _notify_production_configuration(run: ProductionRun, documents: ProductionDocuments) -> None:
+    run.log.append(EVENT_PRODUCTION_CONFIGURATION, {"revision": documents.revision})
+
+
+async def _production_environment(caller: Caller, project_id: UUID) -> dict[str, str]:
+    """Server-wide MOOI_PRODUCTION_ values from .env, overridden by the project's stored ones."""
+    values = production_environment()
+    values.update(await mooi.fetch_production_environment(caller, project_id))
+    return {name: value for name, value in values.items() if value}
+
+
+def _require_environment(files: ProductionStoredFiles, environment: dict[str, str]) -> None:
+    missing = [name for name in _required_environment(files) if name not in environment]
+    if missing:
+        raise ApiException.conflict("Set the missing environment variables: " + ", ".join(missing))
+
+
+def _production_process_environment(environment: dict[str, str], snapshot: ProductionSnapshot) -> dict[str, str]:
+    process_environment = {key: value for key, value in os.environ.items() if key in _PRODUCTION_BASE_ENVIRONMENT}
+    process_environment.update(environment)
+    process_environment.update({"MOOI_PRODUCTION_RELEASE_TAG": snapshot.releaseTag or "",
+                                "MOOI_PRODUCTION_RELEASE_SHA": snapshot.releaseCommit or "",
+                                "MOOI_PRODUCTION_RELEASE_URL": snapshot.releaseUrl or ""})
+    return process_environment
+
+
+def _production_context(session: Session) -> str:
+    """Hidden instructions prefixed to every production chat message; the transcript shows only
+    what the user typed."""
+    base = f"http://127.0.0.1:{get_settings().sessions_port}/sessions/{session.id}/production/agent"
+    return (
+        f"You are the production deployment assistant of https://github.com/{session.project_full_name} "
+        f"(default branch {session.base_branch}). The working directory is empty: there is no repository clone "
+        "or branch. Fetch repository content on demand only when you need it (a shallow clone into a temporary "
+        "directory or the GitHub API).\n\n"
+        "The project's production configuration is exactly three VIRTUAL documents stored only in the Mooi "
+        "platform database. Never write them to the repository or any filesystem path:\n"
+        "- DEPLOYMENT.md (field manifest): what the deployment does, its target, method, prerequisites, "
+        "required environment variables and how the service is verified.\n"
+        "- deploy.sh (field script): a non-interactive bash script the platform runs from a detached checkout "
+        "of the GitHub release the user selects (that checkout is the working directory). It must start with "
+        "`set -euo pipefail`, be repeatable, read every secret from environment variables and deploy exactly "
+        "MOOI_PRODUCTION_RELEASE_SHA.\n"
+        "- status.sh (field statusScript): a non-interactive, read-only bash script, safe to run repeatedly "
+        "from an empty working directory, that exits 0 only while the deployed service is healthy and prints "
+        "concise status details. It must not depend on release variables.\n\n"
+        "Environment: scripts read configuration only from variables named MOOI_PRODUCTION_<NAME>. The platform "
+        "provides MOOI_PRODUCTION_RELEASE_TAG, MOOI_PRODUCTION_RELEASE_SHA and MOOI_PRODUCTION_RELEASE_URL. Every "
+        "other MOOI_PRODUCTION_ variable the scripts mention without a shell default (${NAME:-default}) is "
+        "required. Ask the user for each missing value (hosts, users, keys, tokens, domains...) and never invent "
+        "credentials. Save the values the user gives you with the environment endpoint; the user can also set "
+        "them in the Environment section of the deployment overview. Values are write-only: you only ever see "
+        "their names.\n\n"
+        "Platform API (use Python urllib with an inline JSON body, never a temporary file; send the header "
+        f"X-Production-Edit-Token: {session.production_edit_token}):\n"
+        f"- GET {base}/documents: active and draft documents plus the names of stored environment variables.\n"
+        f"- PUT {base}/documents with JSON keys manifest, script, statusScript: saves the complete draft "
+        "(always send all three).\n"
+        f"- PUT {base}/environment with JSON {{\"values\": {{\"MOOI_PRODUCTION_NAME\": \"value\"}}}} "
+        "(null removes a variable).\n"
+        f"- GET {base}/deployments/{{operationId}}: read-only detail of a past attempt (files, result, redacted "
+        "output).\n\n"
+        "Never deploy, run deploy.sh against production, publish releases or modify the repository yourself. "
+        "The user deploys from the Overview tab by choosing a GitHub release; the draft becomes the active "
+        "configuration after its first successful deployment. When the draft is saved and every required "
+        "variable is stored, tell the user clearly that production is ready to deploy from the Overview tab.\n\n"
+        "User message:\n"
+    )
+
+
+def _production_changes_payload(documents: ProductionDocuments) -> ChangesPayload:
+    files: list[ChangedFilePayload] = []
+    added = removed = 0
+    if documents.draft:
+        for path, field_name in _PRODUCTION_FILE_NAMES.items():
+            before = getattr(documents.active, field_name) if documents.active else ""
+            after = getattr(documents.draft, field_name)
+            if before == after:
+                continue
+            delta = list(difflib.ndiff(before.splitlines(), after.splitlines()))
+            file_added = sum(line.startswith("+ ") for line in delta)
+            file_removed = sum(line.startswith("- ") for line in delta)
+            files.append(ChangedFilePayload(path=path, change="modified" if before else "added",
+                                            added=file_added, removed=file_removed))
+            added += file_added
+            removed += file_removed
+    return ChangesPayload(branch="Draft configuration", baseBranch="Active configuration",
+                          added=added, removed=removed, files=files)
+
+
+def _production_file_diff(documents: ProductionDocuments, path: str) -> FileDiffPayload:
+    field_name = _PRODUCTION_FILE_NAMES.get(path)
+    if field_name is None:
+        raise ApiException.not_found("Deployment document not found")
+    before = getattr(documents.active, field_name) if documents.active else ""
+    after = getattr(documents.draft, field_name) if documents.draft else before
+    diff = "".join(difflib.unified_diff(before.splitlines(keepends=True), after.splitlines(keepends=True),
+                                        fromfile=f"a/{path}", tofile=f"b/{path}"))
+    return FileDiffPayload(path=path, diff=diff)
+
+
+async def _save_production_draft(caller: Caller, project_id: UUID, files: ProductionFiles) -> ProductionDocuments:
+    run = _production_run(caller, project_id)
+    async with run.lock:
+        if run.snapshot.state == "running":
+            raise ApiException.conflict("Wait until the deployment completes")
+        documents = ProductionDocuments.model_validate(
+            await mooi.write_production_recipe(caller, project_id, files.model_dump()))
+        _notify_production_configuration(run, documents)
+        return documents
+
+
+async def _save_production_environment(caller: Caller, project_id: UUID,
+                                       body: ProductionEnvironmentUpdate) -> ProductionDocuments:
+    run = _production_run(caller, project_id)
+    documents = ProductionDocuments.model_validate(
+        await mooi.write_production_environment(caller, project_id, body.values))
+    _notify_production_configuration(run, documents)
+    return documents
+
+
+@router.get("/production/projects/{project_id}")
+async def production_overview(project_id: UUID, caller: Annotated[Caller, Depends(current_caller)]) -> ProductionOverview:
+    _, run = await _owned_production(caller, project_id)
+    documents = await _production_documents(caller, project_id)
+    files = documents.draft or documents.active
+    required = set(_required_environment(files))
+    stored = set(documents.environment)
+    server = {name for name, value in production_environment().items() if value}
+    chat = _production_chat(caller.player_id, project_id)
+    return ProductionOverview(
+        configured=files is not None, deployed=documents.active is not None,
+        hasDraft=documents.draft is not None, revision=documents.revision,
+        environment=[ProductionEnvironmentVariable(name=name, configured=name in stored or name in server,
+                                                   required=name in required)
+                     for name in sorted(required | stored)],
+        snapshot=run.snapshot, chatSessionId=chat.id if chat else None,
+    )
+
+
+@router.get("/production/projects/{project_id}/events")
+async def stream_production_events(project_id: UUID, request: Request,
+                                   caller: Annotated[Caller, Depends(current_caller)]) -> StreamingResponse:
+    """Live production state: a `production.sync` snapshot with the retained output, then updates,
+    output batches and configuration changes. Reconnecting simply starts from a fresh sync."""
+    _, run = await _owned_production(caller, project_id)
+    settings = get_settings()
+    queue = run.log.subscribe()
+
+    async def frames() -> AsyncIterator[str]:
+        try:
+            last_seq = run.log.last_seq
+            yield sse_frame(Event(last_seq, datetime.now(UTC), EVENT_PRODUCTION_SYNC,
+                                  {"snapshot": run.snapshot.model_dump(mode="json"), "logs": run.logs}))
+            next_auth_check = time.monotonic() + settings.introspection_cache_seconds
+            while True:
+                if time.monotonic() >= next_auth_check:
+                    try:
+                        await current_caller(request)
+                    except Exception:
+                        LOG.debug("Production stream authentication ended", exc_info=True)
+                        return
+                    next_auth_check = time.monotonic() + settings.introspection_cache_seconds
+                if await request.is_disconnected():
+                    return
+                try:
+                    event = await asyncio.wait_for(queue.get(), settings.sse_heartbeat_seconds)
+                except TimeoutError:
+                    yield sse_heartbeat()
+                    continue
+                if event is None:
+                    return
+                if event.seq > last_seq:
+                    yield sse_frame(event)
+                    last_seq = event.seq
+        finally:
+            run.log.unsubscribe(queue)
+
+    return StreamingResponse(frames(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"})
+
+
+@router.get("/production/projects/{project_id}/documents")
+async def production_documents(project_id: UUID, caller: Annotated[Caller, Depends(current_caller)]) -> ProductionDocuments:
+    return await _production_documents(caller, project_id)
+
+
+@router.put("/production/projects/{project_id}/documents/draft")
+async def save_production_documents(project_id: UUID, body: ProductionFiles,
+                                    caller: Annotated[Caller, Depends(current_caller)]) -> ProductionDocuments:
+    await _owned_production(caller, project_id)
+    return await _save_production_draft(caller, project_id, body)
+
+
+@router.put("/production/projects/{project_id}/environment")
+async def update_production_environment(project_id: UUID, body: ProductionEnvironmentUpdate,
+                                        caller: Annotated[Caller, Depends(current_caller)]) -> ProductionDocuments:
+    await _owned_production(caller, project_id)
+    return await _save_production_environment(caller, project_id, body)
+
+
+@router.delete("/production/projects/{project_id}/configuration", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_production_configuration(project_id: UUID,
+                                          caller: Annotated[Caller, Depends(current_caller)]) -> Response:
+    """Removes the documents and environment values; history and the deployed service stay."""
+    _, run = await _owned_production(caller, project_id)
+    async with run.lock:
+        if run.snapshot.state == "running":
+            raise ApiException.conflict("Wait until the deployment completes")
+        await mooi.delete_production_recipe(caller, project_id)
+        chat = _production_chat(caller.player_id, project_id)
+        if chat is not None:
+            await close_session(chat.id)
+        _notify_production_configuration(run, ProductionDocuments())
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/production/projects/{project_id}/changes")
+async def production_changes(project_id: UUID, caller: Annotated[Caller, Depends(current_caller)]) -> ChangesPayload:
+    return _production_changes_payload(await _production_documents(caller, project_id))
+
+
+@router.get("/production/projects/{project_id}/changes/file")
+async def production_file_diff(project_id: UUID, path: str,
+                               caller: Annotated[Caller, Depends(current_caller)]) -> FileDiffPayload:
+    return _production_file_diff(await _production_documents(caller, project_id), path)
+
+
+@router.get("/production/projects/{project_id}/releases")
+async def production_releases(project_id: UUID, caller: Annotated[Caller, Depends(current_caller)]) -> ReleaseList:
+    project, _ = await _owned_production(caller, project_id)
+    data = await _github_api(caller, project.full_name, "GET", "releases?per_page=50")
+    return ReleaseList(releases=[GithubRelease(tag=item["tag_name"], name=item.get("name") or item["tag_name"],
+                                               url=item["html_url"], publishedAt=item.get("published_at"))
+                                 for item in data if not item.get("draft")])
+
+
+@router.post("/production/projects/{project_id}/deployments", status_code=status.HTTP_202_ACCEPTED)
+async def start_production(project_id: UUID, body: StartProductionRequest,
+                           caller: Annotated[Caller, Depends(current_caller)]) -> ProductionSnapshot:
+    project, run = await _owned_production(caller, project_id)
+    async with run.lock:
+        if run.snapshot.state == "running":
+            return run.snapshot
+        documents = await _production_documents(caller, project_id)
+        files = documents.draft or documents.active
+        if files is None:
+            raise ApiException.conflict("Set up the production deployment first")
+        environment = await _production_environment(caller, project_id)
+        _require_environment(files, environment)
+        release, release_sha = await _resolve_production_release(project, caller, body)
+        now = datetime.now(UTC)
+        snapshot = ProductionSnapshot(state="running", operationId=uuid4(), message=f"Fetching release {body.tag}",
+                                      releaseTag=body.tag, releaseUrl=release["html_url"], releaseCommit=release_sha,
+                                      startedAt=now, updatedAt=now)
+        previous, previous_logs = run.snapshot, run.logs
+        async with _production_capacity_lock:
+            running = sum(1 for item in _production_runs.values() if item.snapshot.state == "running")
+            if running >= get_settings().max_deployments:
+                raise ApiException(status.HTTP_429_TOO_MANY_REQUESTS, "Production deployment capacity is full")
+            run.logs = []
+            _publish_production(run, snapshot)
+        chat = _production_chat(caller.player_id, project_id)
+        try:
+            await mooi.start_production_deployment(caller, project_id, snapshot.operationId,
+                                                   chat.id if chat else None, body.tag, files.model_dump())
+        except Exception:
+            run.snapshot, run.logs = previous, previous_logs
+            _publish_production_sync(run)
+            raise
+        run.task = asyncio.create_task(_run_production(run, caller, project, files, environment,
+                                                       documents.draft is not None))
+        return snapshot
+
+
+async def _run_production(run: ProductionRun, caller: Caller, project: mooi.Project, files: ProductionStoredFiles,
+                          environment: dict[str, str], publish_draft: bool) -> None:
+    """Run deploy.sh against a temporary checkout of the selected release."""
+    started = run.snapshot
+    operation_id = started.operationId
+    assert operation_id is not None and started.releaseTag is not None and started.releaseCommit is not None
+    process: asyncio.subprocess.Process | None = None
+    script_writer: asyncio.Task[None] | None = None
+    checkout: Path | None = None
+    pending: list[str] = []
+    loop = asyncio.get_running_loop()
+    last_flush = loop.time()
+
+    def flush() -> None:
+        nonlocal pending, last_flush
+        if pending:
+            _publish_production_output(run, operation_id, pending)
+            pending = []
+        last_flush = loop.time()
+
+    async def conclude(state: Literal["succeeded", "failed"], message: str) -> None:
+        """Persist first, so clients reloading history on the final snapshot see the outcome."""
+        flush()
+        try:
+            await mooi.finish_production_deployment(caller, project.id, operation_id, state, message, run.logs)
+        except Exception:
+            LOG.warning("Could not save %s deployment %s", state, operation_id, exc_info=True)
+        _publish_production(run, started.model_copy(update={
+            "state": state, "message": message, "updatedAt": datetime.now(UTC)}))
+
+    try:
+        token = await mooi.fetch_github_token(caller)
+        checkout = await workspaces.get_workspaces().create_release_checkout(
+            operation_id, project.full_name, started.releaseTag, started.releaseCommit, token)
+        _publish_production(run, started.model_copy(update={"message": "Running deploy.sh",
+                                                            "updatedAt": datetime.now(UTC)}))
+        secrets_ = tuple(value for value in environment.values() if len(value) >= 4)
+        process = await asyncio.create_subprocess_exec(
+            "bash", "-se", cwd=checkout, stdin=asyncio.subprocess.PIPE,
+            env=_production_process_environment(environment, started),
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT, start_new_session=True,
+        )
+
+        async def feed_script() -> None:
+            assert process is not None and process.stdin is not None
+            process.stdin.write(files.script.encode())
+            await process.stdin.drain()
+            process.stdin.close()
+
+        script_writer = asyncio.create_task(feed_script())
+        async with asyncio.timeout(get_settings().deployment_timeout_seconds):
+            assert process.stdout is not None
+            while chunk := await process.stdout.readline():
+                line = redact_deployment_output(chunk.decode("utf-8", "replace"),
+                                                (str(checkout), *secrets_)).rstrip()[:2000]
+                if line.strip():
+                    pending.append(line)
+                if len(pending) >= 50 or (pending and loop.time() - last_flush >= 0.25):
+                    flush()
+            code = await process.wait()
+            await script_writer
+        if code != 0:
+            raise RuntimeError(f"deploy.sh exited with code {code}")
+        if publish_draft:
+            documents = ProductionDocuments.model_validate(await mooi.publish_production_recipe(caller, project.id))
+            _notify_production_configuration(run, documents)
+        await conclude("succeeded", "Production deployment completed")
+    except asyncio.CancelledError:
+        await conclude("failed", "Production deployment interrupted")
+        raise
+    except Exception as error:
+        if process is not None and process.returncode is None:
+            with suppress(ProcessLookupError):
+                os.killpg(process.pid, signal.SIGTERM)
+            try:
+                await asyncio.wait_for(process.wait(), 5)
+            except TimeoutError:
+                with suppress(ProcessLookupError):
+                    os.killpg(process.pid, signal.SIGKILL)
+                await process.wait()
+        if isinstance(error, TimeoutError):
+            message = "Deployment timed out"
+        elif isinstance(error, (RuntimeError, ApiException)):
+            message = str(error) or "Production deployment failed"
+        else:
+            LOG.warning("Production deployment %s failed", operation_id, exc_info=True)
+            message = "Production deployment failed"
+        await conclude("failed", message)
+        await _hand_off_production_failure(run, operation_id, message)
+    finally:
+        if script_writer is not None:
+            if not script_writer.done():
+                script_writer.cancel()
+            with suppress(asyncio.CancelledError, BrokenPipeError, ConnectionResetError):
+                await script_writer
+        if process is not None and process.returncode is None:
+            with suppress(ProcessLookupError):
+                os.killpg(process.pid, signal.SIGTERM)
+            try:
+                await asyncio.wait_for(process.wait(), 5)
+            except TimeoutError:
+                with suppress(ProcessLookupError):
+                    os.killpg(process.pid, signal.SIGKILL)
+                await process.wait()
+        if checkout is not None:
+            with suppress(Exception):
+                await workspaces.get_workspaces().remove_release_checkout(operation_id)
+
+
+async def _hand_off_production_failure(run: ProductionRun, operation_id: UUID, message: str) -> None:
+    """A live, idle production chat receives the failure as a user message so it can fix it."""
+    chat = _production_chat(run.player_id, run.project_id)
+    if chat is None:
+        return
+    async with chat.operation_lock:
+        if chat.closing or chat.status != STATUS_READY or chat.pending is not None or chat.runtime is None:
+            return
+        try:
+            await _deliver(chat, chat.runtime,
+                f"The production deployment {operation_id} failed: {message}\n\nRead its detail through the "
+                "deployments endpoint, compare it with the current configuration, explain the cause and save a "
+                "corrected draft. Ask me for anything missing.\n\nRecent redacted output:\n"
+                + "\n".join(run.logs[-30:]))
+        except Exception:
+            LOG.warning("Could not deliver production failure to chat %s", chat.id, exc_info=True)
+
+
+@router.post("/production/projects/{project_id}/status")
+async def check_production_status(project_id: UUID,
+                                  caller: Annotated[Caller, Depends(current_caller)]) -> ProductionStatusResult:
+    _, run = await _owned_production(caller, project_id)
+    if run.snapshot.state == "running":
+        raise ApiException.conflict("Wait until the deployment completes")
+    documents = await _production_documents(caller, project_id)
+    files = documents.active or documents.draft
+    if files is None or not files.statusScript.strip():
+        raise ApiException.conflict("Add status.sh to the deployment configuration first")
+    environment = await _production_environment(caller, project_id)
+    _require_environment(files, environment)
+    try:
+        await asyncio.wait_for(_production_status_capacity.acquire(), timeout=0.1)
+    except TimeoutError:
+        raise ApiException(status.HTTP_429_TOO_MANY_REQUESTS, "Status checks are busy; try again shortly") from None
+    try:
+        with tempfile.TemporaryDirectory(prefix="mooi-status-") as directory:
+            return await _run_production_status(files.statusScript, Path(directory),
+                                                _production_process_environment(environment, run.snapshot),
+                                                environment)
+    finally:
+        _production_status_capacity.release()
+
+
+async def _run_production_status(script: str, workspace: Path, environment: dict[str, str],
+                                 available: dict[str, str]) -> ProductionStatusResult:
+    process = await asyncio.create_subprocess_exec(
+        "bash", "-se", cwd=workspace, stdin=asyncio.subprocess.PIPE,
+        env=environment, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+        start_new_session=True,
+    )
+    try:
+        async with asyncio.timeout(30):
+            assert process.stdin is not None and process.stdout is not None
+            try:
+                process.stdin.write(script.encode())
+                await process.stdin.drain()
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            finally:
+                process.stdin.close()
+            chunks: list[bytes] = []
+            size = 0
+            while chunk := await process.stdout.read(4096):
+                size += len(chunk)
+                if size > 32768:
+                    raise RuntimeError("Status output exceeded 32 KB")
+                chunks.append(chunk)
+            code = await process.wait()
+    except (TimeoutError, RuntimeError) as error:
+        with suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGKILL)
+        await process.wait()
+        return ProductionStatusResult(state="unhealthy", output=str(error) or "Status check timed out")
+    finally:
+        if process.returncode is None:
+            with suppress(ProcessLookupError):
+                os.killpg(process.pid, signal.SIGKILL)
+            await process.wait()
+    secrets = tuple(value for value in available.values() if len(value) >= 4)
+    output = redact_deployment_output(b"".join(chunks).decode("utf-8", "replace"), secrets).strip()
+    return ProductionStatusResult(state="healthy" if code == 0 else "unhealthy",
+                                  output=output[:32768] or f"Status script exited with code {code}")
+
+
+@router.delete("/production/projects/{project_id}/deployments/{operation_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_production_deployment(project_id: UUID, operation_id: UUID,
+                                       caller: Annotated[Caller, Depends(current_caller)]) -> Response:
+    _, run = await _owned_production(caller, project_id)
+    async with run.lock:
+        if run.snapshot.operationId == operation_id and run.snapshot.state == "running":
+            raise ApiException.conflict("Wait for the deployment to finish before deleting its data")
+        await mooi.delete_production_deployment(caller, project_id, operation_id)
+        if run.snapshot.operationId == operation_id:
+            run.snapshot, run.logs = ProductionSnapshot(), []
+            _publish_production_sync(run)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+def _agent_recipe_access(session_id: UUID, request: Request) -> tuple[Session, Caller]:
+    session = get_registry().get(session_id)
+    token = request.headers.get("X-Production-Edit-Token", "")
+    if (request.client is None or request.client.host not in ("127.0.0.1", "::1")
+            or session is None or session.kind != "production" or session.closing
+            or not hmac.compare_digest(token, session.production_edit_token)
+            or session.production_caller is None):
+        raise ApiException.not_found("Deployment configuration not found")
+    return session, session.production_caller
+
+
+@router.get("/sessions/{session_id}/production/agent/documents")
+async def agent_production_documents(session_id: UUID, request: Request) -> ProductionDocuments:
+    session, caller = _agent_recipe_access(session_id, request)
+    return await _production_documents(caller, session.project_id)
+
+
+@router.put("/sessions/{session_id}/production/agent/documents")
+async def agent_save_production_documents(session_id: UUID, request: Request,
+                                          body: ProductionFiles) -> ProductionDocuments:
+    session, caller = _agent_recipe_access(session_id, request)
+    return await _save_production_draft(caller, session.project_id, body)
+
+
+@router.put("/sessions/{session_id}/production/agent/environment")
+async def agent_save_production_environment(session_id: UUID, request: Request,
+                                            body: ProductionEnvironmentUpdate) -> ProductionDocuments:
+    session, caller = _agent_recipe_access(session_id, request)
+    return await _save_production_environment(caller, session.project_id, body)
+
+
+@router.get("/sessions/{session_id}/production/agent/deployments/{operation_id}")
+async def agent_production_deployment_detail(session_id: UUID, operation_id: UUID, request: Request) -> dict:
+    session, caller = _agent_recipe_access(session_id, request)
+    return await mooi.fetch_production_deployment_detail(caller, session.project_id, operation_id)
+
+
+async def close_productions() -> None:
+    """Interrupts running deployments on shutdown; each records itself as interrupted."""
+    tasks = [run.task for run in _production_runs.values() if run.task is not None and not run.task.done()]
+    for task in tasks:
+        task.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
+    for run in _production_runs.values():
+        run.log.close()
 
 
 # --- deployment: deterministic Compose run, agent setup through the chat -----------------------
@@ -1773,6 +2582,8 @@ async def _run_deployment_start(session: Session, caller: Caller, operation_id: 
 @router.post("/sessions/{session_id}/deployment/start", status_code=status.HTTP_202_ACCEPTED)
 async def start_deployment(session_id: UUID, caller: Annotated[Caller, Depends(current_caller)]) -> DeploymentSnapshot:
     session = get_registry().get_for(caller, session_id)
+    if session.kind == "production":
+        raise ApiException.conflict("Use the production deployment action for this chat")
     # Read live rather than cached on the session: the player can change the setting at any time.
     # Stop stays ungated, so a deployment started before the change can always be torn down.
     project = await mooi.fetch_project(caller, session.project_id)
@@ -1915,3 +2726,4 @@ async def close_all() -> None:
         _reaper_task = None
     for session in get_registry().all():
         await close_session(session.id)
+    await close_productions()

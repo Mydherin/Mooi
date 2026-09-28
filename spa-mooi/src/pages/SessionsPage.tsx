@@ -35,7 +35,8 @@ const Skeleton = () => (
  */
 export const SessionsPage = () => {
   const { projects } = useProjects();
-  const sessions = useSessionsStore((state) => state.sessions);
+  const allSessions = useSessionsStore((state) => state.sessions);
+  const sessions = useMemo(() => allSessions.filter((session) => session.kind !== 'production'), [allSessions]);
   const { loading, error, reload } = useSessionsSync(undefined);
   const [searchParams, setSearchParams] = useSearchParams();
   const [query, setQuery] = useState('');

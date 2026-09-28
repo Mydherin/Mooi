@@ -184,6 +184,25 @@ to set it up with the session's model; Deploy again once it finishes.
 Deploy and Preview are only offered for projects marked as web applications (asked when adding
 the project, editable on the project page). Projects added before this setting count as web apps.
 
+### Production deployments
+
+**Deployments** → pick a project → its production view (tabs: Overview, Chat, Console, Files).
+
+- **Configuration**: `DEPLOYMENT.md`, `deploy.sh`, `status.sh` plus `MOOI_PRODUCTION_*` values, stored encrypted in
+  Postgres (never in the repository). Scripts read only `MOOI_PRODUCTION_*` variables; referenced ones without a
+  shell default are required. Release data comes as `MOOI_PRODUCTION_RELEASE_TAG|SHA|URL`.
+- **Setup / change / fix**: **Deploy** (first time), **Change deployment settings** or **Fix with agent** open a
+  dialog for agent account, model and request. It starts the production chat (replacing any previous one); the
+  agent writes the files, asks for missing values and stores them.
+- **Environment**: set values under **Environment** (write-only). Server-wide fallbacks: `MOOI_PRODUCTION_*` in
+  `mic-sessions/.env`. Install any SSH keys or CLIs the scripts need on the mic-sessions host.
+- **Deploy**: choose an existing GitHub release or publish a new one from the default branch. `deploy.sh` runs from
+  a detached checkout of that release; output streams to **Console**. The first successful deploy activates the
+  draft. A failure is handed to the live chat for diagnosis.
+- **Status**: `status.sh` runs periodically while the view is open (exit 0 = online).
+- **History**: each attempt keeps its files and redacted output; redeploy or delete entries from there.
+- **Delete configuration** removes files, variables and the chat; the running service and history stay.
+
 Set these values in `mic-sessions/.env`:
 
 | Variable | Purpose |

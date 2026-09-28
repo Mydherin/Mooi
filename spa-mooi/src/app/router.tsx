@@ -14,6 +14,8 @@ import { ProjectPage } from '@/pages/ProjectPage';
 import { ProjectsPage } from '@/pages/ProjectsPage';
 import { SessionPage } from '@/pages/SessionPage';
 import { SessionsPage } from '@/pages/SessionsPage';
+import { DeploymentsPage } from '@/pages/DeploymentsPage';
+import { ProjectDeploymentPage } from '@/pages/ProjectDeploymentPage';
 
 /**
  * Every screen lives behind a session. The application is a workspace, not a site: there is nothing
@@ -37,6 +39,8 @@ export const router = createBrowserRouter([
           { path: ROUTES.project, element: <ProjectPage /> },
           { path: ROUTES.session, element: <SessionPage /> },
           { path: ROUTES.sessions, element: <SessionsPage /> },
+          { path: ROUTES.deployments, element: <DeploymentsPage /> },
+          { path: ROUTES.deployment, element: <ProjectDeploymentPage /> },
           { path: ROUTES.account, element: <AccountPage /> },
           { path: ROUTES.githubCallback, element: <GithubCallbackPage /> },
           { path: ROUTES.agentCallback, element: <AgentCallbackPage /> },

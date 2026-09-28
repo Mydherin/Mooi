@@ -1,0 +1,14 @@
+databaseChangeLog:
+  - changeSet:
+      id: 023-production-deployment-output
+      author: mooi
+      changes:
+        - addColumn:
+            tableName: production_deployment_files
+            columns:
+              - column:
+                  name: result_message
+                  type: text
+              - column:
+                  name: result_logs
+                  type: text

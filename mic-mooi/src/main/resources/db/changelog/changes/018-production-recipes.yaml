@@ -1,0 +1,45 @@
+databaseChangeLog:
+  - changeSet:
+      id: 018-production-recipes
+      author: mooi
+      changes:
+        - createTable:
+            tableName: production_recipes
+            columns:
+              - column:
+                  name: project_id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: active_manifest
+                  type: text
+              - column:
+                  name: active_config
+                  type: text
+              - column:
+                  name: active_script
+                  type: text
+              - column:
+                  name: draft_manifest
+                  type: text
+              - column:
+                  name: draft_config
+                  type: text
+              - column:
+                  name: draft_script
+                  type: text
+              - column:
+                  name: revision
+                  type: bigint
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            constraintName: fk_production_recipes_project
+            baseTableName: production_recipes
+            baseColumnNames: project_id
+            referencedTableName: projects
+            referencedColumnNames: id
+            onDelete: CASCADE

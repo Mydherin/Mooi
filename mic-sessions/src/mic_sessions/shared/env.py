@@ -8,6 +8,7 @@ from its `Env` aspect. No external dependency beyond `pydantic-settings` is requ
 from __future__ import annotations
 
 import re
+import os
 from functools import lru_cache
 from ipaddress import ip_address
 from pathlib import Path
@@ -15,6 +16,17 @@ from typing import Annotated, Literal
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+from dotenv import dotenv_values
+
+
+def production_environment() -> dict[str, str]:
+    """Load recipe variables with the same root/artifact/process precedence as Settings."""
+    values: dict[str, str] = {}
+    for path in ("../.env", ".env"):
+        values.update({key: value for key, value in dotenv_values(path).items()
+                       if key.startswith("MOOI_PRODUCTION_") and value is not None})
+    values.update({key: value for key, value in os.environ.items() if key.startswith("MOOI_PRODUCTION_")})
+    return values
 
 
 class Settings(BaseSettings):

@@ -1,0 +1,39 @@
+databaseChangeLog:
+  - changeSet:
+      id: 022-production-deployment-files
+      author: mooi
+      changes:
+        - createTable:
+            tableName: production_deployment_files
+            columns:
+              - column:
+                  name: operation_id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: manifest
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: config
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: script
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status_script
+                  type: text
+        - addForeignKeyConstraint:
+            constraintName: fk_production_deployment_files_operation
+            baseTableName: production_deployment_files
+            baseColumnNames: operation_id
+            referencedTableName: production_deployments
+            referencedColumnNames: operation_id
+            onDelete: CASCADE
