@@ -19,14 +19,26 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 from dotenv import dotenv_values
 
 
-def production_environment() -> dict[str, str]:
+def _recipe_environment(prefix: str) -> dict[str, str]:
     """Load recipe variables with the same root/artifact/process precedence as Settings."""
     values: dict[str, str] = {}
     for path in ("../.env", ".env"):
         values.update({key: value for key, value in dotenv_values(path).items()
-                       if key.startswith("MOOI_PRODUCTION_") and value is not None})
-    values.update({key: value for key, value in os.environ.items() if key.startswith("MOOI_PRODUCTION_")})
+                       if key.startswith(prefix) and value is not None})
+    values.update({key: value for key, value in os.environ.items() if key.startswith(prefix)})
     return values
+
+
+def development_environment() -> dict[str, str]:
+    return _recipe_environment("MOOI_DEVELOPMENT_")
+
+
+def production_environment() -> dict[str, str]:
+    return _recipe_environment("MOOI_PRODUCTION_")
+
+
+def backup_environment() -> dict[str, str]:
+    return _recipe_environment("MOOI_BACKUP_")
 
 
 class Settings(BaseSettings):
@@ -77,6 +89,7 @@ class Settings(BaseSettings):
     deployment_log_tail_lines: int = Field(default=40, gt=0)
     deployment_log_lines: int = Field(default=2000, gt=0)
     max_deployments: int = Field(default=4, gt=0)
+    backup_timeout_seconds: int = Field(default=3600, gt=0)
     preview_public_host: str = "127.0.0.1"
     preview_scheme: Literal["http", "https"] = "http"
     preview_bind_address: str = "127.0.0.1"

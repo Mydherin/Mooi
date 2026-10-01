@@ -1,6 +1,6 @@
 import type { ProductionAgentIntent } from '@/features/production/types/ProductionAgentIntent';
 
-/** The visible first message of a production chat; platform rules travel as hidden context. */
+/** The user's request of a production chat; the platform sends it inside its visible deployment brief. */
 export const productionAgentMessage = (intent: ProductionAgentIntent, prompt: string, failedRelease?: string | null): string => {
   const request = prompt.trim();
   if (intent === 'setup') return `Set up the production deployment of this project.\n\n${request}`;

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { startDeployment, stopDeployment } from '@/features/sessions/api/sessionsApi';
+import { changeDeploymentSetup, startDeployment, stopDeployment } from '@/features/sessions/api/sessionsApi';
 import type { DeploymentAction } from '@/features/sessions/types/DeploymentAction';
 import { useSessionsStore } from '@/stores/sessionsStore';
 
@@ -19,18 +19,20 @@ export const useDeployment = (sessionId: string) => {
     return () => { generation.current += 1; };
   }, [sessionId]);
 
-  const run = useCallback(async (action: DeploymentAction): Promise<boolean> => {
+  /** `setup` asks the agent to change the setup with `instructions`, only while the deployment is stopped. */
+  const run = useCallback(async (action: DeploymentAction | 'setup', instructions = ''): Promise<boolean> => {
     if (pending.current) return false;
     const current = useSessionsStore.getState().sessions.find((item) => item.id === sessionId);
     if (!current || current.status === 'closed' || current.deployment.state === 'stopping') return false;
-    if (action === 'start' && (current.status !== 'ready' || current.pending || current.deployment.cleanupRequired
+    if (action !== 'stop' && (current.status !== 'ready' || current.pending || current.deployment.cleanupRequired
         || current.deployment.state === 'starting' || current.deployment.state === 'running')) return false;
     const version = generation.current;
     pending.current = true;
     setBusy(true);
     setError(null);
     try {
-      const snapshot = await (action === 'start' ? startDeployment(sessionId) : stopDeployment(sessionId));
+      const snapshot = await (action === 'start' ? startDeployment(sessionId)
+        : action === 'setup' ? changeDeploymentSetup(sessionId, instructions) : stopDeployment(sessionId));
       if (version !== generation.current) return false;
       useSessionsStore.getState().setDeployment(sessionId, snapshot);
       return true;
@@ -45,5 +47,6 @@ export const useDeployment = (sessionId: string) => {
     }
   }, [sessionId]);
 
-  return { deployment, busy, error, start: () => run('start'), stop: () => run('stop') };
+  return { deployment, busy, error, start: () => run('start'), stop: () => run('stop'),
+    changeSetup: (instructions: string) => run('setup', instructions) };
 };

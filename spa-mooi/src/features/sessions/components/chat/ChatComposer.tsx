@@ -2,7 +2,7 @@ import { ChatUsageIndicators } from './ChatUsageIndicators';
 import type { SessionUsage } from '@/features/sessions/types/SessionUsage';
 import type { SessionConfiguration } from '@/features/sessions/types/SessionConfiguration';
 import type { SessionProvider } from '@/features/sessions/types/SessionProvider';
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowUp, Square } from 'lucide-react';
 import type { SessionStatus } from '@/features/sessions/types/SessionStatus';
 import { Button } from '@/shared/components/Button';
@@ -24,6 +24,8 @@ interface ChatComposerProps {
   onCompact: () => Promise<boolean>;
   onClear: () => Promise<boolean>;
   onConfigurationChange: (configuration: SessionConfiguration) => void;
+  /** Extra toolbar actions next to the context indicator, e.g. applying a recipe. */
+  actions?: ReactNode;
 }
 
 /** The draft stays mounted while a turn runs so an interruption never loses user input. */
@@ -51,6 +53,7 @@ export const ChatComposer = ({
   onCompact,
   onClear,
   onConfigurationChange,
+  actions,
 }: ChatComposerProps) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [value, setValue] = useState('');
@@ -134,6 +137,7 @@ export const ChatComposer = ({
           <ChatUsageIndicators usage={usage} loading={status === 'provisioning' || status === 'compacting'}
             actionsDisabled={busy || deploying || status !== 'ready' || !hasConversation}
             onCompact={onCompact} onClear={onClear} />
+          {actions}
           {modelOptions.length > 0 ? (
             <label className="flex min-w-0 items-center gap-1.5 text-xs text-ink-subtle">
               <span className="sr-only">Agent model</span>

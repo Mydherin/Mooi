@@ -15,7 +15,7 @@ import re
 import signal
 import stat
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from ipaddress import ip_address
@@ -29,6 +29,14 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validato
 from mic_sessions.shared.env import Settings, get_settings
 
 LOG = logging.getLogger("docker")
+
+
+ROOT_COMPOSE_FILES = ("compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml")
+
+
+def root_compose_file(checkout: Path) -> Path | None:
+    """The single Compose file Mooi deploys, looked up at the repository root."""
+    return next((checkout / name for name in ROOT_COMPOSE_FILES if (checkout / name).is_file()), None)
 
 
 class DockerError(Exception):
@@ -424,9 +432,12 @@ class Docker:
     async def _run(
         self, *args: str, cwd: Path, timeout: float | None = None,
         deadline: float | None = None, secrets: tuple[str, ...] = (),
-        on_line: Callable[[str], None] | None = None,
+        on_line: Callable[[str], None] | None = None, variables: Mapping[str, str] | None = None,
     ) -> DockerOutput:
         """Drain both pipes with a shared byte budget; kill/reap the CLI group on interruption.
+
+        variables are extra CLI environment for Compose interpolation only: the project's development
+        values, which can never override the pinned engine, config or locale settings.
 
         deadline is an absolute asyncio loop time. Callers must supply the operation deadline
         for multi-command work. Killing the CLI does not roll back engine resources: callers
@@ -456,7 +467,8 @@ class Docker:
                 Path(config, "config.json").write_text(json.dumps({
                     "cliPluginsExtraDirs": [str(self.settings.docker_cli_plugin_dir)]
                 }))
-            env = {"PATH": os.environ.get("PATH", os.defpath), "HOME": config,
+            env = {**(variables or {}),
+                   "PATH": os.environ.get("PATH", os.defpath), "HOME": config,
                    "DOCKER_CONFIG": config, "DOCKER_HOST": self.settings.docker_host,
                    "LANG": "C.UTF-8", "NO_COLOR": "1", "COMPOSE_ANSI": "never"}
             process = None
@@ -547,12 +559,11 @@ class Docker:
             )
         return output
 
-    async def describe_existing_compose(self, checkout: Path, *, deadline: float) -> DockerComposeCandidate:
+    async def describe_existing_compose(self, checkout: Path, *, deadline: float,
+                                        variables: Mapping[str, str] | None = None) -> DockerComposeCandidate:
         """Inspect root Compose inputs without starting resources or returning secrets."""
         checkout = checkout.resolve()
-        compose = next((checkout / name for name in (
-            "compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml",
-        ) if (checkout / name).is_file()), None)
+        compose = root_compose_file(checkout)
         if compose is None:
             raise DockerError("invalid_compose", "No root Compose file exists")
         with tempfile.TemporaryDirectory(prefix="mooi-compose-") as temporary:
@@ -565,7 +576,7 @@ class Docker:
                 "compose", "--project-directory", str(checkout), "--env-file",
                 str(env_file if env_file.is_file() else empty_env), "--file", str(compose),
                 "config", "--format", "json", "--output", str(output),
-                cwd=checkout, deadline=deadline,
+                cwd=checkout, deadline=deadline, variables=variables,
             )
             if result.returncode or result.truncated or re.search(r"variable.*(?:not set|unset)", result.stderr, re.IGNORECASE):
                 raise DockerError("invalid_compose", "Existing Compose configuration could not be resolved")
@@ -595,12 +606,14 @@ class Docker:
         self, *, manifests: DockerManifests, session_id: UUID, checkout: Path,
         compose_files: tuple[Path, ...], web_service: str,
         environment_files: tuple[Path, ...] = (), deadline: float | None = None,
+        variables: Mapping[str, str] | None = None,
     ) -> DockerManifest:
         """Resolve once, then publish private immutable config before any engine mutation.
 
         Callers hold the session operation lock. Port allocation and marking cleanup required
         happen later, before up. No resource is started by config. Secrets remain in the 0600
-        effective file, never in captured output, manifest fields or process environment.
+        effective file, never in captured output or manifest fields; interpolation variables only
+        reach this one config command's environment, never later engine commands.
         """
         previous = manifests.load(session_id)
         if previous.cleanup_state != "prepared" or previous.compose_files:
@@ -627,7 +640,7 @@ class Docker:
             for path in compose_files:
                 args.extend(("--file", str(_compose_path(str(path), checkout))))
             result = await self._run(*args, "config", "--format", "json", "--output",
-                                     str(output_path), cwd=checkout, deadline=deadline)
+                                     str(output_path), cwd=checkout, deadline=deadline, variables=variables)
             if (result.returncode or result.truncated
                     or re.search(r"variable.*(?:not set|unset)", result.stderr, re.IGNORECASE)):
                 raise DockerError("invalid_compose", "Compose configuration could not be resolved")

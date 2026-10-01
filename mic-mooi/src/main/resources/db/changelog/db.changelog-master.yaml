@@ -47,3 +47,11 @@ databaseChangeLog:
       file: db/changelog/changes/023-production-deployment-output.yaml
   - include:
       file: db/changelog/changes/024-production-environment.yaml
+  - include:
+      file: db/changelog/changes/025-backup-recipes.yaml
+  - include:
+      file: db/changelog/changes/026-backups.yaml
+  - include:
+      file: db/changelog/changes/027-development-environments.yaml
+  - include:
+      file: db/changelog/changes/028-recipe-marketplaces.yaml

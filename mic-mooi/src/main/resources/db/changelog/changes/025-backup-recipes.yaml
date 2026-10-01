@@ -1,0 +1,54 @@
+databaseChangeLog:
+  - changeSet:
+      id: 025-backup-recipes
+      author: mooi
+      changes:
+        - createTable:
+            tableName: backup_recipes
+            columns:
+              - column:
+                  name: project_id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: active_manifest
+                  type: text
+              - column:
+                  name: active_backup_script
+                  type: text
+              - column:
+                  name: active_restore_script
+                  type: text
+              - column:
+                  name: active_delete_script
+                  type: text
+              - column:
+                  name: draft_manifest
+                  type: text
+              - column:
+                  name: draft_backup_script
+                  type: text
+              - column:
+                  name: draft_restore_script
+                  type: text
+              - column:
+                  name: draft_delete_script
+                  type: text
+              - column:
+                  name: environment
+                  type: text
+              - column:
+                  name: revision
+                  type: bigint
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            constraintName: fk_backup_recipes_project
+            baseTableName: backup_recipes
+            baseColumnNames: project_id
+            referencedTableName: projects
+            referencedColumnNames: id
+            onDelete: CASCADE

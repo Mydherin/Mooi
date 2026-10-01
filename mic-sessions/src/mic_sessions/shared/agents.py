@@ -245,7 +245,8 @@ class AgentRuntime(Protocol):
     """One live agent conversation on one workspace.
 
     `capabilities` is a class attribute so a runtime instance and its descriptor can never disagree.
-    Constructor contract: `(credential, workspace, emit, ask, config)`.
+    Constructor contract: `(credential, workspace, branch, emit, ask, config, *, instructions="")`, where
+    `instructions` are session-level guidance the provider adds to its own system instructions.
     """
 
     capabilities: ClassVar[AgentCapabilities]
@@ -258,6 +259,8 @@ class AgentRuntime(Protocol):
         emit: Emit,
         ask: Ask,
         config: AgentConfig,
+        *,
+        instructions: str = "",
     ) -> None: ...
 
     @staticmethod
@@ -377,13 +380,6 @@ def _validate_agent_workspace(workspace_path: Path, expected_branch: str) -> Pat
         or not workspace.is_relative_to(managed_root)
     ):
         raise RuntimeError("The session workspace is outside the managed workspace root")
-    if not expected_branch:
-        marker = workspace.parent / ".mooi-session"
-        if (workspace.name != "repository" or workspace.parent.parent != managed_root
-                or marker.is_symlink() or not marker.is_file()
-                or marker.read_text() != workspace.parent.name or (workspace / ".git").exists()):
-            raise RuntimeError("The production workspace is not a private branchless directory")
-        return workspace
     git_dir = workspace / ".git"
     if (
         not git_dir.is_dir()
@@ -524,8 +520,11 @@ class ClaudeAgentRuntime:
         emit: Emit,
         ask: Ask,
         config: AgentConfig,
+        *,
+        instructions: str = "",
     ) -> None:
         self._config = config
+        self._instructions = instructions
         self._credential = credential
         self._workspace = workspace
         self._branch = branch
@@ -759,6 +758,8 @@ class ClaudeAgentRuntime:
             "can display file operations and their results clearly. Use shell tools "
             "for commands that require them."
         )
+        if self._instructions:
+            system_append += "\n\n" + self._instructions
         if self._compacted_context:
             system_append += "\n\nContext retained from the conversation before compaction:\n" + self._compacted_context
         return ClaudeAgentOptions(
@@ -1135,9 +1136,10 @@ class CodexAgentRuntime:
             raise ApiException.bad_request("Unsupported effort for this model")
         return AgentConfig(chosen, value)
 
-    def __init__(self, credential, workspace, branch, emit, ask, config):
+    def __init__(self, credential, workspace, branch, emit, ask, config, *, instructions=""):
         self._credential, self._workspace, self._branch = credential, workspace, branch
         self._emit, self._ask, self._config = emit, ask, config
+        self._instructions = instructions
         self._account = None
         self._client = None
         self._thread_id = None
@@ -1151,6 +1153,12 @@ class CodexAgentRuntime:
 
     async def _publish(self, event):
         await self._emit(event["type"], event["data"])
+
+    def _thread_params(self) -> dict[str, Any]:
+        params = {"cwd": str(self._workspace), "model": self._config.model, **_CODEX_ACCESS}
+        if self._instructions:
+            params["developerInstructions"] = self._instructions
+        return params
 
     async def start(self):
         from mic_sessions.shared import codex
@@ -1283,8 +1291,7 @@ class CodexAgentRuntime:
         async with codex.connected(self._account, self._workspace, self._answer) as client:
             self._client = client
             try:
-                await client.call("thread_resume", self._thread_id,
-                                  {"cwd": str(self._workspace), "model": self._config.model, **_CODEX_ACCESS})
+                await client.call("thread_resume", self._thread_id, self._thread_params())
                 tokens = await client.compact(self._thread_id)
                 last = (tokens or {}).get("last") or {}
                 window = (tokens or {}).get("modelContextWindow")
@@ -1319,7 +1326,7 @@ class CodexAgentRuntime:
         try:
             async with codex.connected(self._account, self._workspace, self._answer) as client:
                 self._client = client
-                params = {"cwd": str(self._workspace), "model": self._config.model, **_CODEX_ACCESS}
+                params = self._thread_params()
                 thread = (await client.call("thread_resume", self._thread_id, params) if self._thread_id
                           else await client.call("thread_start", params))
                 self._thread_id = thread.thread.id
@@ -1462,5 +1469,7 @@ def create_runtime(
     emit: Emit,
     ask: Ask,
     config: AgentConfig,
+    *,
+    instructions: str = "",
 ) -> AgentRuntime:
-    return describe(provider).runtime_class(credential, workspace, branch, emit, ask, config)
+    return describe(provider).runtime_class(credential, workspace, branch, emit, ask, config, instructions=instructions)

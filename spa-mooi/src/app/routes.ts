@@ -11,6 +11,8 @@ export const ROUTES = {
   sessions: '/sessions',
   deployments: '/deployments',
   deployment: '/deployments/:projectId',
+  backups: '/backups',
+  backup: '/backups/:projectId',
   account: '/account',
   githubCallback: '/account/github/callback',
   agentCallback: '/account/agents/:provider/callback',

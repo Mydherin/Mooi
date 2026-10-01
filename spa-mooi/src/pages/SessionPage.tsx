@@ -6,6 +6,7 @@ import { useProjects } from '@/features/projects/hooks/useProjects';
 import { findProject } from '@/features/projects/lib/findProject';
 import { ChatPanel } from '@/features/sessions/components/chat/ChatPanel';
 import { SessionWorkspace } from '@/features/sessions/components/SessionWorkspace';
+import { DeploymentTestedBar } from '@/features/sessions/components/deploy/DeploymentTestedBar';
 import { deploymentAvailable } from '@/features/sessions/lib/deploymentAvailable';
 import { WorkspaceHeader } from '@/features/sessions/components/WorkspaceHeader';
 import { useProjectSessions } from '@/features/sessions/hooks/useProjectSessions';
@@ -111,25 +112,30 @@ export const SessionPage = () => {
         </div>
       ) : null}
       <SessionWorkspace key={session.id} sessionId={session.id} deployEnabled={deployEnabled}>
-        <ChatPanel
-          session={session}
-          entries={entries}
-          pending={pending}
-          streamState={streamState}
-          busy={busy}
-          modelOptions={modelOptions}
-          modelLoading={modelLoading}
-          modelError={modelError}
-          actionError={actionError}
-          onSend={send}
-          onInterrupt={interrupt}
-          onCompact={compact}
-          onClear={clearConversation}
-          onConfigurationChange={(configuration) => void updateConfiguration(configuration)}
-          onAllowPermission={(requestId, updatedInput) => void allowPermission(requestId, updatedInput)}
-          onDenyPermission={(requestId, message) => void denyPermission(requestId, message)}
-          onAnswerQuestion={(requestId, answers) => void answer(requestId, answers)}
-        />
+        <div className="flex h-full min-h-0 flex-col">
+          <DeploymentTestedBar session={session} busy={busy} onClear={clearConversation} />
+          <div className="min-h-0 flex-1">
+            <ChatPanel
+              session={session}
+              entries={entries}
+              pending={pending}
+              streamState={streamState}
+              busy={busy}
+              modelOptions={modelOptions}
+              modelLoading={modelLoading}
+              modelError={modelError}
+              actionError={actionError}
+              onSend={send}
+              onInterrupt={interrupt}
+              onCompact={compact}
+              onClear={clearConversation}
+              onConfigurationChange={(configuration) => void updateConfiguration(configuration)}
+              onAllowPermission={(requestId, updatedInput) => void allowPermission(requestId, updatedInput)}
+              onDenyPermission={(requestId, message) => void denyPermission(requestId, message)}
+              onAnswerQuestion={(requestId, answers) => void answer(requestId, answers)}
+            />
+          </div>
+        </div>
       </SessionWorkspace>
     </div>
   );

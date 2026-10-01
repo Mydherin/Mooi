@@ -1,4 +1,4 @@
-import type { ProductionEnvironmentVariable } from './ProductionEnvironmentVariable';
+import type { PlatformEnvironmentVariable } from '@/features/platform/types/PlatformEnvironmentVariable';
 import type { ProductionSnapshot } from './ProductionSnapshot';
 
 export interface ProductionOverview {
@@ -8,7 +8,7 @@ export interface ProductionOverview {
   deployed: boolean;
   hasDraft: boolean;
   revision: number;
-  environment: ProductionEnvironmentVariable[];
+  environment: PlatformEnvironmentVariable[];
   snapshot: ProductionSnapshot;
   chatSessionId: string | null;
   /** The live chat's configuration succeeded in a real deployment since its last draft, so it can be closed. */

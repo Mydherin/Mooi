@@ -187,6 +187,16 @@ export const startDeployment = async (sessionId: string): Promise<DeploymentSnap
   return (await response.json()) as DeploymentSnapshot;
 };
 
+export const changeDeploymentSetup = async (sessionId: string, instructions: string): Promise<DeploymentSnapshot> => {
+  const response = await sessionsFetch(`${sessionPath(sessionId)}/deployment/setup`, {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify({ instructions }),
+  });
+  if (!response.ok) throw new Error(await apiErrorMessage(response, 'Could not change the deployment setup.'));
+  return (await response.json()) as DeploymentSnapshot;
+};
+
 export const stopDeployment = async (sessionId: string): Promise<DeploymentSnapshot> => {
   const response = await sessionsFetch(`${sessionPath(sessionId)}/deployment/stop`, { method: 'POST' });
   if (!response.ok) throw new Error(await apiErrorMessage(response, 'Could not stop the deployment.'));

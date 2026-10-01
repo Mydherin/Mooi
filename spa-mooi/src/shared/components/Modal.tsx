@@ -12,7 +12,7 @@ interface ModalProps {
   description?: string;
   children: ReactNode;
   footer?: ReactNode;
-  size?: 'md' | 'lg';
+  size?: 'md' | 'lg' | 'xl';
 }
 
 export const Modal = ({ open, onClose, title, description, children, footer, size = 'md' }: ModalProps) => {
@@ -43,7 +43,7 @@ export const Modal = ({ open, onClose, title, description, children, footer, siz
       onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}
       className="fixed inset-0 m-0 h-dvh max-h-none w-screen max-w-none bg-transparent p-3 text-ink open:flex open:items-center open:justify-center backdrop:bg-black/55 backdrop:backdrop-blur-sm sm:p-6"
     >
-      <div className={cn('flex max-h-full w-full flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-[0_24px_60px_-20px_rgba(0,0,0,0.35)]', size === 'lg' ? 'max-w-2xl' : 'max-w-lg')}>
+      <div className={cn('flex max-h-full w-full flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-[0_24px_60px_-20px_rgba(0,0,0,0.35)]', { md: 'max-w-lg', lg: 'max-w-2xl', xl: 'max-w-5xl' }[size])}>
         <header className="flex shrink-0 items-start justify-between gap-3 border-b border-line px-5 py-5 sm:px-7 sm:py-6">
           <div className="min-w-0">
             <h2 id={titleId} className="text-[22px] font-extrabold tracking-[-0.03em]">{title}</h2>

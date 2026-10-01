@@ -1,6 +1,8 @@
 export type SessionEventType =
   | 'deployment.updated'
   | 'deployment.log'
+  | 'deployment.setup'
+  | 'deployment.configured'
   | 'session.status'
   | 'session.configuration'
   | 'session.usage'

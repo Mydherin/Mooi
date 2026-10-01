@@ -21,6 +21,8 @@ import java.util.Base64;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.LinkedHashMap;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -60,7 +62,7 @@ import lombok.Getter;
  *
  * <p>Only the protocol lives here: building the authorization URL, signing and verifying the
  * {@code state} that protects it, trading a code for tokens, renewing them, and reading what a
- * token can see — the profile behind it and the repositories it reaches. What is stored, for whom, and when it is
+ * token can see — the profile behind it, the repositories it reaches and the files inside them. What is stored, for whom, and when it is
  * renewed belongs to the feature that owns the connection table — this aspect never imports it and
  * holds no state of its own.
  *
@@ -354,6 +356,17 @@ public class Github {
     }
 
     /**
+     * One entry of a repository directory, as the contents API lists it. The {@code sha} is the
+     * blob's git hash: content-addressed, so a caller may cache a file's text under it forever.
+     */
+    public record ContentEntry(String name, String path, String type, String sha, long size) {
+
+        public boolean isFile() {
+            return "file".equals(type);
+        }
+    }
+
+    /**
      * The only place this application talks to GitHub.
      *
      * <p>Two habits of GitHub's OAuth endpoint drive the shape of this class. It answers failures
@@ -368,6 +381,7 @@ public class Github {
         private static final String ACCEPT_HEADER = "Accept";
         private static final String JSON = "application/json";
         private static final String GITHUB_JSON = "application/vnd.github+json";
+        private static final String GITHUB_RAW = "application/vnd.github.raw+json";
         private static final String FORM = "application/x-www-form-urlencoded";
         private static final String API_VERSION_HEADER = "X-GitHub-Api-Version";
         private static final String API_VERSION = "2022-11-28";
@@ -575,6 +589,45 @@ public class Github {
                     "GET /repos/" + owner + "/" + name)));
         }
 
+        /**
+         * The entries of one directory on the repository's default branch, read with the player's
+         * own grant. A missing directory answers like a missing repository: 404, for the caller to
+         * word in its own terms.
+         */
+        public List<ContentEntry> listDirectory(String owner, String name, String path, String accessToken) {
+            String description = "GET /repos/" + owner + "/" + name + "/contents/" + path;
+            JsonNode body = readJson(get(contentsPath(owner, name, path), accessToken, description));
+            if (!body.isArray()) {
+                throw GithubException.unavailable(description + " returned no directory");
+            }
+            List<ContentEntry> entries = new ArrayList<>();
+            for (JsonNode node : body) {
+                String entryName = text(node, "name");
+                String entryPath = text(node, "path");
+                String type = text(node, "type");
+                if (entryName != null && entryPath != null && type != null) {
+                    entries.add(new ContentEntry(entryName, entryPath, type, text(node, "sha"),
+                            node.path("size").asLong(0L)));
+                }
+            }
+            return entries;
+        }
+
+        /** One file's text on the default branch, raw: no base64 envelope to decode, no size cap of the JSON form. */
+        public String readFile(String owner, String name, String path, String accessToken) {
+            return get(contentsPath(owner, name, path), accessToken,
+                    "GET /repos/" + owner + "/" + name + "/contents/" + path, GITHUB_RAW);
+        }
+
+        /** Every path segment encoded on its own, so the separators survive and nothing else can break out. */
+        private static String contentsPath(String owner, String name, String path) {
+            String encodedPath = Arrays.stream(path.split("/"))
+                    .filter(segment -> !segment.isEmpty())
+                    .map(segment -> encode(segment).replace("+", "%20"))
+                    .collect(Collectors.joining("/"));
+            return "/repos/" + encode(owner) + "/" + encode(name) + "/contents/" + encodedPath;
+        }
+
         /** Creates a repository owned by the linked GitHub user. GitHub's response is authoritative. */
         public Repository createRepository(String name, boolean privateRepository, String accessToken) {
             String body;
@@ -697,10 +750,14 @@ public class Github {
          * they can repair by connecting again, and a missing repository is not a server failure.
          */
         private String get(String path, String accessToken, String description) {
+            return get(path, accessToken, description, GITHUB_JSON);
+        }
+
+        private String get(String path, String accessToken, String description, String accept) {
             HttpRequest request = HttpRequest.newBuilder(URI.create(settings.getApiBaseUrl() + path))
                     .timeout(settings.getRequestTimeout())
                     .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
-                    .header(ACCEPT_HEADER, GITHUB_JSON)
+                    .header(ACCEPT_HEADER, accept)
                     .header(API_VERSION_HEADER, API_VERSION)
                     .GET()
                     .build();

@@ -28,7 +28,6 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.Getter;
@@ -101,9 +100,10 @@ public class ProductionRecipeFeature {
         return service.updateEnvironment(projectId, principal.player().id(), body);
     }
 
-    public record RecipeInput(@NotBlank @Size(max = 65536) String manifest,
-                              @NotBlank @Size(max = 65536) String script,
-                              @NotBlank @Size(max = 65536) String statusScript) { }
+    /** A draft may be partial while the agent writes it document by document; deploying requires all three. */
+    public record RecipeInput(@NotNull @Size(max = 65536) String manifest,
+                              @NotNull @Size(max = 65536) String script,
+                              @NotNull @Size(max = 65536) String statusScript) { }
 
     /** Environment names only: values are write-only for every caller except the deploy runner. */
     public record RecipePayload(RecipeInput active, RecipeInput draft, long revision, List<String> environment) { }
@@ -148,6 +148,9 @@ public class ProductionRecipeFeature {
         @Transactional
         public RecipePayload draft(UUID projectId, UUID playerId, RecipeInput input) {
             requireProject(projectId, playerId);
+            if (input.manifest().isBlank() && input.script().isBlank() && input.statusScript().isBlank()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "A draft needs at least one document");
+            }
             Recipe row = findOrCreate(projectId);
             row.setDraftManifest(box.encrypt(input.manifest()));
             row.setDraftScript(box.encrypt(input.script()));

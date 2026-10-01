@@ -7,6 +7,7 @@ import { PreferencesCard } from '@/features/account/components/PreferencesCard';
 import { ProfileCard } from '@/features/account/components/ProfileCard';
 import { AgentConnectionsCard } from '@/features/agents/components/AgentConnectionsCard';
 import { GithubConnectionCard } from '@/features/github/components/GithubConnectionCard';
+import { RecipeMarketplacesCard } from '@/features/recipes/components/RecipeMarketplacesCard';
 import { Tabs } from '@/shared/components/Tabs';
 import type { TabItem } from '@/shared/types/TabItem';
 import { useAuthStore } from '@/stores/authStore';
@@ -15,12 +16,18 @@ const tabs: TabItem[] = [
   { id: 'profile', label: 'Profile & preferences' },
   { id: 'github', label: 'GitHub' },
   { id: 'agents', label: 'Agent accounts' },
+  { id: 'recipes', label: 'Recipes' },
 ];
+
+const linkableTabs = new Set(['agents', 'recipes']);
 
 export const AccountPage = () => {
   const player = useAuthStore((state) => state.player);
   const [searchParams] = useSearchParams();
-  const [tab, setTab] = useState(() => searchParams.get('tab') === 'agents' ? 'agents' : 'profile');
+  const [tab, setTab] = useState(() => {
+    const requested = searchParams.get('tab');
+    return requested && linkableTabs.has(requested) ? requested : 'profile';
+  });
 
   if (!player) {
     return null;
@@ -50,6 +57,7 @@ export const AccountPage = () => {
           ) : null}
           {tab === 'github' ? <GithubConnectionCard /> : null}
           {tab === 'agents' ? <AgentConnectionsCard /> : null}
+          {tab === 'recipes' ? <RecipeMarketplacesCard /> : null}
         </div>
 
         <aside className="flex min-w-0 flex-col gap-4">

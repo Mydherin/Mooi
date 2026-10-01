@@ -1,9 +1,10 @@
-import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
 import { GitCompareArrows, MessagesSquare, Monitor } from 'lucide-react';
 import { PreviewPanel } from './preview/PreviewPanel';
 import { Tabs } from '@/shared/components/Tabs';
 import type { TabItem } from '@/shared/types/TabItem';
 import { DeployLogsDrawer } from './deploy/DeployLogsDrawer';
+import { deploymentConsoleHidden } from '@/features/sessions/lib/deploymentConsoleHidden';
 import { useSessionsStore } from '@/stores/sessionsStore';
 import { cn } from '@/shared/utils/cn';
 
@@ -22,7 +23,11 @@ export const SessionWorkspace = ({ sessionId, deployEnabled, children }: Session
   const logOpen = useSessionsStore((state) => state.byId[sessionId]?.deploymentLogOpen ?? false);
   const [visitedOperation, setVisitedOperation] = useState<string | null>(null);
   const changes = useSessionsStore((state) => state.byId[sessionId]?.changes);
-  const deployment = useSessionsStore((state) => state.sessions.find((session) => session.id === sessionId)?.deployment);
+  const session = useSessionsStore((state) => state.sessions.find((item) => item.id === sessionId));
+  const deployment = session?.deployment;
+  const setup = session?.deploymentSetup ?? null;
+  const consoleHidden = session ? deploymentConsoleHidden(session) : false;
+  const setupStart = useRef<string | null>(null);
   const openedOperation = useSessionsStore((state) => state.byId[sessionId]?.previewOpenedOperationId);
   const operationId = deployment?.operationId;
   const running = deployEnabled && deployment?.state === 'running';
@@ -37,6 +42,24 @@ export const SessionWorkspace = ({ sessionId, deployEnabled, children }: Session
       setPane(sessionId, 'preview');
     }
   }, [running, operationId, openedOperation, sessionId, setPane]);
+
+  // A setup brings the chat to the front; its test start shows the preview, the console stays one click away.
+  useEffect(() => {
+    if (setup !== 'preparing') {
+      setupStart.current = null;
+      return;
+    }
+    const store = useSessionsStore.getState();
+    if (setupStart.current === null) {
+      setupStart.current = '';
+      setPane(sessionId, 'conversation');
+      store.setDeploymentLogOpen(sessionId, false);
+    }
+    if (deployment?.state === 'starting' && operationId && setupStart.current !== operationId) {
+      setupStart.current = operationId;
+      setPane(sessionId, 'preview');
+    }
+  }, [setup, deployment?.state, operationId, sessionId, setPane]);
 
   const selectPane = (id: string) => {
     if (id !== 'conversation' && id !== 'changes' && id !== 'preview') return;
@@ -69,7 +92,7 @@ export const SessionWorkspace = ({ sessionId, deployEnabled, children }: Session
           <PreviewPanel sessionId={sessionId} deployment={deployment} visible={visiblePane === 'preview'} />
         </section> : null}
       </div>
-      {deployEnabled && logOpen ? <DeployLogsDrawer sessionId={sessionId} /> : null}
+      {deployEnabled && logOpen && !consoleHidden ? <DeployLogsDrawer sessionId={sessionId} /> : null}
     </div>
   );
 };

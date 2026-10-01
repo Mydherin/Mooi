@@ -39,11 +39,11 @@ export const addProject = async (fullName: string, settings: ProjectSettings): P
   return (await response.json()) as Project;
 };
 
-export const createProject = async (name: string, isPrivate: boolean): Promise<Project> => {
+export const createProject = async (name: string, isPrivate: boolean, settings: ProjectSettings): Promise<Project> => {
   const response = await authenticatedFetch(`${PROJECTS_PATH}/new`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, isPrivate }),
+    body: JSON.stringify({ name, isPrivate, ...settings }),
   });
 
   if (!response.ok) {

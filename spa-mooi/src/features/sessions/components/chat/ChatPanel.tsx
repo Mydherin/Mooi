@@ -4,6 +4,7 @@ import type { SessionProvider } from '@/features/sessions/types/SessionProvider'
 import { CircleAlert, LoaderCircle } from 'lucide-react';
 import { ChatComposer } from '@/features/sessions/components/chat/ChatComposer';
 import { ChatMessageList } from '@/features/sessions/components/chat/ChatMessageList';
+import { RecipesButton } from '@/features/recipes/components/RecipesButton';
 import type { SessionStreamState } from '@/features/sessions/lib/openSessionStream';
 import type { Session } from '@/features/sessions/types/Session';
 import type { SessionPendingRequest } from '@/features/sessions/types/SessionPendingRequest';
@@ -55,6 +56,8 @@ export const ChatPanel = ({
 }: ChatPanelProps) => {
   const [sending, setSending] = useState(false);
   const working = session.status === 'working' || session.status === 'waiting';
+  const deploying = session.deployment.state === 'starting';
+  const canSend = session.status === 'ready' && !busy && !sending && !deploying;
 
   useEffect(() => {
     if (working) setSending(false);
@@ -103,7 +106,7 @@ export const ChatPanel = ({
       key={`composer-${session.id}`}
       usage={session.usage}
       status={session.status}
-      deploying={session.deployment.state === 'starting'}
+      deploying={deploying}
       busy={busy}
       model={session.model}
       effort={session.effort ?? null}
@@ -117,6 +120,7 @@ export const ChatPanel = ({
       onCompact={onCompact}
       onClear={onClear}
       onConfigurationChange={onConfigurationChange}
+      actions={session.kind === 'session' ? <RecipesButton disabled={!canSend} onApply={send} /> : null}
     />
   </div>
   );

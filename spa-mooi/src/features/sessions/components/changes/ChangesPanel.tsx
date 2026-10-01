@@ -10,9 +10,16 @@ import { Button } from '@/shared/components/Button';
 
 interface ChangesPanelProps {
   sessionId: string;
+  /** Platform chats publish through the agent once the user approves, never through merge. */
+  showMerge?: boolean;
+  emptyDescription?: string;
 }
 
-export const ChangesPanel = ({ sessionId }: ChangesPanelProps) => {
+export const ChangesPanel = ({
+  sessionId,
+  showMerge = true,
+  emptyDescription = 'Once the agent edits files on this branch, they will show up here.',
+}: ChangesPanelProps) => {
   const changes = useSessionsStore((state) => state.byId[sessionId]?.changes ?? null);
   const changesStatus = useSessionsStore((state) => state.byId[sessionId]?.changesStatus ?? 'idle');
   const changesError = useSessionsStore((state) => state.byId[sessionId]?.changesError ?? null);
@@ -39,7 +46,7 @@ export const ChangesPanel = ({ sessionId }: ChangesPanelProps) => {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-surface">
-      <ChangesSummary summary={changes} />
+      <ChangesSummary summary={changes} showMerge={showMerge} />
 
       {changesStatus === 'error' ? (
         <div role="alert" className="flex shrink-0 items-center gap-3 border-b border-danger/30 bg-danger-soft px-4 py-2.5 text-sm text-danger">
@@ -64,7 +71,7 @@ export const ChangesPanel = ({ sessionId }: ChangesPanelProps) => {
           <EmptyState
             icon={GitCompare}
             title="No changes yet"
-            description="Once the agent edits files on this branch, they will show up here."
+            description={emptyDescription}
           />
         </div>
       ) : (

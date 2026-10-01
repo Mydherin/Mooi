@@ -178,32 +178,84 @@ Install Docker CLI with Compose v2 where `mic-sessions` runs and grant its servi
 to the configured host Unix socket. Verify with `make dev-preflight-mic-sessions`.
 Deploy builds and starts the root Docker Compose file of the session checkout, publishing exactly
 one browser port (the web frontend's, or the only one of an API-only product). Its build/up output
-streams to the logs console next to the Deploy button. When the Compose
-setup is missing or fails, the conversation is cleared and the session agent is asked in the chat
-to set it up with the session's model; Deploy again once it finishes.
-Deploy and Preview are only offered for projects marked as web applications (asked when adding
-the project, editable on the project page). Projects added before this setting count as web apps.
+streams to the logs console next to the Deploy button, followed by the failure reason when it fails;
+nothing is retried or handed to the agent automatically — ask the session chat to adjust the setup.
+Deploy and Preview are only offered for projects marked as web applications (asked when adding or
+creating the project, editable on the project page). Projects added before this setting count as web apps.
+
+### Development environment
+
+Project-wide `MOOI_DEVELOPMENT_*` variables, stored encrypted in Postgres (never in the repository) and shared by
+every session of the project.
+
+- **Manage**: ask the agent in any session (it reads and saves them through the platform), or use **Environment
+  variables** (session actions menu) / the key icon on the project page (write-only in the browser).
+- **Use**: the Deploy preview's root Compose file reads them by interpolation (`${MOOI_DEVELOPMENT_NAME}`); production
+  deployments and backups inherit them. Server-wide fallbacks: `MOOI_DEVELOPMENT_*` in `mic-sessions/.env`
+  (agents only see their names).
 
 ### Production deployments
 
-**Deployments** → pick a project → its production view (tabs: Overview, Chat, Console, Files).
+**Deployments** → pick a project → its production view (tabs: Overview, Chat, Console, Platform files, Changes).
 
 - **Configuration**: `DEPLOYMENT.md`, `deploy.sh`, `status.sh` plus `MOOI_PRODUCTION_*` values, stored encrypted in
-  Postgres (never in the repository). Scripts read only `MOOI_PRODUCTION_*` variables; referenced ones without a
-  shell default are required. Release data comes as `MOOI_PRODUCTION_RELEASE_TAG|SHA|URL`.
+  Postgres (never in the repository). Scripts read only `MOOI_PRODUCTION_*` and inherited `MOOI_DEVELOPMENT_*`
+  variables; referenced ones without a shell default are required. Release data comes as `MOOI_PRODUCTION_RELEASE_TAG|SHA|URL`.
 - **Setup / change / fix**: **Deploy** (first time), **Change deployment settings** or **Fix with agent** open a
-  dialog for agent account, model and request. It starts the production chat (replacing any previous one); the
-  agent writes the files, asks for missing values and stores them, then tests them with a real deploy of the
-  currently deployed release (or `v1.0.0`, created on the default branch when nothing was deployed yet). Once the
-  test succeeds, the chat can be closed (✕ on its tab); it reopens only with a new setup, change or fix.
-- **Environment**: set values under **Environment** (write-only). Server-wide fallbacks: `MOOI_PRODUCTION_*` in
+  dialog for agent account, model and request. It starts the production chat (replacing any previous one) on a
+  clone of the default branch; its first message is the full platform brief plus the request (sent again after
+  clearing or compacting). The agent saves each file as it writes it (**Platform files** counts pending changes
+  live), asks for missing values and stores them, then tests with a real deploy of the currently deployed release
+  (or `v1.0.0`, created on the default branch when nothing was deployed yet). Once the test succeeds, the chat can
+  be closed (✕ on its tab); it reopens only with a new setup, change or fix.
+- **Repository changes**: only when needed (e.g. a Dockerfile), the agent edits the clone (**Changes** tab), asks
+  before committing, and on approval the platform pushes one commit to the default branch; the next test then
+  deploys a new release created from it.
+- **Environment**: set values under **Environment** (write-only in the browser; the chat agent can read and save
+  them). Server-wide fallbacks: `MOOI_PRODUCTION_*` in
   `mic-sessions/.env`. Install any SSH keys or CLIs the scripts need on the mic-sessions host.
 - **Deploy**: choose an existing GitHub release or publish a new one from the default branch. `deploy.sh` runs from
   a detached checkout of that release; output streams to **Console**. The first successful deploy activates the
-  draft. A failure is handed to the live chat for diagnosis.
+  draft. A failure is only reported; adjust it through the chat (**Adjust in chat** / **Fix with agent**).
 - **Status**: `status.sh` runs periodically while the view is open (exit 0 = online).
 - **History**: each attempt keeps its files and redacted output; redeploy or delete entries from there.
 - **Delete configuration** removes files, variables and the chat; the running service and history stay.
+
+### Backups
+
+**Backups** → pick a project → its backup view (same tabs and flow as production deployments). Requires a
+successful production deployment: every backup belongs to the release running in production.
+
+- **Configuration**: `BACKUP.md`, `backup.sh`, `restore.sh`, `delete.sh` plus `MOOI_BACKUP_*` values, stored encrypted
+  (never in the repository). Scripts also receive the project's `MOOI_PRODUCTION_*` and `MOOI_DEVELOPMENT_*` values; referenced variables
+  without a shell default are required. Platform values: `MOOI_BACKUP_ID` (date-time-release-suffix storage name),
+  `MOOI_BACKUP_CREATED_AT`, `MOOI_BACKUP_RELEASE_TAG`, `MOOI_BACKUP_TARGET` (`verification` | `production`) and the
+  release's `MOOI_PRODUCTION_RELEASE_TAG|SHA|URL`.
+- **Setup / change / fix**: same dialog and chat pattern as deployments (backup chat, platform brief, **Platform
+  files**, **Changes**). The instance is always stopped while its data is copied or restored.
+- **Proof**: the agent must run a real backup and then restore that same backup into a disposable instance isolated
+  from production (`MOOI_BACKUP_TARGET=verification`), both with the current documents. Only that proof activates
+  the draft; then the chat can be closed. The agent can never restore into production.
+- **Operate**: **Create backup** (release currently deployed), **Verify** (restore into a disposable instance),
+  **Restore** into production (explicit confirmation; only when production runs the backup's release) and **Delete**
+  (runs `delete.sh`; **Remove record only** forgets it). Operations run one at a time per project, never alongside a
+  deployment; `backup.sh`/`restore.sh` run from a checkout of the backup's release. Output streams to **Console**;
+  each backup keeps every operation with its script and redacted output.
+- **Limits**: `BACKUP_TIMEOUT_SECONDS` (default 3600) per script; `MAX_DEPLOYMENTS` also caps concurrent backup
+  operations. Server-wide fallbacks: `MOOI_BACKUP_*` in `mic-sessions/.env`.
+
+### Recipes
+
+Reusable implementation recipes applied from a session chat. No configuration; needs the GitHub link.
+
+- **Marketplace**: a GitHub repository readable by the linked account (public or private) with a `recipes/` folder of
+  `snake_case.md` files, each starting with a YAML front matter holding `name` and `description`. Example:
+  `https://github.com/Mydherin/agent-recipes`.
+- **Link**: **Account → Recipes → Add marketplace** (several allowed); browse or remove from the same list.
+- **Apply**: in a session, the composer's recipe button (shown only with a linked marketplace) → pick marketplace and
+  recipe → optional instructions → **Apply recipe** sends the recipe as the next prompt. Re-applying reviews and completes it.
+- **Reads**: recipes are read live from GitHub with the player's grant; files are cached by git blob hash. Limits: 200
+  recipes per marketplace, 64 KB per file.
 
 Set these values in `mic-sessions/.env`:
 

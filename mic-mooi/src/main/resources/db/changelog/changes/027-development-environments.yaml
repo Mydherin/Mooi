@@ -1,0 +1,26 @@
+databaseChangeLog:
+  - changeSet:
+      id: 027-development-environments
+      author: mooi
+      changes:
+        - createTable:
+            tableName: development_environments
+            columns:
+              - column:
+                  name: project_id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: environment
+                  type: text
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            constraintName: fk_development_environments_project
+            baseTableName: development_environments
+            baseColumnNames: project_id
+            referencedTableName: projects
+            referencedColumnNames: id
+            onDelete: CASCADE

@@ -82,7 +82,8 @@ public class ProjectFeature {
     @Auth.Authenticated
     @ResponseStatus(HttpStatus.CREATED)
     public ProjectPayload createProject(@Valid @RequestBody CreateProjectRequest request, Auth.Principal principal) {
-        return projectService.create(principal.player().id(), request.name(), request.isPrivate());
+        return projectService.create(principal.player().id(), request.name(), request.isPrivate(),
+                request.webApplication());
     }
 
     /** Only the player-owned setting is editable; GitHub metadata is never taken from a request body. */
@@ -162,9 +163,9 @@ public class ProjectFeature {
         }
 
         @Transactional
-        public ProjectPayload create(UUID playerId, String name, boolean privateRepository) {
+        public ProjectPayload create(UUID playerId, String name, boolean privateRepository, boolean webApplication) {
             Github.Repository repository = oauthClient.createRepository(name, privateRepository, accessToken(playerId));
-            return save(playerId, repository, false);
+            return save(playerId, repository, webApplication);
         }
 
         private ProjectPayload save(UUID playerId, Github.Repository repository, boolean webApplication) {
@@ -381,7 +382,9 @@ public class ProjectFeature {
             @NotBlank
             @Pattern(regexp = "^[A-Za-z0-9._-]{1,100}$", message = "must be a valid GitHub repository name")
             String name,
-            @NotNull Boolean isPrivate) {
+            @NotNull Boolean isPrivate,
+            /** Required like on import: whether deploy and preview apply is the player's answer. */
+            @NotNull Boolean webApplication) {
     }
 
     public record UpdateProjectRequest(@NotNull Boolean webApplication) {

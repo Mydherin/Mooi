@@ -28,7 +28,7 @@ export const useProjectSessions = (projectId: string | undefined): UseProjectSes
    */
   const allSessions = useSessionsStore((state) => state.sessions);
   const sessions = useMemo(
-    () => (projectId ? allSessions.filter((session) => session.projectId === projectId && session.kind !== 'production') : NO_SESSIONS),
+    () => (projectId ? allSessions.filter((session) => session.projectId === projectId && session.kind === 'session') : NO_SESSIONS),
     [allSessions, projectId],
   );
   const [busy, setBusy] = useState(false);

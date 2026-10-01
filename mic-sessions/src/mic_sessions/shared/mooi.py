@@ -186,7 +186,7 @@ async def delete_production_recipe(caller: Caller, project_id: UUID) -> None:
 
 
 async def fetch_production_environment(caller: Caller, project_id: UUID) -> dict[str, str]:
-    """Stored environment values; only the deploy and status runners may read them."""
+    """Stored environment values: for the deploy and status runners and the production agent."""
     payload = await _get(get_http_client(),
                          f"{get_settings().mooi_api_base_url}/me/projects/{project_id}/production/recipe/environment",
                          _service_headers(caller), "Project not found")
@@ -226,6 +226,101 @@ async def finish_production_deployment(caller: Caller, project_id: UUID, operati
     except httpx.HTTPError:
         raise ApiException.bad_gateway() from None
     _raise_for_status(response, "Deployment not found")
+
+
+async def _send(method: str, path: str, caller: Caller, not_found_message: str, payload: dict | None = None) -> dict | None:
+    """A service call that changes state in `mic-mooi`; answers its JSON body, or None when it has none."""
+    try:
+        response = await get_http_client().request(method, f"{get_settings().mooi_api_base_url}{path}",
+                                                    headers=_service_headers(caller), json=payload)
+    except httpx.HTTPError:
+        raise ApiException.bad_gateway() from None
+    _raise_for_status(response, not_found_message)
+    return response.json() if response.content else None
+
+
+# --- development: the environment every session of a project shares ---------------------------
+
+
+async def fetch_development_environment(caller: Caller, project_id: UUID) -> dict[str, str]:
+    payload = await _get(get_http_client(),
+                         f"{get_settings().mooi_api_base_url}/me/projects/{project_id}/development/environment",
+                         _service_headers(caller), "Project not found")
+    return {str(key): str(value) for key, value in (payload.get("values") or {}).items()}
+
+
+async def write_development_environment(caller: Caller, project_id: UUID, values: dict[str, str | None]) -> list[str]:
+    """Merges the values (null removes one) and answers the names now stored."""
+    payload = await _send("PUT", f"/me/projects/{project_id}/development/environment", caller, "Project not found",
+                          {"values": values})
+    return [str(name) for name in (payload or {}).get("environment") or []]
+
+
+# --- backups: configuration and durable records ------------------------------------------------
+
+
+async def fetch_backup_recipe(caller: Caller, project_id: UUID) -> dict:
+    return await _get(get_http_client(), f"{get_settings().mooi_api_base_url}/me/projects/{project_id}/backups/recipe",
+                      _service_headers(caller), "Project not found")
+
+
+async def write_backup_recipe(caller: Caller, project_id: UUID, recipe: dict) -> dict:
+    return await _send("PUT", f"/me/projects/{project_id}/backups/recipe/draft", caller, "Project not found", recipe)
+
+
+async def publish_backup_recipe(caller: Caller, project_id: UUID) -> dict:
+    return await _send("POST", f"/me/projects/{project_id}/backups/recipe/publish", caller, "Project not found")
+
+
+async def delete_backup_recipe(caller: Caller, project_id: UUID) -> None:
+    await _send("DELETE", f"/me/projects/{project_id}/backups/recipe", caller, "Project not found")
+
+
+async def fetch_backup_environment(caller: Caller, project_id: UUID) -> dict[str, str]:
+    """Stored environment values: for the backup runner and the backup agent."""
+    payload = await _get(get_http_client(),
+                         f"{get_settings().mooi_api_base_url}/me/projects/{project_id}/backups/recipe/environment",
+                         _service_headers(caller), "Project not found")
+    return {str(key): str(value) for key, value in (payload.get("values") or {}).items()}
+
+
+async def write_backup_environment(caller: Caller, project_id: UUID, values: dict[str, str | None]) -> dict:
+    return await _send("PUT", f"/me/projects/{project_id}/backups/recipe/environment", caller, "Project not found",
+                       {"values": values})
+
+
+async def fetch_backups(caller: Caller, project_id: UUID, page: int = 0) -> dict:
+    return await _get(get_http_client(), f"{get_settings().mooi_api_base_url}/me/projects/{project_id}/backups?page={page}",
+                      _service_headers(caller), "Project not found")
+
+
+async def fetch_backup_detail(caller: Caller, project_id: UUID, backup_id: UUID) -> dict:
+    return await _get(get_http_client(), f"{get_settings().mooi_api_base_url}/me/projects/{project_id}/backups/{backup_id}",
+                      _service_headers(caller), "Backup not found")
+
+
+async def start_backup(caller: Caller, project_id: UUID, backup_id: UUID, operation_id: UUID, session_id: UUID | None,
+                       release_tag: str, started_at: datetime, script: str) -> None:
+    await _send("POST", f"/me/projects/{project_id}/backups", caller, "Project not found", {
+        "backupId": str(backup_id), "operationId": str(operation_id),
+        "sessionId": str(session_id) if session_id else None, "releaseTag": release_tag,
+        "startedAt": started_at.isoformat().replace("+00:00", "Z"), "script": script})
+
+
+async def start_backup_operation(caller: Caller, project_id: UUID, backup_id: UUID, operation_id: UUID,
+                                 action: str, target: str | None, script: str) -> None:
+    await _send("POST", f"/me/projects/{project_id}/backups/{backup_id}/operations", caller, "Backup not found", {
+        "operationId": str(operation_id), "action": action, "target": target, "script": script})
+
+
+async def finish_backup_operation(caller: Caller, project_id: UUID, backup_id: UUID, operation_id: UUID,
+                                  state: str, message: str, logs: list[str]) -> None:
+    await _send("PUT", f"/me/projects/{project_id}/backups/{backup_id}/operations/{operation_id}", caller,
+                "Backup not found", {"state": state, "message": message, "logs": logs})
+
+
+async def delete_backup(caller: Caller, project_id: UUID, backup_id: UUID) -> None:
+    await _send("DELETE", f"/me/projects/{project_id}/backups/{backup_id}", caller, "Backup not found")
 
 
 async def fetch_github_identity(caller: Caller) -> GitIdentity:

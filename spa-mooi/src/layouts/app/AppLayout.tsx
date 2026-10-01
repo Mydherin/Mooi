@@ -2,6 +2,7 @@ import { Outlet } from 'react-router-dom';
 import { useAgentConnectionsSync } from '@/features/agents/hooks/useAgentConnectionsSync';
 import { useGithubConnectionSync } from '@/features/github/hooks/useGithubConnectionSync';
 import { useProjectsSync } from '@/features/projects/hooks/useProjectsSync';
+import { useRecipeMarketplacesSync } from '@/features/recipes/hooks/useRecipeMarketplacesSync';
 import { AppMobileDrawer } from '@/layouts/app/AppMobileDrawer';
 import { AppSidebar } from '@/layouts/app/AppSidebar';
 import { AppTopBar } from '@/layouts/app/AppTopBar';
@@ -10,6 +11,7 @@ export const AppLayout = () => {
   useGithubConnectionSync();
   useProjectsSync();
   useAgentConnectionsSync();
+  useRecipeMarketplacesSync();
 
   return (
     <div className="flex h-dvh overflow-hidden bg-canvas text-ink">

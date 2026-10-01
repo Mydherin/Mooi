@@ -8,4 +8,5 @@
 - [ ] Support General chat with AG-UI
 - [ ] Support STT in the chat
 - [ ] Embed in capacitor
-- [ ] Support dynamic backups system
+- [X] Support dynamic backups system
+- [ ] Adjust model adjustment, only makes sense the default, since in deploy and all those stuff must be the chat model selected by the user

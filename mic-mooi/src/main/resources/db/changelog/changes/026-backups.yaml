@@ -1,0 +1,135 @@
+databaseChangeLog:
+  - changeSet:
+      id: 026-backups
+      author: mooi
+      changes:
+        - createTable:
+            tableName: backups
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: player_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: project_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: session_id
+                  type: uuid
+              - column:
+                  name: release_tag
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: state
+                  type: varchar(16)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: started_at
+                  type: timestamp with time zone
+                  constraints:
+                    nullable: false
+              - column:
+                  name: finished_at
+                  type: timestamp with time zone
+              - column:
+                  name: verified_at
+                  type: timestamp with time zone
+              - column:
+                  name: restored_at
+                  type: timestamp with time zone
+        - addForeignKeyConstraint:
+            constraintName: fk_backups_project
+            baseTableName: backups
+            baseColumnNames: project_id
+            referencedTableName: projects
+            referencedColumnNames: id
+            onDelete: CASCADE
+        - createIndex:
+            indexName: idx_backups_project_started
+            tableName: backups
+            columns:
+              - column:
+                  name: project_id
+              - column:
+                  name: started_at
+        - createIndex:
+            indexName: idx_backups_player_started
+            tableName: backups
+            columns:
+              - column:
+                  name: player_id
+              - column:
+                  name: started_at
+        - createTable:
+            tableName: backup_operations
+            columns:
+              - column:
+                  name: operation_id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: backup_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: action
+                  type: varchar(16)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: target
+                  type: varchar(16)
+              - column:
+                  name: state
+                  type: varchar(16)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: started_at
+                  type: timestamp with time zone
+                  constraints:
+                    nullable: false
+              - column:
+                  name: finished_at
+                  type: timestamp with time zone
+              - column:
+                  name: script
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: result_message
+                  type: text
+              - column:
+                  name: result_logs
+                  type: text
+        - addForeignKeyConstraint:
+            constraintName: fk_backup_operations_backup
+            baseTableName: backup_operations
+            baseColumnNames: backup_id
+            referencedTableName: backups
+            referencedColumnNames: id
+            onDelete: CASCADE
+        - createIndex:
+            indexName: idx_backup_operations_backup_started
+            tableName: backup_operations
+            columns:
+              - column:
+                  name: backup_id
+              - column:
+                  name: started_at

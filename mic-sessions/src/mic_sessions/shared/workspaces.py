@@ -206,20 +206,6 @@ class Workspaces:
             await self._remove_directory(directory)
             raise
 
-    async def create_production_workspace(self, session_id: UUID) -> Path:
-        """Give the agent an isolated working directory without cloning or creating a branch."""
-        directory = self._session_directory(session_id)
-        directory.parent.mkdir(parents=True, exist_ok=True)
-        directory.mkdir()
-        try:
-            (directory / ".mooi-session").write_text(str(session_id))
-            workspace = directory / "repository"
-            workspace.mkdir()
-            return workspace
-        except BaseException:
-            await self._remove_directory(directory)
-            raise
-
     def _release_directory(self, operation_id: UUID) -> Path:
         production = self.root / "production"
         if production.is_symlink():

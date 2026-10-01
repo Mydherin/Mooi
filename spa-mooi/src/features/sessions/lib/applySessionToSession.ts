@@ -1,5 +1,6 @@
 import type { SessionUsage } from '@/features/sessions/types/SessionUsage';
 import { mergeDeployment } from './mergeDeployment';
+import type { DeploymentSetup } from '@/features/sessions/types/DeploymentSetup';
 import type { Session } from '@/features/sessions/types/Session';
 import type { SessionEvent } from '@/features/sessions/types/SessionEvent';
 import type { SessionStatus } from '@/features/sessions/types/SessionStatus';
@@ -47,9 +48,14 @@ export const applySessionToSession = (session: Session, event: SessionEvent): Se
   } else if (type === 'permission.resolved' || type === 'question.resolved') {
     patch.status = 'working';
     patch.pending = null;
+  } else if (type === 'deployment.setup') {
+    patch.deploymentSetup = (data.state as DeploymentSetup | null | undefined) ?? null;
+  } else if (type === 'deployment.configured') {
+    patch.deploymentConfigured = Boolean(data.configured);
   } else if (type === 'session.cleared') {
     patch.pending = null;
     patch.usage = { ...session.usage, context: null };
+    patch.deploymentSetup = null;
   } else if (type === 'turn.result') {
     patch.status = 'ready';
     patch.pending = null;

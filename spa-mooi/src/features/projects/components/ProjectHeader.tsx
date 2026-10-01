@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronRight, ExternalLink, Globe, Pencil, Trash2 } from 'lucide-react';
+import { ChevronRight, ExternalLink, Globe, KeyRound, Pencil, Trash2 } from 'lucide-react';
 import { ROUTES } from '@/app/routes';
+import { DevelopmentEnvironmentDialog } from '@/features/development/components/DevelopmentEnvironmentDialog';
 import { EditProjectDialog } from '@/features/projects/components/EditProjectDialog';
 import type { Project } from '@/features/projects/types/Project';
 import { Badge } from '@/shared/components/Badge';
@@ -26,6 +27,7 @@ interface ProjectHeaderProps {
  */
 export const ProjectHeader = ({ project, busy, onRemove }: ProjectHeaderProps) => {
   const [editing, setEditing] = useState(false);
+  const [environmentOpen, setEnvironmentOpen] = useState(false);
 
   return (
     <div className="flex flex-col gap-4">
@@ -57,6 +59,16 @@ export const ProjectHeader = ({ project, busy, onRemove }: ProjectHeaderProps) =
                 <GithubMark className="size-4" />
               </a>
             ) : null}
+
+            <button
+              type="button"
+              onClick={() => setEnvironmentOpen(true)}
+              aria-label="Development environment variables"
+              title="Development environment variables"
+              className={iconAction}
+            >
+              <KeyRound className="size-4" />
+            </button>
 
             <button
               type="button"
@@ -144,6 +156,7 @@ export const ProjectHeader = ({ project, busy, onRemove }: ProjectHeaderProps) =
       </Card>
 
       {editing ? <EditProjectDialog project={project} onClose={() => setEditing(false)} /> : null}
+      {environmentOpen ? <DevelopmentEnvironmentDialog projectId={project.id} onClose={() => setEnvironmentOpen(false)} /> : null}
     </div>
   );
 };

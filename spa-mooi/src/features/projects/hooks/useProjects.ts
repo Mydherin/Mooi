@@ -17,7 +17,7 @@ interface UseProjects {
   busy: boolean;
   actionError: string | null;
   add: (fullName: string, settings: ProjectSettings) => Promise<Project | null>;
-  create: (name: string, isPrivate: boolean) => Promise<Project | null>;
+  create: (name: string, isPrivate: boolean, settings: ProjectSettings) => Promise<Project | null>;
   remove: (projectId: string) => Promise<boolean>;
   reload: () => void;
   clearActionError: () => void;
@@ -56,11 +56,11 @@ export const useProjects = (): UseProjects => {
     }
   }, []);
 
-  const create = useCallback(async (name: string, isPrivate: boolean): Promise<Project | null> => {
+  const create = useCallback(async (name: string, isPrivate: boolean, settings: ProjectSettings): Promise<Project | null> => {
     setBusy(true);
     setActionError(null);
     try {
-      const project = await createProject(name, isPrivate);
+      const project = await createProject(name, isPrivate, settings);
       useProjectsStore.getState().upsertProject(project);
       return project;
     } catch (failure) {
