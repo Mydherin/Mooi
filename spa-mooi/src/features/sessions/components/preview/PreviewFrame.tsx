@@ -1,6 +1,6 @@
 import { previewPermissions } from '@/features/sessions/lib/previewPermissions';
 
-/** The app runs on its own proxied origin: isolated from Mooi, with delegated device permissions. */
+/** The app runs under its proxied capability path, with delegated device permissions. */
 export const PreviewFrame = ({ url }: { url: string }) => (
   <iframe
     src={url}

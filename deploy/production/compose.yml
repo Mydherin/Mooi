@@ -1,9 +1,11 @@
 # Mooi production stack behind the host's Traefik (external `proxy` network, Cloudflare DNS-01
-# certificates, `intranet-firewall` allow list). Driven by deploy.sh; values come from the env file
-# documented in .env.example.
+# certificates, `intranet-firewall` allow list). Driven by tools/deploy-production.sh; values come from
+# the env file documented in .env.example.
 #
-#   https://${DOMAIN}                  -> spa-mooi nginx: SPA + /api/mooi + /api/sessions + /api/stt
-#   https://<id>.preview.${DOMAIN}     -> mic-sessions embedded preview proxy (wildcard certificate)
+#   https://${DOMAIN} -> spa-mooi nginx: SPA + /api/mooi + /api/sessions + /api/stt + /preview
+#
+# Only the gateway is routed by Traefik; previews hang off its origin (/preview/<id>/), so they need
+# no DNS record or certificate of their own.
 #
 # Session deployments are sibling containers on the host engine (mounted socket); they join only the
 # external `mooi-previews` network and are never published.
@@ -108,7 +110,6 @@ services:
       MAX_SESSIONS_PER_PLAYER: ${MAX_SESSIONS_PER_PLAYER:-4}
       SESSION_IDLE_TIMEOUT_MINUTES: ${SESSION_IDLE_TIMEOUT_MINUTES:-180}
       MAX_DEPLOYMENTS: ${MAX_DEPLOYMENTS:-4}
-      PREVIEW_BASE_URL: https://preview.${DOMAIN:?}
       PREVIEW_UPSTREAM: network
       PREVIEW_NETWORK: mooi-previews
       AGENT_CLAUDE_MODEL: ${AGENT_CLAUDE_MODEL:-sonnet}
@@ -128,20 +129,7 @@ services:
         condition: service_healthy
     networks:
       - internal
-      - proxy
       - previews
-    labels:
-      - traefik.enable=true
-      - traefik.docker.network=proxy
-      - traefik.http.routers.mooi-previews.rule=HostRegexp(`^[a-z0-9]+\.preview\.${DOMAIN:?}$$`)
-      - traefik.http.routers.mooi-previews.entrypoints=websecure
-      - traefik.http.routers.mooi-previews.tls=true
-      - traefik.http.routers.mooi-previews.tls.certresolver=cloudflare
-      - traefik.http.routers.mooi-previews.tls.domains[0].main=preview.${DOMAIN:?}
-      - traefik.http.routers.mooi-previews.tls.domains[0].sans=*.preview.${DOMAIN:?}
-      - traefik.http.routers.mooi-previews.middlewares=intranet-firewall@docker
-      - traefik.http.routers.mooi-previews.service=mooi-previews
-      - traefik.http.services.mooi-previews.loadbalancer.server.port=8000
     logging: *logging
 
   spa-mooi:

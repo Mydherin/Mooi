@@ -14,7 +14,7 @@ import type { DeploymentSnapshot } from '@/features/sessions/types/DeploymentSna
 export const PreviewPanel = ({ sessionId, deployment, visible }: { sessionId: string; deployment: DeploymentSnapshot; visible: boolean }) => {
   const [device, setDevice] = useState<PreviewDevice>('desktop');
   const [reload, setReload] = useState(0);
-  const url = deployment.state === 'running' ? previewUrl(deployment.previewUrl, window.location.origin) : null;
+  const url = deployment.state === 'running' ? previewUrl(deployment.previewUrl) : null;
   const { panelRef, expanded, fullscreen, toggle } = usePreviewFullscreen(Boolean(url) && visible);
   const activityFailed = usePreviewActivity(sessionId, visible && deployment.state === 'running');
   if (url) {

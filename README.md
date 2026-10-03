@@ -266,7 +266,6 @@ Set these values in `mic-sessions/.env`:
 | --- | --- |
 | `DOCKER_BINARY`, `DOCKER_HOST` | CLI executable and explicit host socket URI, e.g. `unix:///var/run/docker.sock` |
 | `DOCKER_CLI_PLUGIN_DIR` | Optional absolute Compose/buildx plugin directory; Docker Desktop macOS: `/Applications/Docker.app/Contents/Resources/cli-plugins` |
-| `PREVIEW_BASE_URL` | Base of preview origins `<id>.<host>`; empty → `http://preview.localhost:<SESSIONS_PORT>` |
 | `PREVIEW_UPSTREAM` | `loopback` (mic-sessions on the engine host) or `network` (mic-sessions in a container) |
 | `PREVIEW_NETWORK` | Existing Docker network shared with mic-sessions in `network` mode (default `mooi-previews`) |
 | `MAX_DEPLOYMENTS` | Concurrent deployment limit (default 4, no queue) |
@@ -274,20 +273,19 @@ Set these values in `mic-sessions/.env`:
 | `DEPLOYMENT_LOG_LINES` | Compose output lines streamed to the logs console per deploy (default 2000) |
 | `SESSION_ACTIVITY_INTERVAL_SECONDS` | Preview activity coalescing interval; default 60 seconds |
 
-**Preview proxy**: each running deployment gets its own origin `<random-id>.<PREVIEW_BASE_URL host>`,
-served by `mic-sessions` (HTTP streaming, SSE, uploads and WebSockets relayed untouched; Host and
-`X-Forwarded-*` forwarded). The id is a 160-bit capability given only to the session owner, rotated per
-deploy and revoked on stop. The proxy allows framing by Mooi; the iframe delegates microphone, camera,
-clipboard, fullscreen and similar permissions (consent is asked once for Mooi's origin).
+**Preview proxy**: each running deployment is served by `mic-sessions` under the path `/preview/<random-id>/`
+of whatever host serves it (HTTP streaming, SSE, uploads and WebSockets relayed untouched): no DNS record,
+certificate or extra port, so previews work wherever Mooi does, by name or bare IP. The id is a 160-bit
+capability given only to the session owner, rotated per deploy and revoked on stop. The prefix is stripped
+before forwarding (sent as `X-Forwarded-Prefix`; path-absolute redirects and cookie paths kept inside it);
+frontends are built for it from `MOOI_PREVIEW_BASE_PATH`, given to Compose interpolation on every deploy.
+The proxy allows framing by Mooi; the iframe delegates microphone, camera, clipboard, fullscreen and similar
+permissions.
 
-- **Local**: `*.localhost` resolves to loopback in Chrome/Firefox and is a secure context (microphone works
-  over HTTP). Containers bind only the web port to `127.0.0.1` (`PREVIEW_UPSTREAM=loopback`).
-- **VPS behind Traefik**: Mooi in a container with the host socket mounted, `PREVIEW_UPSTREAM=network`,
-  `PREVIEW_BASE_URL=https://preview.<mooi-domain>`. Create the network (`docker network create mooi-previews`)
-  and attach the Mooi container to it; deployments join it with no published ports. Route
-  ``Host(`sessions.<mooi-domain>`) || HostRegexp(`^[a-z0-9]+\.preview\.<mooi-domain>$`)`` to `mic-sessions`
-  with a wildcard certificate for `*.preview.<mooi-domain>` (DNS-01 challenge). Keep previews under
-  Mooi's site so app cookies work inside the iframe.
+- **Local**: `http://localhost:<SESSIONS_PORT>/preview/<id>/`; containers bind only the web port to `127.0.0.1`
+  (`PREVIEW_UPSTREAM=loopback`).
+- **Container**: `PREVIEW_UPSTREAM=network`; deployments join `PREVIEW_NETWORK` with no published ports and
+  Mooi's gateway forwards `/preview/` to `mic-sessions` with the path kept.
 
 If Mooi runs in a container/pod, mount the host Docker socket and provide the CLI/Compose there.
 Apps run as sibling containers on that engine. Build contexts are sent from the session checkout;
@@ -328,8 +326,7 @@ directory), served behind the host's Traefik (external `proxy` network, `cloudfl
 
 | Host | Target |
 | --- | --- |
-| `https://<DOMAIN>` | `spa-mooi` nginx: SPA, `/api/mooi` → `mic-mooi`, `/api/sessions` → `mic-sessions`, `/api/stt` → `mic-speech` |
-| `https://<id>.preview.<DOMAIN>` | `mic-sessions` preview proxy (wildcard certificate via DNS-01) |
+| `https://<DOMAIN>` | `spa-mooi` nginx: SPA, `/api/mooi` → `mic-mooi`, `/api/sessions` → `mic-sessions`, `/api/stt` → `mic-speech`, `/preview` → `mic-sessions` preview proxy |
 
 - `mic-speech` stays loopback-only: it shares the `spa-mooi` network namespace, nginx is its only client.
 - `mic-sessions` mounts the host Docker socket (`DOCKER_GID`), runs with `PREVIEW_UPSTREAM=network` on the
@@ -340,7 +337,7 @@ directory), served behind the host's Traefik (external `proxy` network, `cloudfl
 
 ### Setup (once)
 
-1. DNS: `<DOMAIN>` and `*.preview.<DOMAIN>` → Traefik host.
+1. DNS: `<DOMAIN>` → Traefik host.
 2. Google OAuth client: add `https://<DOMAIN>` as authorized JavaScript origin.
 3. GitHub App: add `https://<DOMAIN>/account/github/callback` as callback URL.
 4. On the server: `<MOOI_DEPLOY_DIR>/.env` from `deploy/production/.env.example` (fresh secrets, `chmod 600`).
@@ -348,11 +345,14 @@ directory), served behind the host's Traefik (external `proxy` network, `cloudfl
 ### Deploy
 
 ```bash
-./deploy/production/deploy.sh
+tools/deploy-production.sh [git-ref]
 ```
 
-Ships the working tree (tracked + untracked, minus ignored) to `<MOOI_DEPLOY_DIR>/releases/<sha>`, then
-`docker compose up -d --build --wait`, points `current` at it and keeps the last `MOOI_KEEP_RELEASES`.
+Ships exactly one commit (default `HEAD`; uncommitted changes never) via `git archive` to
+`<MOOI_DEPLOY_DIR>/releases/<sha>` (skipped when already there), runs `docker compose up -d --build --wait`
+under a server lock, smoke-tests `/`, `/api/mooi/actuator/health` and `/api/sessions/health` through Traefik,
+then points `current` at it and keeps the last `MOOI_KEEP_RELEASES` with their images. On failure it
+rolls back to the previous release.
 
 | Variable | Default |
 | --- | --- |

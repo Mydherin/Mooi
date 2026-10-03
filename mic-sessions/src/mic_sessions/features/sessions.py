@@ -40,7 +40,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Any, Literal
 from uuid import UUID, uuid4
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote
 
 import httpx
 
@@ -51,8 +51,6 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    HttpUrl,
-    TypeAdapter,
     model_validator,
 )
 
@@ -133,7 +131,7 @@ DeploymentErrorCode = Literal[
     "unsupported_project", "docker_unavailable", "invalid_compose",
     "startup_failed", "health_check_failed", "timeout", "cancelled", "cleanup_failed",
 ]
-_PREVIEW_URL = TypeAdapter(HttpUrl)
+_PREVIEW_PATH = re.compile(r"/preview/[a-z2-7]{32}/")
 
 
 class DeploymentContract(BaseModel):
@@ -149,12 +147,9 @@ class DeploymentReason(DeploymentContract):
 
 
 def _validate_preview_url(value: str | None) -> None:
-    if value is None:
-        return
-    url = _PREVIEW_URL.validate_python(value)
-    if url.username is not None or url.password is not None or url.fragment is not None:
-        raise ValueError("Preview URL must not contain credentials or a fragment")
-    # Ownership, configured host and inspected port are verified by orchestration.
+    # A path of whatever host serves Mooi; ownership and inspected port are verified by orchestration.
+    if value is not None and not _PREVIEW_PATH.fullmatch(value):
+        raise ValueError("Preview URL must be the path /preview/<id>/")
 
 
 class DeploymentResult(DeploymentContract):
@@ -849,7 +844,7 @@ def record(session: Session, type_: str, data: dict[str, Any]) -> Event:
         event = session.log.append(type_, snapshot.model_dump(mode="json"))
         session.deployment = snapshot
         if snapshot.state != "running":
-            previews.withdraw(session.id)  # The preview origin dies with the running state.
+            previews.withdraw(session.id)  # The preview path dies with the running state.
         return event
     if type_ == EVENT_DEPLOYMENT_LOG:
         return session.log.append(type_, DeploymentLog.model_validate(data).model_dump(mode="json"))
@@ -3295,16 +3290,17 @@ The working directory is this session's branch `{session.branch}`. This conversa
 - It builds every service with a `build` section and starts all of them.
 - It reads exactly one published TCP port, the one of the service building the web frontend (a Vite, React, Vue, Angular or Next package), or the only one of an API-only product, and then removes every publication: no container is ever reachable from outside.
 - It waits for every container healthcheck, then expects `GET /` on that port to answer 2xx/3xx, with an HTML document when there is a frontend.
-- The browser reaches the app only through Mooi's reverse proxy, at its own origin `{urlsplit(settings.preview_base_url).scheme}://<random-id>.{urlsplit(settings.preview_base_url).netloc}`, embedded in an iframe from `{settings.cors_origin}`. The proxy forwards that public Host header plus `X-Forwarded-Proto/Host/For`, relays WebSockets and lets Mooi frame the app; the iframe may use the microphone, camera and clipboard.
+- The browser reaches the app only through Mooi's reverse proxy, under the path `/preview/<random-id>/` of Mooi's own host (a domain or a bare IP), embedded in an iframe from Mooi. Compose interpolation receives that path, with leading and trailing slash, as `MOOI_PREVIEW_BASE_PATH`; it changes on every deploy.
+- The proxy strips the prefix, so containers keep serving from `/`. It forwards the public Host header plus `X-Forwarded-Proto/Host/For/Prefix`, keeps path-absolute redirects and cookie paths inside the prefix, relays WebSockets and lets Mooi frame the app; the iframe may use the microphone, camera and clipboard. Root-absolute URLs the browser builds itself (`/assets/...`, `fetch('/api/...')`, router paths) are NOT rewritten: they leave the preview.
 
 ## Rules
 1. Read the root AGENTS.md/CLAUDE.md and the instructions that apply to the files you edit.
 2. Give each deployable artifact its own Dockerfile at its root, with a `.dockerignore`, dependency cache layers, slim or alpine multistage images, and frontends built as static files without dev servers or HMR.
 3. Keep ONE root Compose file that builds those Dockerfiles through `build.context` and `build.dockerfile`. Databases and caches run as services with named volumes and credentials you choose yourself; give every variable an explicit literal value or, for what the user provides (third-party API keys, tokens, service URLs...), a project development variable such as `${{MOOI_DEVELOPMENT_OPENAI_API_KEY}}`.
-4. Prefer one public frontend port: a static server that proxies the API routes to the backend by its Compose service name, and a frontend that calls the API through relative same-origin routes. Accept any Host header (no host allowlists) and never hard-code localhost or absolute origins.
+4. Prefer one public frontend port: a static server that proxies the API routes to the backend by its Compose service name, and a frontend that calls the API through same-origin routes. Build the frontend for its public base path: pass `${{MOOI_PREVIEW_BASE_PATH:-/}}` as a build argument (the default keeps production at the root) and use it as the bundler base (Vite `base`, Next `basePath`, Angular `baseHref`...), the router basename and the prefix of every API, asset and WebSocket URL. Accept any Host header (no host allowlists) and never hard-code localhost or absolute origins.
 5. Every service listens on 0.0.0.0 and has a healthcheck on an existing endpoint or a TCP/process check against 127.0.0.1, never localhost. Never add endpoints, dependencies or authentication exceptions for it.
 6. Do not use `container_name`, `env_file`, `profiles`, bind mounts, external networks or volumes, `privileged`, host networking or the Docker socket.
-7. Only edit deployment files: never application source, dependency manifests, authentication rules or runtime application configuration. For third-party credentials, reuse or ask the user for development variables and save them as described in your instructions; use harmless placeholders only when the application still starts without them, and never fabricate real ones.
+7. Only edit deployment files and the minimal base-path wiring of rule 4: never other application source, dependency manifests, authentication rules or runtime application configuration. For third-party credentials, reuse or ask the user for development variables and save them as described in your instructions; use harmless placeholders only when the application still starts without them, and never fabricate real ones.
 8. Never run `docker` or `docker compose` yourself and do not commit or push: the test endpoint runs the deployment.
 
 ## Mooi deployment API
@@ -3538,6 +3534,9 @@ async def _run_deployment_start(session: Session, operation_id: UUID) -> None:
             variables = (await _development_environment(session.agent_caller, session.project_id)
                          if session.agent_caller is not None else development_environment())
             log.protect(variables.values())
+            # Known before the build: the frontend is built for the public path it will be served at.
+            label = previews.reserve()
+            variables = {**variables, "MOOI_PREVIEW_BASE_PATH": previews.base_path(label)}
             await docker.preflight(cwd=session.workspace, deadline=deadline)
             if manifests.directory(session.id).exists():
                 _owned_deployment(session, manifests)
@@ -3564,9 +3563,9 @@ async def _run_deployment_start(session: Session, operation_id: UUID) -> None:
             )
             if session.closing or session.deployment.operationId != operation_id:
                 raise asyncio.CancelledError
-            # No await between publishing the origin and the running snapshot that carries it.
+            # No await between publishing the path and the running snapshot that carries it.
             _deployment_finish(session, operation_id, "start",
-                               url=previews.publish(session.id, readiness.endpoint.url))
+                               url=previews.publish(session.id, label, readiness.endpoint.url))
             session.deployment_monitor = _spawn(session, _monitor_deployment(session, operation_id))
             return
     except asyncio.CancelledError:

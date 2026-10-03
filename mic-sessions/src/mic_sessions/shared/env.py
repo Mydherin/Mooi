@@ -7,13 +7,12 @@ from its `Env` aspect. No external dependency beyond `pydantic-settings` is requ
 
 from __future__ import annotations
 
-import re
 import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 from dotenv import dotenv_values
 
@@ -88,12 +87,10 @@ class Settings(BaseSettings):
     deployment_log_lines: int = Field(default=2000, gt=0)
     max_deployments: int = Field(default=4, gt=0)
     backup_timeout_seconds: int = Field(default=3600, gt=0)
-    # Previews are reachable only through Mooi's embedded reverse proxy: each running deployment gets
-    # its own unguessable origin `<id>.<host of PREVIEW_BASE_URL>`. The upstream says how mic-sessions
-    # reaches the web container: a loopback-only publication on the engine host, or a private Docker
-    # network shared with mic-sessions when it runs as a container next to the deployments.
-    # Empty: `http://preview.localhost:<SESSIONS_PORT>` for local development.
-    preview_base_url: str = ""
+    # Previews are reachable only through Mooi's embedded reverse proxy, under `/preview/<id>/` of the
+    # host serving this service. The upstream says how mic-sessions reaches the web container: a
+    # loopback-only publication on the engine host, or a private Docker network shared with
+    # mic-sessions when it runs as a container next to the deployments.
     preview_upstream: Literal["loopback", "network"] = "loopback"
     preview_network: str = Field(default="mooi-previews", pattern=r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$")
 
@@ -133,26 +130,6 @@ class Settings(BaseSettings):
         ):
             raise ValueError("Docker host must be an absolute unix socket URI")
         return value
-
-    @field_validator("preview_base_url")
-    @classmethod
-    def _validate_preview_base_url(cls, value: str) -> str:
-        # Only scheme, DNS host and optional port: every preview origin is `<id>.<host>`.
-        if value == "":
-            return value
-        match = re.fullmatch(r"(https?)://([A-Za-z0-9.-]+)(?::([0-9]{1,5}))?/?", value)
-        host = match.group(2).lower() if match else ""
-        if not match or not all(
-            re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label) for label in host.split(".")
-        ) or len(host) > 200 or (match.group(3) and not 1 <= int(match.group(3)) <= 65535):
-            raise ValueError("Preview base URL must be http(s)://<dns-host>[:port] with no path")
-        return f"{match.group(1)}://{host}" + (f":{int(match.group(3))}" if match.group(3) else "")
-
-    @model_validator(mode="after")
-    def _default_preview_base_url(self) -> Settings:
-        if not self.preview_base_url:
-            self.preview_base_url = f"http://preview.localhost:{self.sessions_port}"
-        return self
 
     @field_validator("agent_claude_disallowed_tools", mode="before")
     @classmethod

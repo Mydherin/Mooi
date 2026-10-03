@@ -3,6 +3,7 @@ import { ArrowRight, ExternalLink, GitBranch, GitCommitHorizontal } from 'lucide
 import { sessionPath } from '@/app/paths';
 import { SessionStatusBadge } from '@/features/sessions/components/SessionStatusBadge';
 import type { ProjectWorkspace } from '@/features/sessions/types/ProjectWorkspace';
+import { previewUrl } from '@/features/sessions/lib/previewUrl';
 import { CopyButton } from '@/shared/components/CopyButton';
 import { Tooltip } from '@/shared/components/Tooltip';
 import { formatBytes } from '@/shared/utils/formatBytes';
@@ -20,6 +21,7 @@ interface WorkspaceCardProps {
 export const WorkspaceCard = ({ projectId, workspace, previewsEnabled }: WorkspaceCardProps) => {
   const advanced = workspace.headCommit !== null && workspace.headCommit !== workspace.baseCommit;
   const drifted = workspace.headBranch !== null && workspace.headBranch !== workspace.branch;
+  const preview = previewUrl(workspace.previewUrl);
 
   return (
     <li className="flex min-w-0 flex-col gap-4 rounded-[14px] border border-line bg-surface p-4 sm:p-5">
@@ -91,10 +93,10 @@ export const WorkspaceCard = ({ projectId, workspace, previewsEnabled }: Workspa
         <div className="min-w-0">
           <dt className="text-[10px] font-extrabold tracking-[0.09em] text-ink-subtle uppercase">Size</dt>
           <dd className="mt-0.5 font-extrabold text-ink tabular-nums">{formatBytes(workspace.sizeBytes)}</dd>
-          {workspace.previewUrl ? (
+          {preview ? (
             <dd className="mt-0.5">
               <a
-                href={workspace.previewUrl}
+                href={preview}
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex items-center gap-1 text-[10.5px] font-bold text-success hover:underline"

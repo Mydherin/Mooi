@@ -4,7 +4,7 @@ The sessions feature owns its own router; `session_count` is registered here for
 `_lifespan` starts the sessions feature's idle reaper on boot and closes every live session
 (workspace + runtime) on graceful shutdown — the feature exports `start_reaper()`/`close_all()`;
 this module only calls them. The preview gateway wraps the whole API: requests for a preview
-origin go to the embedded reverse proxy before any API middleware runs.
+path go to the embedded reverse proxy before any API middleware runs.
 """
 
 from __future__ import annotations
