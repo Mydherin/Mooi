@@ -3268,6 +3268,32 @@ async def _deployment_plan(docker: Docker, checkout: Path, *, deadline: float,
     return DeploymentPlan(compose.file, ports[0], "html" if web_services else "http")
 
 
+_ROOT_URL = re.compile(r"""(?i)\b(?:src|href|action|poster)\s*=\s*["']?(/(?!/)[^"'\s>]*)""")
+_PAGE_LIMIT_BYTES = 262144
+
+
+async def _verify_base_path(endpoint: str, base: str) -> None:
+    """The proxy never rewrites root-absolute URLs: a page still built for `/` would load blank in the
+    preview. Fail with the offending URLs so the next Deploy hands them to the setup agent."""
+    page = bytearray()
+    try:
+        async with httpx.AsyncClient(trust_env=False, follow_redirects=False) as client:
+            async with client.stream("GET", f"{endpoint}/",
+                                     timeout=get_settings().deployment_probe_timeout_seconds) as response:
+                async for chunk in response.aiter_bytes():
+                    page.extend(chunk[:_PAGE_LIMIT_BYTES - len(page)])
+                    if len(page) >= _PAGE_LIMIT_BYTES:
+                        break
+    except httpx.HTTPError:
+        return  # Readiness has just verified the page; a transient miss is not a base path verdict.
+    outside = sorted({url for url in _ROOT_URL.findall(page.decode("utf-8", "replace"))
+                      if not url.startswith(base)})
+    if outside:
+        raise DockerError("health_check_failed", f"The frontend is not built for MOOI_PREVIEW_BASE_PATH ({base})",
+                          detail="Root-absolute URLs in GET / that leave the preview path:\n"
+                                 + "\n".join(outside[:10]))
+
+
 def _deployment_prompt(session: Session, instructions: str | None = None) -> str:
     """The visible brief of a deployment setup conversation, with the user's requested change or the
     last failure when there is one."""
@@ -3290,6 +3316,7 @@ The working directory is this session's branch `{session.branch}`. This conversa
 - It builds every service with a `build` section and starts all of them.
 - It reads exactly one published TCP port, the one of the service building the web frontend (a Vite, React, Vue, Angular or Next package), or the only one of an API-only product, and then removes every publication: no container is ever reachable from outside.
 - It waits for every container healthcheck, then expects `GET /` on that port to answer 2xx/3xx, with an HTML document when there is a frontend.
+- With a frontend, that HTML must reference no root-absolute URL (`src`, `href`, `action`) outside `MOOI_PREVIEW_BASE_PATH`; otherwise the deployment fails listing them.
 - The browser reaches the app only through Mooi's reverse proxy, under the path `/preview/<random-id>/` of Mooi's own host (a domain or a bare IP), embedded in an iframe from Mooi. Compose interpolation receives that path, with leading and trailing slash, as `MOOI_PREVIEW_BASE_PATH`; it changes on every deploy.
 - The proxy strips the prefix, so containers keep serving from `/`. It forwards the public Host header plus `X-Forwarded-Proto/Host/For/Prefix`, keeps path-absolute redirects and cookie paths inside the prefix, relays WebSockets and lets Mooi frame the app; the iframe may use the microphone, camera and clipboard. Root-absolute URLs the browser builds itself (`/assets/...`, `fetch('/api/...')`, router paths) are NOT rewritten: they leave the preview.
 
@@ -3561,6 +3588,8 @@ async def _run_deployment_start(session: Session, operation_id: UUID) -> None:
             readiness = await docker.readiness(
                 manifests=manifests, session_id=session.id, expectation=plan.expectation, deadline=deadline,
             )
+            if plan.expectation == "html":
+                await _verify_base_path(readiness.endpoint.url, previews.base_path(label))
             if session.closing or session.deployment.operationId != operation_id:
                 raise asyncio.CancelledError
             # No await between publishing the path and the running snapshot that carries it.

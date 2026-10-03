@@ -68,4 +68,4 @@ HEALTHCHECK --interval=15s --timeout=5s --start-period=120s --retries=5 \
 
 # One process and one worker: sessions, runtimes and deployments are coordinated in memory. Open SSE
 # streams are cut after 5 s on shutdown so the lifespan cleanup starts right away.
-CMD ["/app/.venv/bin/uvicorn", "mic_sessions.main:app", "--host", "0.0.0.0", "--port", "8000", "--timeout-graceful-shutdown", "5"]
+CMD ["/app/.venv/bin/uvicorn", "mic_sessions.main:app", "--host", "0.0.0.0", "--port", "8000", "--timeout-graceful-shutdown", "5", "--no-server-header", "--no-date-header"]
