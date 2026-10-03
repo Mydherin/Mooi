@@ -93,8 +93,14 @@ def _download_runtime(settings: Settings) -> Path:
         extracted = Path(staging) / "extracted"
         with tarfile.open(archive) as bundle:
             bundle.extractall(extracted, filter="data")
+        # Each archive wraps the runtime in one top-level directory named per platform
+        # (`nemo-speech` on macOS, `nemo-speech-<version>-<asset>` on Linux): normalize it.
+        roots = [entry for entry in extracted.iterdir() if entry.is_dir()]
+        if len(roots) != 1:
+            raise RuntimeError(f"Unexpected NeMo-Speech.cpp archive layout for {asset}")
         shutil.rmtree(target, ignore_errors=True)
-        extracted.rename(target)
+        target.mkdir(parents=True)
+        roots[0].rename(target / "nemo-speech")
     return _provisioned_binary(settings)
 
 

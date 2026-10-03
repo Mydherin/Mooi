@@ -1,0 +1,71 @@
+# Production image of mic-sessions: the agent runtime host.
+#
+# Agents (Claude Code and Codex, both bundled by their pinned official SDKs) run in full access
+# inside this container, so it carries the toolchains a session checkout usually needs: Git, Docker
+# CLI with Compose and Buildx (deployments drive the host engine through its mounted socket), Node,
+# Bun, Python with uv, Java 25 and the usual shell utilities (ssh, rsync, curl, jq, make, ripgrep).
+
+# ── Python dependencies ──────────────────────────────────────
+FROM python:3.13-slim-trixie AS build
+
+COPY --from=ghcr.io/astral-sh/uv:0.8 /uv /usr/local/bin/uv
+
+ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never
+
+WORKDIR /app
+
+COPY pyproject.toml uv.lock .python-version ./
+RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev --no-install-project
+
+COPY src ./src
+RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev --no-editable
+
+# ── Runtime ──────────────────────────────────────────────────
+FROM python:3.13-slim-trixie AS runtime
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates curl wget git openssh-client rsync jq make ripgrep unzip zip xz-utils \
+        procps less file gnupg libstdc++6 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Docker CLI with the Compose and Buildx plugins (static binaries) at the system plugin path.
+COPY --from=docker:29-cli /usr/local/bin/docker /usr/local/bin/docker
+COPY --from=docker:29-cli /usr/local/libexec/docker/cli-plugins /usr/local/libexec/docker/cli-plugins
+
+# Toolchains for the repositories agents work on.
+COPY --from=node:24-trixie-slim /usr/local/bin/node /usr/local/bin/node
+COPY --from=node:24-trixie-slim /usr/local/lib/node_modules /usr/local/lib/node_modules
+COPY --from=oven/bun:1.3-debian /usr/local/bin/bun /usr/local/bin/bun
+COPY --from=ghcr.io/astral-sh/uv:0.8 /uv /uvx /usr/local/bin/
+COPY --from=eclipse-temurin:25-jdk /opt/java/openjdk /opt/java/openjdk
+RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
+    && ln -s bun /usr/local/bin/bunx
+
+# Service user. The Docker socket group is added at run time (DOCKER_GID), never baked in.
+RUN groupadd -g 1001 mooi && useradd -u 1001 -g mooi -m -d /home/mooi -s /bin/bash mooi
+
+WORKDIR /app
+
+COPY --from=build --chown=mooi:mooi /app/.venv /app/.venv
+
+USER mooi
+
+# The service venv stays off PATH so agents see the system toolchains, never Mooi's own packages.
+ENV JAVA_HOME=/opt/java/openjdk \
+    PATH="/opt/java/openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+    PYTHONUNBUFFERED=1 \
+    LANG=C.UTF-8 \
+    SESSIONS_PORT=8000 \
+    WORKSPACE_ROOT=/var/lib/mooi/workspaces \
+    DOCKER_HOST=unix:///var/run/docker.sock
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=15s --timeout=5s --start-period=120s --retries=5 \
+    CMD ["/app/.venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4)"]
+
+# One process and one worker: sessions, runtimes and deployments are coordinated in memory. Open SSE
+# streams are cut after 5 s on shutdown so the lifespan cleanup starts right away.
+CMD ["/app/.venv/bin/uvicorn", "mic_sessions.main:app", "--host", "0.0.0.0", "--port", "8000", "--timeout-graceful-shutdown", "5"]

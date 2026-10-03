@@ -293,7 +293,7 @@ If Mooi runs in a container/pod, mount the host Docker socket and provide the CL
 Apps run as sibling containers on that engine. Build contexts are sent from the session checkout;
 matching checkout paths on the daemon host are unnecessary. Apps must use built images and
 named data volumes, without host bind mounts or access to Mooi's socket/credentials. This setup
-does not sandbox hostile repositories. Mooi containerization is not included.
+does not sandbox hostile repositories. Mooi containerization: see *Production*.
 
 Keep `WORKSPACE_ROOT` on durable, private, writable storage, including `deployments/` and its
 installation identity. Run one `mic-sessions` process/worker; multiworker/multinode coordination
@@ -319,6 +319,52 @@ by `mic-speech` on `127.0.0.1`; no audio or text is stored or logged.
 - **Language** is forced (`SPEECH_LANGUAGE`, default `es-ES`): never detected nor translated.
 - **Metrics**: `GET http://127.0.0.1:59100/metrics` (counts and latencies only, 30-day retention, SQLite `0600`).
 - **Licenses**: model NVIDIA OpenMDW 1.1, runtime Apache-2.0; ship both notices when redistributing.
+
+## Production
+
+Containerized stack in `deploy/production/` (one image per artifact, `Dockerfile` in each artifact
+directory), served behind the host's Traefik (external `proxy` network, `cloudflare` cert resolver,
+`intranet-firewall` allow list).
+
+| Host | Target |
+| --- | --- |
+| `https://<DOMAIN>` | `spa-mooi` nginx: SPA, `/api/mooi` → `mic-mooi`, `/api/sessions` → `mic-sessions`, `/api/stt` → `mic-speech` |
+| `https://<id>.preview.<DOMAIN>` | `mic-sessions` preview proxy (wildcard certificate via DNS-01) |
+
+- `mic-speech` stays loopback-only: it shares the `spa-mooi` network namespace, nginx is its only client.
+- `mic-sessions` mounts the host Docker socket (`DOCKER_GID`), runs with `PREVIEW_UPSTREAM=network` on the
+  external `mooi-previews` network and ships Git, Docker CLI + Compose/Buildx, Node, Bun, Python + uv,
+  Java 25, ssh, rsync, curl, jq, make and ripgrep for the agents. Claude and Codex come bundled in their SDKs.
+- Data under `DATA_DIR`: `postgres/`, `workspaces/`, `speech/` (runtime + model, downloaded on first start),
+  `ssh/` (identity for production scripts, mounted at `/home/mooi/.ssh`).
+
+### Setup (once)
+
+1. DNS: `<DOMAIN>` and `*.preview.<DOMAIN>` → Traefik host.
+2. Google OAuth client: add `https://<DOMAIN>` as authorized JavaScript origin.
+3. GitHub App: add `https://<DOMAIN>/account/github/callback` as callback URL.
+4. On the server: `<MOOI_DEPLOY_DIR>/.env` from `deploy/production/.env.example` (fresh secrets, `chmod 600`).
+
+### Deploy
+
+```bash
+./deploy/production/deploy.sh
+```
+
+Ships the working tree (tracked + untracked, minus ignored) to `<MOOI_DEPLOY_DIR>/releases/<sha>`, then
+`docker compose up -d --build --wait`, points `current` at it and keeps the last `MOOI_KEEP_RELEASES`.
+
+| Variable | Default |
+| --- | --- |
+| `MOOI_DEPLOY_HOST` | `mydherin@10.10.22.21` |
+| `MOOI_DEPLOY_DIR` | `/root/mooi` |
+| `MOOI_KEEP_RELEASES` | `3` |
+
+Operate on the server from `<MOOI_DEPLOY_DIR>`:
+
+```bash
+MOOI_RELEASE="$(basename "$(readlink current)")" docker compose --env-file .env -f current/deploy/production/compose.yml ps
+```
 
 ## Dev entrypoint
 

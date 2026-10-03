@@ -1,0 +1,205 @@
+# Mooi production stack behind the host's Traefik (external `proxy` network, Cloudflare DNS-01
+# certificates, `intranet-firewall` allow list). Driven by deploy.sh; values come from the env file
+# documented in .env.example.
+#
+#   https://${DOMAIN}                  -> spa-mooi nginx: SPA + /api/mooi + /api/sessions + /api/stt
+#   https://<id>.preview.${DOMAIN}     -> mic-sessions embedded preview proxy (wildcard certificate)
+#
+# Session deployments are sibling containers on the host engine (mounted socket); they join only the
+# external `mooi-previews` network and are never published.
+
+name: mooi
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  # One-shot: data directories with the ownership each service runs with (idempotent).
+  init-data:
+    image: busybox:1.37
+    command:
+      - sh
+      - -c
+      - >-
+        mkdir -p /data/postgres /data/workspaces /data/speech /data/ssh &&
+        chown 1001:1001 /data/workspaces /data/speech /data/ssh &&
+        chmod 700 /data/ssh
+    volumes:
+      - ${DATA_DIR:?}:/data
+    network_mode: none
+    restart: "no"
+
+  postgres:
+    image: postgres:18-alpine
+    container_name: mooi-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: mooi
+      POSTGRES_USER: mooi
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - ${DATA_DIR:?}/postgres:/var/lib/postgresql/data
+    depends_on:
+      init-data:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U mooi -d mooi"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - internal
+    logging: *logging
+
+  mic-mooi:
+    build:
+      context: ../../mic-mooi
+    image: mooi/mic-mooi:${MOOI_RELEASE:-latest}
+    container_name: mooi-mic-mooi
+    restart: unless-stopped
+    environment:
+      SERVER_PORT: "8080"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: mooi
+      POSTGRES_USER: mooi
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      POSTGRES_SCHEMA: public
+      CORS_ORIGIN: https://${DOMAIN:?}
+      SECRETS_KEY: ${SECRETS_KEY:?}
+      SERVICE_TOKEN: ${SERVICE_TOKEN:?}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?}
+      JWT_SECRET: ${JWT_SECRET:?}
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:?}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:?}
+      GITHUB_APP_SLUG: ${GITHUB_APP_SLUG:-}
+      GITHUB_REDIRECT_URI: https://${DOMAIN:?}/account/github/callback
+      AGENT_CLAUDE_REDIRECT_URI: https://${DOMAIN:?}/account/agents/claude/callback
+      LOG_LEVEL_APP: ${LOG_LEVEL_APP:-INFO}
+    mem_limit: ${MIC_MOOI_MEMORY:-1g}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - internal
+    logging: *logging
+
+  mic-sessions:
+    build:
+      context: ../../mic-sessions
+    image: mooi/mic-sessions:${MOOI_RELEASE:-latest}
+    container_name: mooi-mic-sessions
+    restart: unless-stopped
+    # tini reaps the agent, Git and Docker CLI children the service spawns.
+    init: true
+    group_add:
+      - ${DOCKER_GID:?}
+    environment:
+      MOOI_API_BASE_URL: http://mic-mooi:8080
+      SERVICE_TOKEN: ${SERVICE_TOKEN:?}
+      JWT_SECRET: ${JWT_SECRET:?}
+      CORS_ORIGIN: https://${DOMAIN:?}
+      MAX_SESSIONS: ${MAX_SESSIONS:-8}
+      MAX_SESSIONS_PER_PLAYER: ${MAX_SESSIONS_PER_PLAYER:-4}
+      SESSION_IDLE_TIMEOUT_MINUTES: ${SESSION_IDLE_TIMEOUT_MINUTES:-180}
+      MAX_DEPLOYMENTS: ${MAX_DEPLOYMENTS:-4}
+      PREVIEW_BASE_URL: https://preview.${DOMAIN:?}
+      PREVIEW_UPSTREAM: network
+      PREVIEW_NETWORK: mooi-previews
+      AGENT_CLAUDE_MODEL: ${AGENT_CLAUDE_MODEL:-sonnet}
+      AGENT_CLAUDE_EFFORT: ${AGENT_CLAUDE_EFFORT:-high}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${DATA_DIR:?}/workspaces:/var/lib/mooi/workspaces
+      # SSH identity used by production deploy/backup scripts.
+      - ${DATA_DIR:?}/ssh:/home/mooi/.ssh
+    # Graceful shutdown stops every running session deployment before exiting.
+    stop_grace_period: 300s
+    depends_on:
+      init-data:
+        condition: service_completed_successfully
+      mic-mooi:
+        condition: service_healthy
+    networks:
+      - internal
+      - proxy
+      - previews
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=proxy
+      - traefik.http.routers.mooi-previews.rule=HostRegexp(`^[a-z0-9]+\.preview\.${DOMAIN:?}$$`)
+      - traefik.http.routers.mooi-previews.entrypoints=websecure
+      - traefik.http.routers.mooi-previews.tls=true
+      - traefik.http.routers.mooi-previews.tls.certresolver=cloudflare
+      - traefik.http.routers.mooi-previews.tls.domains[0].main=preview.${DOMAIN:?}
+      - traefik.http.routers.mooi-previews.tls.domains[0].sans=*.preview.${DOMAIN:?}
+      - traefik.http.routers.mooi-previews.middlewares=intranet-firewall@docker
+      - traefik.http.routers.mooi-previews.service=mooi-previews
+      - traefik.http.services.mooi-previews.loadbalancer.server.port=8000
+    logging: *logging
+
+  spa-mooi:
+    build:
+      context: ../../spa-mooi
+      args:
+        VITE_API_BASE_URL: https://${DOMAIN:?}/api/mooi
+        VITE_SESSIONS_BASE_URL: https://${DOMAIN:?}/api/sessions
+        VITE_SPEECH_BASE_URL: https://${DOMAIN:?}
+        VITE_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?}
+    image: mooi/spa-mooi:${MOOI_RELEASE:-latest}
+    container_name: mooi-spa-mooi
+    restart: unless-stopped
+    networks:
+      - internal
+      - proxy
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=proxy
+      - traefik.http.routers.mooi.rule=Host(`${DOMAIN:?}`)
+      - traefik.http.routers.mooi.entrypoints=websecure
+      - traefik.http.routers.mooi.tls=true
+      - traefik.http.routers.mooi.tls.certresolver=cloudflare
+      - traefik.http.routers.mooi.middlewares=intranet-firewall@docker
+      - traefik.http.routers.mooi.service=mooi
+      - traefik.http.services.mooi.loadbalancer.server.port=80
+    logging: *logging
+
+  # Loopback only, as in development: it shares the gateway's network namespace, so nginx reaches it
+  # on 127.0.0.1 and nothing else can.
+  mic-speech:
+    build:
+      context: ../../mic-speech
+    image: mooi/mic-speech:${MOOI_RELEASE:-latest}
+    container_name: mooi-mic-speech
+    restart: unless-stopped
+    network_mode: service:spa-mooi
+    environment:
+      CORS_ORIGIN: https://${DOMAIN:?}
+      SPEECH_LANGUAGE: ${SPEECH_LANGUAGE:-es-ES}
+      SPEECH_CONTEXTS: ${SPEECH_CONTEXTS:-}
+      SPEECH_MAX_SECONDS: ${SPEECH_MAX_SECONDS:-300}
+      SPEECH_STARTUP_TIMEOUT_SECONDS: ${SPEECH_STARTUP_TIMEOUT_SECONDS:-120}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - ${DATA_DIR:?}/speech:/var/lib/mooi/speech
+    depends_on:
+      init-data:
+        condition: service_completed_successfully
+      spa-mooi:
+        condition: service_started
+    logging: *logging
+
+networks:
+  internal:
+    name: mooi-internal
+  proxy:
+    external: true
+  previews:
+    name: mooi-previews
+    external: true
