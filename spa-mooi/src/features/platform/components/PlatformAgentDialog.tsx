@@ -1,8 +1,9 @@
-import { useState, type KeyboardEvent } from 'react';
+import { useRef, useState, type KeyboardEvent } from 'react';
 import { CornerDownLeft, LoaderCircle, Sparkles } from 'lucide-react';
 import type { AgentConnection } from '@/features/agents/types/AgentConnection';
 import type { PlatformAgentCopy } from '@/features/platform/types/PlatformAgentCopy';
 import type { PlatformChatRequest } from '@/features/platform/types/PlatformChatRequest';
+import { DictationButton } from '@/features/dictation/components/DictationButton';
 import { AgentModelFields } from '@/features/sessions/components/AgentModelFields';
 import { useAgentModelChoice } from '@/features/sessions/hooks/useAgentModelChoice';
 import { Button } from '@/shared/components/Button';
@@ -28,6 +29,7 @@ interface PlatformAgentDialogProps {
 export const PlatformAgentDialog = ({ copy, projectName, connections, busy, error, optionalPrompt, suggestions = [],
   replaceNotice, buildMessage, onClose, onSubmit }: PlatformAgentDialogProps) => {
   const choice = useAgentModelChoice(true, connections);
+  const promptRef = useRef<HTMLTextAreaElement>(null);
   const [prompt, setPrompt] = useState('');
   const valid = choice.ready && (optionalPrompt || prompt.trim().length > 0);
 
@@ -59,12 +61,15 @@ export const PlatformAgentDialog = ({ copy, projectName, connections, busy, erro
       {connections.length > 0 ? <label className="flex flex-col gap-2">
         <span className="text-xs font-medium text-ink-muted">{copy.label}</span>
         <div className="rounded-[12px] border border-line bg-surface-2 transition focus-within:border-brand/50">
-          <textarea autoFocus rows={5} value={prompt} disabled={busy} onChange={(event) => setPrompt(event.target.value)}
+          <textarea ref={promptRef} autoFocus rows={5} value={prompt} disabled={busy} onChange={(event) => setPrompt(event.target.value)}
             onKeyDown={onKeyDown} placeholder={copy.placeholder} maxLength={20000}
             className="block min-h-32 w-full resize-y bg-transparent p-3.5 text-sm leading-6 text-ink placeholder:text-ink-subtle focus:outline-none disabled:opacity-60" />
-          <div className="flex items-center justify-between gap-3 border-t border-line px-3.5 py-2 text-[11px] text-ink-subtle">
+          <div className="flex items-center justify-between gap-3 border-t border-line py-1.5 pr-1.5 pl-3.5 text-[11px] text-ink-subtle">
             <span className="inline-flex items-center gap-1.5"><CornerDownLeft className="size-3.5" />Enter to start · Shift+Enter for a new line</span>
-            <span className="tabular-nums">{prompt.length > 0 ? prompt.length : ''}</span>
+            <span className="inline-flex items-center gap-2">
+              <span className="tabular-nums">{prompt.length > 0 ? prompt.length : ''}</span>
+              <DictationButton field={promptRef} disabled={busy} className="size-8" />
+            </span>
           </div>
         </div>
         {suggestions.length > 0 && prompt.length === 0 ? <div className="flex flex-wrap gap-2 pt-1">

@@ -5,6 +5,7 @@ import type { SessionProvider } from '@/features/sessions/types/SessionProvider'
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowUp, Square } from 'lucide-react';
 import type { SessionStatus } from '@/features/sessions/types/SessionStatus';
+import { DictationButton } from '@/features/dictation/components/DictationButton';
 import { Button } from '@/shared/components/Button';
 
 interface ChatComposerProps {
@@ -175,29 +176,33 @@ export const ChatComposer = ({
             </label>
           ) : null}
 
-          {!activeTurn && !blocked ? <span className="ml-auto hidden text-xs text-ink-subtle lg:flex">Enter to send · Shift+Enter for a new line</span> : null}
+          <div className="ml-auto flex items-center gap-1.5">
+            {!activeTurn && !blocked ? <span className="mr-1 hidden text-xs text-ink-subtle lg:flex">Enter to send · Shift+Enter for a new line</span> : null}
 
-          {activeTurn ? (
-            <Button
-              variant="danger"
-              onClick={() => void onInterrupt()}
-              disabled={busy || !canInterrupt}
-              ariaLabel="Stop turn"
-              className="ml-auto size-11 shrink-0 p-0"
-            >
-              <Square className="size-4" />
-            </Button>
-          ) : !blocked ? (
-            <Button
-              variant="brand"
-              onClick={submit}
-              disabled={busy || value.trim().length === 0}
-              ariaLabel="Send message"
-              className="ml-auto size-11 shrink-0 p-0"
-            >
-              <ArrowUp className="size-4" />
-            </Button>
-          ) : null}
+            {!blocked ? <DictationButton field={textareaRef} /> : null}
+
+            {activeTurn ? (
+              <Button
+                variant="danger"
+                onClick={() => void onInterrupt()}
+                disabled={busy || !canInterrupt}
+                ariaLabel="Stop turn"
+                className="size-11 shrink-0 p-0"
+              >
+                <Square className="size-4" />
+              </Button>
+            ) : !blocked ? (
+              <Button
+                variant="brand"
+                onClick={submit}
+                disabled={busy || value.trim().length === 0}
+                ariaLabel="Send message"
+                className="size-11 shrink-0 p-0"
+              >
+                <ArrowUp className="size-4" />
+              </Button>
+            ) : null}
+          </div>
         </div>
       </div>
     </div>

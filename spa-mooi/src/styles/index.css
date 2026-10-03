@@ -19,6 +19,8 @@
   --brand-strong: #1e54b7;
   --brand-soft: #eff3fe;
   --brand-ink: #ffffff;
+  /* The logo's orb: one vivid blue on both themes, so the mark never changes identity. */
+  --brand-vivid: #276ef1;
 
   --contrast: #000000;
   --contrast-ink: #ffffff;
@@ -59,6 +61,7 @@
   --brand-strong: #c7d9fb;
   --brand-soft: color-mix(in oklab, #276ef1 22%, transparent);
   --brand-ink: #0b1c3d;
+  --brand-vivid: #276ef1;
 
   --contrast: #f6f6f6;
   --contrast-ink: #000000;
@@ -99,6 +102,7 @@
   --color-brand-strong: var(--brand-strong);
   --color-brand-soft: var(--brand-soft);
   --color-brand-ink: var(--brand-ink);
+  --color-brand-vivid: var(--brand-vivid);
 
   --color-contrast: var(--contrast);
   --color-contrast-ink: var(--contrast-ink);
@@ -134,6 +138,9 @@
   --animate-pulse-soft: pulse-soft 1.6s ease-in-out infinite;
   --animate-shimmer: shimmer 2s linear infinite;
   --animate-menu-in: menu-in 0.16s cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-voice-bar: voice-bar 0.9s ease-in-out infinite;
+  --animate-orb-ping: orb-ping 2.4s cubic-bezier(0, 0, 0.2, 1) infinite;
+  --animate-step-fill: step-fill linear both;
 
   @keyframes float {
     0%,
@@ -172,6 +179,40 @@
     }
     to {
       background-position: 200% 0;
+    }
+  }
+
+  /* A level meter at rest is short; the bars breathe up to full height and back. */
+  @keyframes voice-bar {
+    0%,
+    100% {
+      transform: scaleY(0.45);
+    }
+    50% {
+      transform: scaleY(1);
+    }
+  }
+
+  /* The agent orb of the logo is alive: a halo leaves it and fades, like a presence signal. */
+  @keyframes orb-ping {
+    0% {
+      opacity: 0.55;
+      transform: scale(1);
+    }
+    70%,
+    100% {
+      opacity: 0;
+      transform: scale(1.9);
+    }
+  }
+
+  /* Duration comes from the caller: the bar spans exactly one stage of the pipeline showcase. */
+  @keyframes step-fill {
+    from {
+      transform: scaleX(0);
+    }
+    to {
+      transform: scaleX(1);
     }
   }
 

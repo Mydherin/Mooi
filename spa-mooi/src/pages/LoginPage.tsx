@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowUpRight, CircleCheck } from 'lucide-react';
 import { ROUTES } from '@/app/routes';
 import { env } from '@/config/env';
+import { PipelineShowcase } from '@/features/brand/components/PipelineShowcase';
 import { loginWithGoogle } from '@/features/auth/api/authApi';
 import { GoogleSignInButton } from '@/features/auth/components/GoogleSignInButton';
 import { toAuthSession } from '@/features/auth/lib/toAuthSession';
@@ -50,18 +51,20 @@ export const LoginPage = () => {
   return (
     <div className="min-h-dvh bg-canvas text-ink lg:grid lg:grid-cols-[1.1fr_1fr]">
       <aside className="relative hidden overflow-hidden bg-contrast p-12 text-contrast-ink lg:flex lg:flex-col xl:p-16">
-        <div aria-hidden className="pointer-events-none absolute -right-40 bottom-[-15rem] size-[650px] rounded-full border-[80px] border-contrast-ink/10" />
+        <div className="relative z-10">
+          <Logo />
+        </div>
 
-        <Logo />
+        <PipelineShowcase className="my-8 flex-1" />
 
-        <div className="my-auto">
-          <h2 className="max-w-lg text-5xl font-extrabold leading-[1.08] tracking-[-0.05em] text-balance xl:text-6xl">
+        <div className="relative z-10">
+          <h2 className="max-w-lg text-4xl font-extrabold leading-[1.08] tracking-[-0.05em] text-balance xl:text-5xl">
             Less friction.
             More creating.
           </h2>
 
-          <p className="mt-6 max-w-sm text-base leading-relaxed text-contrast-ink/75">From the first idea to the next commit. A calmer place to build software with your agents.</p>
-          <ul className="mt-10 flex flex-col gap-4">
+          <p className="mt-4 max-w-md text-base leading-relaxed text-contrast-ink/75">From the first idea to the next commit. A calmer place to build software with your agents.</p>
+          <ul className="mt-6 hidden flex-col gap-3 [@media(min-height:960px)]:flex">
             {highlights.map((highlight) => (
               <li key={highlight} className="flex items-start gap-3 text-sm text-contrast-ink/80">
                 <CircleCheck className="mt-0.5 size-4.5 shrink-0 text-contrast-ink/70" />
@@ -71,7 +74,7 @@ export const LoginPage = () => {
           </ul>
         </div>
 
-        <p className="text-xs text-contrast-ink/65">
+        <p className="relative z-10 mt-8 text-xs text-contrast-ink/65">
           © {new Date().getFullYear()} {env.appName}
         </p>
       </aside>
@@ -79,7 +82,7 @@ export const LoginPage = () => {
       <main className="relative flex min-h-dvh flex-col justify-center px-4 py-12 sm:px-8 lg:min-h-0">
         <div className="absolute top-5 right-5"><ThemeToggle /></div>
         <div className="mx-auto w-full max-w-sm">
-          <LogoMark className="size-10 lg:hidden" />
+          <LogoMark live className="size-10 lg:hidden" />
 
           <h1 className="mt-8 text-[40px] font-extrabold tracking-[-0.045em] text-ink lg:mt-0">Welcome to Mooi<span className="text-brand">.</span></h1>
           <p className="mt-3 text-sm leading-relaxed text-ink-muted">

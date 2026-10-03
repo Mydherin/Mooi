@@ -47,7 +47,7 @@ class DockerError(Exception):
     the caller redacting it again.
     """
 
-    def __init__(self, code: Literal["docker_unavailable", "timeout", "invalid_compose", "unsupported_project", "port_unavailable", "startup_failed", "health_check_failed", "cleanup_failed"], message: str, detail: str | None = None) -> None:
+    def __init__(self, code: Literal["docker_unavailable", "timeout", "invalid_compose", "unsupported_project", "startup_failed", "health_check_failed", "cleanup_failed"], message: str, detail: str | None = None) -> None:
         super().__init__(message)
         self.code = code
         self.detail = detail
@@ -87,7 +87,7 @@ class DockerComposeCandidate:
 
 @dataclass(frozen=True)
 class DockerReadiness:
-    preview_url: str
+    endpoint: DockerEndpoint
     status_code: int
     content_type: str | None
     expectation: Literal["html", "http"]
@@ -105,9 +105,31 @@ class DockerPortRequest(BaseModel):
     protocol: Literal["tcp", "udp"] = "tcp"
 
 
-class DockerPort(DockerPortRequest):
-    published_port: int = Field(ge=1, le=65535)
-    bind_address: str = Field(min_length=1, max_length=45)
+class DockerEndpoint(BaseModel):
+    """Private address where mic-sessions reaches the web service; browsers never see it.
+
+    `loopback` publishes on the engine host's loopback interface only; `network` publishes nothing
+    and resolves a per-deployment alias on the private preview network shared with mic-sessions.
+    """
+
+    model_config = ConfigDict(strict=True, frozen=True, extra="forbid")
+
+    host: str = Field(pattern=r"^[a-zA-Z0-9][a-zA-Z0-9.-]{0,252}$")
+    port: int = Field(ge=1, le=65535)
+
+    @property
+    def url(self) -> str:
+        return f"http://{self.host}:{self.port}"
+
+
+LOOPBACK = "127.0.0.1"
+# Compose key of the external preview network inside the frozen model; never a project network.
+PREVIEW_NETWORK_KEY = "mooi-preview-upstream"
+
+
+def _preview_alias(manifest: DockerManifest) -> str:
+    """Unique DNS label of the web service on the shared preview network (63 characters max)."""
+    return f"mooi-{manifest.installation_id.hex[:8]}-{manifest.session_id.hex}"
 
 
 class DockerManifest(BaseModel):
@@ -115,7 +137,7 @@ class DockerManifest(BaseModel):
 
     model_config = ConfigDict(strict=True, frozen=True, extra="forbid")
 
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
     installation_id: UUID
     session_id: UUID
     owner_id: UUID
@@ -124,7 +146,8 @@ class DockerManifest(BaseModel):
     environment_files: tuple[str, ...] = ()
     cwd: str
     web_service: str | None = None
-    ports: tuple[DockerPort, ...] = ()
+    web_port: int | None = Field(default=None, ge=1, le=65535)
+    endpoint: DockerEndpoint | None = None
     created_at: AwareDatetime
     updated_at: AwareDatetime
     cleanup_state: Literal["prepared", "required", "stopped", "failed"] = "prepared"
@@ -699,70 +722,74 @@ class Docker:
             return await self._run(*command, *args, cwd=directory, deadline=deadline,
                                    timeout=timeout, on_line=on_line)
 
-    async def configure_ports(
-        self, *, manifests: DockerManifests, session_id: UUID,
-        ports: tuple[DockerPortRequest, ...], deadline: float | None = None,
+    async def configure_endpoint(
+        self, *, manifests: DockerManifests, session_id: UUID, port: DockerPortRequest,
+        deadline: float | None = None,
     ) -> DockerManifest:
-        """Replace ALL publications with explicitly requested browser-facing endpoints.
+        """Drop EVERY Compose publication and make only the web port reachable by mic-sessions.
 
-        This is a request, not a reservation: only engine bind during up proves availability.
-        DB/cache publications disappear unless explicitly requested by the caller.
+        Browsers reach it exclusively through Mooi's preview proxy: `loopback` binds the engine
+        host's loopback interface with an engine-assigned port, `network` publishes nothing and
+        joins the web service to the private preview network under a deployment-unique alias.
         """
         previous = manifests.load(session_id)
         if previous.cleanup_state != 'prepared':
-            raise DockerError('invalid_compose', 'Ports cannot change after deployment starts')
+            raise DockerError('invalid_compose', 'The endpoint cannot change after deployment starts')
         model = self._effective(manifests, previous)
-        keys = set()
-        for port in ports:
-            key = (port.service, port.container_port, port.protocol)
-            if port.service not in model['services'] or key in keys:
-                raise DockerError('invalid_compose', 'Port requests contain unknown services or duplicates')
-            keys.add(key)
-        if not any(p.service == previous.web_service and p.protocol == 'tcp' for p in ports):
-            raise DockerError('invalid_compose', 'The web service needs a published TCP port')
+        if (port.service != previous.web_service or port.protocol != 'tcp'
+                or port.service not in model['services']):
+            raise DockerError('invalid_compose', 'The web service needs one TCP port')
         for service in model['services'].values():
             service.pop('ports', None)
             if service.get('scale', 1) != 1 or service.get('deploy', {}).get('replicas', 1) != 1:
                 raise DockerError('unsupported_project', 'Preview services must use one container each')
-        for port in ports:
-            entry = {'target': port.container_port, 'protocol': port.protocol,
-                     'host_ip': self.settings.preview_bind_address, 'mode': 'ingress'}
-            if self.settings.preview_port_range:
-                entry['published'] = self.settings.preview_port_range
-            model['services'][port.service].setdefault('ports', []).append(entry)
+        web = model['services'][port.service]
+        if self.settings.preview_upstream == 'loopback':
+            web['ports'] = [self._loopback_publication(port.container_port)]
+        else:
+            networks = web.get('networks') or {'default': None}
+            if not isinstance(networks, dict) or PREVIEW_NETWORK_KEY in model['networks']:
+                raise DockerError('invalid_compose', 'The web service networks cannot be extended')
+            model['networks'][PREVIEW_NETWORK_KEY] = self._preview_network()
+            networks[PREVIEW_NETWORK_KEY] = {'aliases': [_preview_alias(previous)]}
+            web['networks'] = networks
         name = f'compose-{uuid4().hex}.json'
         manifests._atomic_write(manifests.directory(session_id) / name,
                                 json.dumps(model).encode(), exclusive=True)
-        updated = previous.model_copy(update={'compose_files': (name,), 'ports': (),
-                                             'updated_at': datetime.now(UTC)})
+        updated = previous.model_copy(update={'compose_files': (name,), 'web_port': port.container_port,
+                                             'endpoint': None, 'updated_at': datetime.now(UTC)})
         deadline = deadline if deadline is not None else (
             asyncio.get_running_loop().time() + self.settings.docker_command_timeout_seconds)
         checked = await self._compose(updated, 'config', '--quiet', deadline=deadline)
         if checked.returncode or checked.truncated:
-            raise DockerError('invalid_compose', 'Dynamic port configuration is invalid')
+            raise DockerError('invalid_compose', 'Preview endpoint configuration is invalid')
         manifests.save(updated)
         return updated
 
-    def _expected_ports(self, model: dict, manifest: DockerManifest) -> set[tuple[str, int, str]]:
-        expected = set()
+    @staticmethod
+    def _loopback_publication(target: int) -> dict:
+        return {'target': target, 'protocol': 'tcp', 'host_ip': LOOPBACK, 'mode': 'ingress'}
+
+    def _preview_network(self) -> dict:
+        return {'name': self.settings.preview_network, 'external': True}
+
+    def _verify_endpoint_model(self, model: dict, manifest: DockerManifest) -> None:
+        """The frozen model may only contain the managed web endpoint, exactly as configured."""
+        if manifest.web_service not in model['services'] or manifest.web_port is None:
+            raise DockerError('invalid_compose', 'Configure the preview endpoint before starting')
+        loopback = self.settings.preview_upstream == 'loopback'
         for name, service in model['services'].items():
             if service.get('scale', 1) != 1 or service.get('deploy', {}).get('replicas', 1) != 1:
                 raise DockerError('unsupported_project', 'Preview services must use one container each')
-            for port in service.get('ports', []):
-                if (not isinstance(port, dict)
-                        or type(port.get('target')) is not int
-                        or not 1 <= port['target'] <= 65535
-                        or port.get('protocol') not in ('tcp', 'udp')
-                        or port.get('host_ip') != self.settings.preview_bind_address
-                        or port.get('published', '') != self.settings.preview_port_range):
-                    raise DockerError('invalid_compose', 'All ports must use managed dynamic allocation')
-                key = (name, port['target'], port['protocol'])
-                if key in expected:
-                    raise DockerError('invalid_compose', 'Duplicate port publication')
-                expected.add(key)
-        if not any(s == manifest.web_service and p == 'tcp' for s, _, p in expected):
-            raise DockerError('invalid_compose', 'Configure managed web ports before starting')
-        return expected
+            managed = loopback and name == manifest.web_service
+            if service.get('ports', []) != ([self._loopback_publication(manifest.web_port)] if managed else []):
+                raise DockerError('invalid_compose', 'Only the managed preview endpoint may be published')
+        if not loopback:
+            networks = model['services'][manifest.web_service].get('networks')
+            if (model.get('networks', {}).get(PREVIEW_NETWORK_KEY) != self._preview_network()
+                    or not isinstance(networks, dict)
+                    or networks.get(PREVIEW_NETWORK_KEY) != {'aliases': [_preview_alias(manifest)]}):
+                raise DockerError('invalid_compose', 'The web service is not on the preview network')
 
     async def _container_ids(self, manifest: DockerManifest, *, deadline: float) -> tuple[str, ...]:
         result = await self._run('ps', '--all', '--quiet', '--no-trunc', '--filter',
@@ -777,24 +804,24 @@ class Docker:
     async def inspect(
         self, *, manifests: DockerManifests, session_id: UUID, deadline: float | None = None,
     ) -> DockerManifest:
-        """Verify engine ownership and every actual binding; never return raw inspect secrets.
+        """Verify engine ownership, that nothing else is published and where the web service is.
 
         Does not establish HTTP readiness or mark the deployment running.
         """
         manifest = manifests.load(session_id)
         model = self._effective(manifests, manifest)
-        expected = self._expected_ports(model, manifest)
+        self._verify_endpoint_model(model, manifest)
         deadline = deadline if deadline is not None else (
             asyncio.get_running_loop().time() + self.settings.docker_command_timeout_seconds)
         ids = await self._container_ids(manifest, deadline=deadline)
         seen_services = set()
-        actual = {}
-        bindings = set()
+        endpoint = None
         # Select only operational metadata, never environment, command, or healthcheck logs.
         template = ('{"project":{{json (index .Config.Labels "com.docker.compose.project")}},'
                     '"service":{{json (index .Config.Labels "com.docker.compose.service")}},'
                     '"oneoff":{{json (index .Config.Labels "com.docker.compose.oneoff")}},'
-                    '"ports":{{json .NetworkSettings.Ports}}}')
+                    '"ports":{{json .NetworkSettings.Ports}},'
+                    '"networks":{{json .NetworkSettings.Networks}}}')
         try:
             for container_id in ids:
                 result = await self._run('inspect', '--type', 'container', '--format', template,
@@ -807,35 +834,30 @@ class Docker:
                         or service in seen_services or str(data['oneoff']).lower() != 'false'):
                     raise ValueError
                 seen_services.add(service)
-                for target, published in (data['ports'] or {}).items():
-                    if not published:  # EXPOSE without a host publication.
-                        continue
-                    number, protocol = target.split('/')
-                    key = (service, int(number), protocol)
-                    if key not in expected or len(published) != 1 or key in actual:
+                published = {target: bindings for target, bindings in (data['ports'] or {}).items()
+                             if bindings}  # EXPOSE without a host publication is not published.
+                if service != manifest.web_service:
+                    if published:
                         raise ValueError
-                    binding = published[0]
-                    host_port = int(binding['HostPort'])
-                    if ip_address(binding['HostIp']) != ip_address(self.settings.preview_bind_address):
+                    continue
+                if self.settings.preview_upstream == 'network':
+                    if published or self.settings.preview_network not in (data['networks'] or {}):
                         raise ValueError
-                    if self.settings.preview_port_range:
-                        low, high = map(int, self.settings.preview_port_range.split('-'))
-                        if not low <= host_port <= high:
-                            raise ValueError
-                    if (host_port, protocol) in bindings:
-                        raise ValueError
-                    bindings.add((host_port, protocol))
-                    actual[key] = DockerPort(service=service, container_port=int(number),
-                                             protocol=protocol, published_port=host_port,
-                                             bind_address=self.settings.preview_bind_address)
-            if seen_services != set(model['services']) or set(actual) != expected:
+                    endpoint = DockerEndpoint(host=_preview_alias(manifest), port=manifest.web_port)
+                    continue
+                bindings = published.pop(f'{manifest.web_port}/tcp', None)
+                if published or not bindings or len(bindings) != 1:
+                    raise ValueError
+                if ip_address(bindings[0]['HostIp']) != ip_address(LOOPBACK):
+                    raise ValueError
+                endpoint = DockerEndpoint(host=LOOPBACK, port=int(bindings[0]['HostPort']))
+            if seen_services != set(model['services']) or endpoint is None:
                 raise ValueError
-            if manifest.ports and manifest.ports != tuple(actual[key] for key in sorted(actual)):
+            if manifest.endpoint is not None and manifest.endpoint != endpoint:
                 raise ValueError
         except (TypeError, ValueError, KeyError, AttributeError):
-            raise DockerError('startup_failed', 'Docker resources or published ports do not match the deployment') from None
-        updated = manifest.model_copy(update={'ports': tuple(actual[key] for key in sorted(actual)),
-                                              'updated_at': datetime.now(UTC)})
+            raise DockerError('startup_failed', 'Docker resources or the preview endpoint do not match the deployment') from None
+        updated = manifest.model_copy(update={'endpoint': endpoint, 'updated_at': datetime.now(UTC)})
         manifests.save(updated)
         return updated
 
@@ -843,17 +865,17 @@ class Docker:
         self, *, manifests: DockerManifests, session_id: UUID, deadline: float | None = None,
         on_line: Callable[[str], None] | None = None,
     ) -> DockerManifest:
-        """Build once, start and inspect, retrying only real host port allocation failures.
+        """Build once, start and inspect the private preview endpoint.
 
         Caller serializes operations; on any failure/cancellation the required manifest stays
-        available for rollback. Success is binding evidence, NOT readiness. Build and start
+        available for rollback. Success is endpoint evidence, NOT readiness. Build and start
         commands and their redacted output reach on_line live, and a failure carries a redacted
         output tail in `DockerError.detail` so the caller can hand the cause to the agent.
         """
         manifest = manifests.load(session_id)
         if manifest.cleanup_state != 'prepared':
             raise DockerError('startup_failed', 'Deployment already requires cleanup')
-        self._expected_ports(self._effective(manifests, manifest), manifest)
+        self._verify_endpoint_model(self._effective(manifests, manifest), manifest)
         deadline = deadline if deadline is not None else (
             asyncio.get_running_loop().time() + self.settings.deployment_timeout_seconds)
         manifest = manifest.model_copy(update={'cleanup_state': 'required',
@@ -865,27 +887,12 @@ class Docker:
         if built.returncode:
             raise DockerError('startup_failed', 'Docker images could not be built',
                               _tail(f'{built.stdout}\n{built.stderr}', tail))
-        for attempt in range(self.settings.deployment_port_attempts):
-            result = await self._compose(manifest, 'up', '--detach', '--no-build', deadline=deadline,
-                                         timeout=self.settings.docker_build_timeout_seconds, on_line=on_line)
-            if not result.returncode:
-                return await self.inspect(manifests=manifests, session_id=session_id, deadline=deadline)
-            collision = re.search(
-                r'port is already allocated|address already in use|no available port|'
-                r'all ports.*allocated', result.stdout + result.stderr, re.IGNORECASE)
-            if not collision:
-                raise DockerError('startup_failed', 'Docker containers could not be started',
-                                  _tail(f'{result.stdout}\n{result.stderr}', tail))
-            if attempt + 1 == self.settings.deployment_port_attempts:
-                raise DockerError('port_unavailable', 'Docker could not allocate the requested host ports',
-                                  _tail(f'{result.stdout}\n{result.stderr}', tail))
-            # Remove only this project's service containers, preserving networks and named data.
-            # Recreation drops failed HostConfig assignments and asks the engine to allocate anew.
-            removed = await self._compose(manifest, 'rm', '--stop', '--force', deadline=deadline,
-                                          timeout=self.settings.deployment_stop_timeout_seconds)
-            if removed.returncode or await self._container_ids(manifest, deadline=deadline):
-                raise DockerError('cleanup_failed', 'Conflicting deployment containers could not be removed')
-        raise DockerError('port_unavailable', 'Docker could not allocate the requested host ports')
+        result = await self._compose(manifest, 'up', '--detach', '--no-build', deadline=deadline,
+                                     timeout=self.settings.docker_build_timeout_seconds, on_line=on_line)
+        if result.returncode:
+            raise DockerError('startup_failed', 'Docker containers could not be started',
+                              _tail(f'{result.stdout}\n{result.stderr}', tail))
+        return await self.inspect(manifests=manifests, session_id=session_id, deadline=deadline)
 
     async def _containers_ready(
         self, manifest: DockerManifest, model: dict, *, deadline: float,
@@ -941,7 +948,7 @@ class Docker:
             raise DockerError('startup_failed', 'Container readiness metadata is invalid') from None
 
     async def check_running(self, *, manifests: DockerManifests, session_id: UUID) -> None:
-        """Single bounded inspection of ownership, mappings, state and configured healthchecks."""
+        """Single bounded inspection of ownership, endpoint, state and configured healthchecks."""
         deadline = asyncio.get_running_loop().time() + self.settings.docker_command_timeout_seconds
         async with asyncio.timeout_at(deadline):
             manifest = await self.inspect(manifests=manifests, session_id=session_id, deadline=deadline)
@@ -950,11 +957,11 @@ class Docker:
                 raise DockerError('health_check_failed', 'Deployment containers are no longer healthy')
 
     async def readiness(
-        self, *, manifests: DockerManifests, session_id: UUID, container_port: int,
+        self, *, manifests: DockerManifests, session_id: UUID,
         expectation: Literal['html', 'http'] = 'http',
         deadline: float | None = None,
     ) -> DockerReadiness:
-        """Return bounded engine and HTTP evidence for the root of the browser-visible endpoint.
+        """Return bounded engine and HTTP evidence for the root of the private web endpoint.
 
         The caller alone publishes running. No chat state is touched here. Redirects count as
         HTTP responses but are never followed to another endpoint. The last observation becomes
@@ -977,13 +984,9 @@ class Docker:
         if manifest.cleanup_state != 'required':
             raise DockerError('startup_failed', 'Deployment is not awaiting readiness')
         model = self._effective(manifests, manifest)
-        matches = [p for p in manifest.ports if p.service == manifest.web_service
-                   and p.container_port == container_port and p.protocol == 'tcp']
-        if len(matches) != 1:
-            raise DockerError('health_check_failed', 'The preview endpoint is not a verified web port')
-        def url(host: str) -> str:
-            authority = f'[{host}]' if ':' in host else host
-            return f'{self.settings.preview_scheme}://{authority}:{matches[0].published_port}/'
+        if manifest.endpoint is None:
+            raise DockerError('health_check_failed', 'The preview endpoint is not verified')
+        endpoint = manifest.endpoint
         try:
             async with asyncio.timeout_at(end):
                 async with httpx.AsyncClient(trust_env=False, follow_redirects=False) as client:
@@ -992,7 +995,7 @@ class Docker:
                         if await self._containers_ready(manifest, model, deadline=end,
                                                         on_observation=observe):
                             try:
-                                async with client.stream('GET', url(self.settings.preview_probe_host),
+                                async with client.stream('GET', f'{endpoint.url}/',
                                                          timeout=self.settings.deployment_probe_timeout_seconds) as response:
                                     status_code = response.status_code
                                     raw_content_type = response.headers.get('content-type')
@@ -1023,7 +1026,7 @@ class Docker:
                                         and await self._containers_ready(manifest, model, deadline=end)):
                                     await self.inspect(manifests=manifests, session_id=session_id, deadline=end)
                                     return DockerReadiness(
-                                        preview_url=url(self.settings.preview_public_host),
+                                        endpoint=endpoint,
                                         status_code=status_code, content_type=content_type,
                                         expectation=expectation,
                                     )
@@ -1077,7 +1080,7 @@ class Docker:
             manifests.save(pending.model_copy(update={'cleanup_state': 'failed',
                                                        'updated_at': datetime.now(UTC)}))
             raise
-        stopped = pending.model_copy(update={'cleanup_state': 'stopped', 'ports': (),
+        stopped = pending.model_copy(update={'cleanup_state': 'stopped', 'endpoint': None,
                                               'updated_at': datetime.now(UTC)})
         manifests.save(stopped)
         return stopped
@@ -1103,7 +1106,8 @@ class Docker:
         except OSError:
             raise DockerError('cleanup_failed', 'Deployment configuration could not be removed') from None
         rearmed = manifest.model_copy(update={
-            'cleanup_state': 'prepared', 'compose_files': (), 'web_service': None, 'ports': (),
+            'cleanup_state': 'prepared', 'compose_files': (), 'web_service': None, 'web_port': None,
+            'endpoint': None,
             'updated_at': datetime.now(UTC)})
         manifests.save(rearmed)
         return rearmed
@@ -1185,6 +1189,11 @@ class Docker:
             valid = False
         if engine.returncode or engine.truncated or not valid:
             raise DockerError("docker_unavailable", "The configured Docker daemon is unavailable")
+        if self.settings.preview_upstream == "network":
+            network = await self._run("network", "inspect", "--format", "{{.Name}}",
+                                      self.settings.preview_network, cwd=cwd, deadline=deadline)
+            if network.returncode or network.stdout.strip() != self.settings.preview_network:
+                raise DockerError("docker_unavailable", "The preview network does not exist on the engine")
         return DockerPreflight(engine_version=engine_version, compose_version=version)
 
 

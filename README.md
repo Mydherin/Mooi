@@ -7,6 +7,7 @@ Monorepository. Each artifact lives in its own root-level directory.
 | `spa-mooi` | Vite + React + TypeScript SPA (UI) |
 | `mic-mooi` | Spring Boot microservice (API) |
 | `mic-sessions` | FastAPI microservice (real-time agent sessions) |
+| `mic-speech` | FastAPI microservice (local push-to-talk dictation, loopback only) |
 | `compose.dev.yml` | Postgres + pgAdmin data layer (dev) |
 
 ## Requirements
@@ -14,7 +15,7 @@ Monorepository. Each artifact lives in its own root-level directory.
 - GNU Make >= 4 (macOS ships 3.81 — install with `brew install make`, exposed as `gmake`; the root `Makefile` delegates to it automatically)
 - [Bun](https://bun.sh) >= 1.3 (falls back to npm)
 - Java 25
-- [uv](https://docs.astral.sh/uv/) (Python package manager for `mic-sessions`)
+- [uv](https://docs.astral.sh/uv/) (Python package manager for `mic-sessions` and `mic-speech`)
 - `git` CLI >= 2.38 (one independent clone per agent session; `merge-tree --write-tree` backs Merge)
 - Docker Engine + Docker Compose V2 (data layer and session deployments)
 
@@ -27,6 +28,7 @@ Maven is **not** required: `mic-mooi` ships the Maven Wrapper (`mvnw`) and the f
 cp .env.example .env
 cp mic-mooi/.env.example mic-mooi/.env
 cp mic-sessions/.env.example mic-sessions/.env
+cp mic-speech/.env.example mic-speech/.env
 cp spa-mooi/.env.example spa-mooi/.env
 ```
 
@@ -176,8 +178,9 @@ Branch protection rules on the default branch still apply to the push.
 
 Install Docker CLI with Compose v2 where `mic-sessions` runs and grant its service user access
 to the configured host Unix socket. Verify with `make dev-preflight-mic-sessions`.
-Deploy builds and starts the root Docker Compose file of the session checkout, publishing exactly
-one browser port (the web frontend's, or the only one of an API-only product). Its build/up output
+Deploy builds and starts the root Docker Compose file of the session checkout. No container is ever
+published: the one web port (the web frontend's, or the only one of an API-only product) is reached
+only through the reverse proxy embedded in `mic-sessions`. Its build/up output
 streams to the logs console next to the Deploy button, followed by the failure reason when it fails;
 nothing is retried or handed to the agent automatically — ask the session chat to adjust the setup.
 Deploy and Preview are only offered for projects marked as web applications (asked when adding or
@@ -263,27 +266,34 @@ Set these values in `mic-sessions/.env`:
 | --- | --- |
 | `DOCKER_BINARY`, `DOCKER_HOST` | CLI executable and explicit host socket URI, e.g. `unix:///var/run/docker.sock` |
 | `DOCKER_CLI_PLUGIN_DIR` | Optional absolute Compose/buildx plugin directory; Docker Desktop macOS: `/Applications/Docker.app/Contents/Resources/cli-plugins` |
-| `PREVIEW_PUBLIC_HOST` | Server DNS/IP reachable from users' browsers; no scheme, port or path |
-| `PREVIEW_SCHEME` | `http` or `https`; HTTPS requires valid TLS at the app endpoint |
-| `PREVIEW_BIND_ADDRESS` | Daemon host interface publishing ports, e.g. `0.0.0.0` for external access |
-| `PREVIEW_PROBE_HOST` | Daemon host address reachable from `mic-sessions` for readiness checks |
-| `PREVIEW_PORT_RANGE` | Empty for engine allocation, or inclusive range such as `49152-49251` |
+| `PREVIEW_BASE_URL` | Base of preview origins `<id>.<host>`; empty → `http://preview.localhost:<SESSIONS_PORT>` |
+| `PREVIEW_UPSTREAM` | `loopback` (mic-sessions on the engine host) or `network` (mic-sessions in a container) |
+| `PREVIEW_NETWORK` | Existing Docker network shared with mic-sessions in `network` mode (default `mooi-previews`) |
 | `MAX_DEPLOYMENTS` | Concurrent deployment limit (default 4, no queue) |
 | `DEPLOYMENT_*_TIMEOUT_SECONDS`, `DOCKER_*_TIMEOUT_SECONDS` | Operation limits; see `.env.example` |
 | `DEPLOYMENT_LOG_LINES` | Compose output lines streamed to the logs console per deploy (default 2000) |
 | `SESSION_ACTIVITY_INTERVAL_SECONDS` | Preview activity coalescing interval; default 60 seconds |
 
-The example's loopback addresses are for local development. For external browsers, configure
-public/probe hosts separately and allow the published port range through existing ingress and
-firewall rules. An HTTPS Mooi page needs an HTTPS app endpoint; changing `PREVIEW_SCHEME`
-does not provision TLS. The app must allow embedding through its CSP/X-Frame-Options headers.
-Published ports are accessible outside Mooi; the iframe does not provide exclusive access.
+**Preview proxy**: each running deployment gets its own origin `<random-id>.<PREVIEW_BASE_URL host>`,
+served by `mic-sessions` (HTTP streaming, SSE, uploads and WebSockets relayed untouched; Host and
+`X-Forwarded-*` forwarded). The id is a 160-bit capability given only to the session owner, rotated per
+deploy and revoked on stop. The proxy allows framing by Mooi; the iframe delegates microphone, camera,
+clipboard, fullscreen and similar permissions (consent is asked once for Mooi's origin).
+
+- **Local**: `*.localhost` resolves to loopback in Chrome/Firefox and is a secure context (microphone works
+  over HTTP). Containers bind only the web port to `127.0.0.1` (`PREVIEW_UPSTREAM=loopback`).
+- **VPS behind Traefik**: Mooi in a container with the host socket mounted, `PREVIEW_UPSTREAM=network`,
+  `PREVIEW_BASE_URL=https://preview.<mooi-domain>`. Create the network (`docker network create mooi-previews`)
+  and attach the Mooi container to it; deployments join it with no published ports. Route
+  ``Host(`sessions.<mooi-domain>`) || HostRegexp(`^[a-z0-9]+\.preview\.<mooi-domain>$`)`` to `mic-sessions`
+  with a wildcard certificate for `*.preview.<mooi-domain>` (DNS-01 challenge). Keep previews under
+  Mooi's site so app cookies work inside the iframe.
 
 If Mooi runs in a container/pod, mount the host Docker socket and provide the CLI/Compose there.
 Apps run as sibling containers on that engine. Build contexts are sent from the session checkout;
 matching checkout paths on the daemon host are unnecessary. Apps must use built images and
 named data volumes, without host bind mounts or access to Mooi's socket/credentials. This setup
-does not sandbox hostile repositories. Mooi containerization and a preview proxy are not included.
+does not sandbox hostile repositories. Mooi containerization is not included.
 
 Keep `WORKSPACE_ROOT` on durable, private, writable storage, including `deployments/` and its
 installation identity. Run one `mic-sessions` process/worker; multiworker/multinode coordination
@@ -293,6 +303,22 @@ Docker access and use `make dev-stop-mic-sessions` before cleaning the developme
 Do not delete deployment records manually while resources remain. Conversations do not survive
 restart. The default inactivity expiry is 180 minutes; a visible, focused Preview sends activity
 every 60 seconds. Hidden previews and automatic health checks do not prevent expiry.
+
+### Dictation
+
+Microphone button inside the agent chat composers (sessions, deployments, backups and their start dialogs);
+words appear live in the composer itself. Fully local: NVIDIA Nemotron 3.5 ASR Streaming 0.6B (Q8 GGUF) on NeMo-Speech.cpp 0.1.0, run
+by `mic-speech` on `127.0.0.1`; no audio or text is stored or logged.
+
+- **Use**: tap / `Enter` on the microphone to toggle, hold it > 350 ms (release to finish), or hold `Ctrl+Shift+.`
+  in the composer (release to finish). `Esc` while dictating discards and restores the text.
+- **Provisioning**: `make dev-start` downloads the pinned runtime for the platform (SHA-256 checked, into
+  `mic-speech/.runtime/`) and the model (~742 MB, first run only) into the runtime cache
+  (`~/Library/Caches/NeMoSpeech/models` on macOS). Apple Silicon uses Metal.
+- **Never written** if the composer is edited meanwhile, disabled or gone. One dictation per machine.
+- **Language** is forced (`SPEECH_LANGUAGE`, default `es-ES`): never detected nor translated.
+- **Metrics**: `GET http://127.0.0.1:59100/metrics` (counts and latencies only, 30-day retention, SQLite `0600`).
+- **Licenses**: model NVIDIA OpenMDW 1.1, runtime Apache-2.0; ship both notices when redistributing.
 
 ## Dev entrypoint
 
@@ -341,6 +367,7 @@ values. The `.env` files carry the same numbers as a fallback for non-`make` usa
 | `spa-mooi` | `28471` | `http://localhost:28471` |
 | `mic-mooi` | `39615` | `http://localhost:39615` |
 | `mic-sessions` | `44913` | `http://localhost:44913` |
+| `mic-speech` | `59100` | `http://127.0.0.1:59100` |
 | `postgres` | `54983` | `localhost:54983` |
 | `pgadmin` | `51247` | `http://localhost:51247` |
 
@@ -422,6 +449,7 @@ All variables must be prefixed with `VITE_`.
 | `VITE_CONTACT_EMAIL` | Contact email |
 | `VITE_API_BASE_URL` | mic-mooi base URL |
 | `VITE_SESSIONS_BASE_URL` | mic-sessions base URL |
+| `VITE_SPEECH_BASE_URL` | mic-speech base URL (`ws:`/`wss:` derived) |
 | `VITE_SESSIONS_REFRESH_SECONDS` | Live session status refresh interval |
 | `VITE_GOOGLE_CLIENT_ID` | Google OAuth2 client id |
 | `VITE_STORAGE_PREFIX` | Local storage key prefix |
@@ -465,3 +493,20 @@ the root `.env`.
 | `LOG_LEVEL_APP` | Application log level |
 | `LOG_LEVEL_AUTH` | Auth log level |
 | `LOG_LEVEL_GITHUB` | GitHub integration log level |
+
+### mic-speech (`mic-speech/.env`)
+
+| Variable | Description |
+| --- | --- |
+| `SPEECH_HOST`, `SPEECH_PORT` | Bind address (loopback only) and port |
+| `CORS_ORIGIN` | SPA origin; the only WebSocket `Origin` accepted |
+| `SPEECH_LANGUAGE` | Forced ASR language (e.g. `es-ES`, `es-MX`) |
+| `SPEECH_CONTEXTS` | Comma-separated phrases to bias (boost 3.0; no effect on GGUFs without embedded tokenizer) |
+| `SPEECH_MAX_SECONDS` | Maximum recording length, 1-1800 (default 300) |
+| `SPEECH_RUNTIME_PATH` | Explicit `nemo-speech` binary; empty uses the provisioned one, then `PATH` |
+| `SPEECH_RUNTIME_DIR` | Provisioned runtime directory |
+| `SPEECH_MODEL` | Indexed model (`nemotron-3.5`) or local GGUF path |
+| `SPEECH_DEVICE` | Empty: `metal` on Apple Silicon, `auto` elsewhere |
+| `SPEECH_STARTUP_TIMEOUT_SECONDS` | Engine readiness budget |
+| `SPEECH_METRICS_PATH`, `SPEECH_METRICS_RETENTION_DAYS` | Content-free metrics database and retention |
+| `LOG_LEVEL` | Log level |

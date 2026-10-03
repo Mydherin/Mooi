@@ -40,7 +40,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Any, Literal
 from uuid import UUID, uuid4
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import httpx
 
@@ -56,7 +56,7 @@ from pydantic import (
     model_validator,
 )
 
-from mic_sessions.shared import mooi, workspaces
+from mic_sessions.shared import mooi, previews, workspaces
 from mic_sessions.shared.agents import (
     PROVIDERS,
     STATUS_COMPACTING,
@@ -130,7 +130,7 @@ DeploymentAction = Literal["start", "stop"]
 # Deploy asked the agent to set the deployment up in the chat; it stays "preparing" until its test runs.
 DeploymentSetup = Literal["preparing", "tested"]
 DeploymentErrorCode = Literal[
-    "unsupported_project", "docker_unavailable", "invalid_compose", "port_unavailable",
+    "unsupported_project", "docker_unavailable", "invalid_compose",
     "startup_failed", "health_check_failed", "timeout", "cancelled", "cleanup_failed",
 ]
 _PREVIEW_URL = TypeAdapter(HttpUrl)
@@ -848,6 +848,8 @@ def record(session: Session, type_: str, data: dict[str, Any]) -> Event:
         snapshot = DeploymentSnapshot.model_validate(data)
         event = session.log.append(type_, snapshot.model_dump(mode="json"))
         session.deployment = snapshot
+        if snapshot.state != "running":
+            previews.withdraw(session.id)  # The preview origin dies with the running state.
         return event
     if type_ == EVENT_DEPLOYMENT_LOG:
         return session.log.append(type_, DeploymentLog.model_validate(data).model_dump(mode="json"))
@@ -1089,6 +1091,7 @@ async def _cleanup_workspace(session: Session) -> None:
     # Teardown has joined deployment workers. Provisioning error paths cannot have
     # admitted a deployment. Never delete recovery evidence when Docker cleanup fails.
     docker_clean = True
+    previews.withdraw(session.id)
     try:
         manifests = _deployment_storage()
         if manifests.directory(session.id).exists():
@@ -3290,15 +3293,15 @@ The working directory is this session's branch `{session.branch}`. This conversa
 ## How Mooi deploys
 - It resolves the single Compose file at the repository root (`compose.yaml`, `compose.yml`, `docker-compose.yaml` or `docker-compose.yml`), with the root `.env` when present and the project's development environment variables (`MOOI_DEVELOPMENT_<NAME>`) for interpolation.
 - It builds every service with a `build` section and starts all of them.
-- It keeps exactly one published TCP port and drops every other publication: the one of the service building the web frontend (a Vite, React, Vue, Angular or Next package), or the only one of an API-only product.
+- It reads exactly one published TCP port, the one of the service building the web frontend (a Vite, React, Vue, Angular or Next package), or the only one of an API-only product, and then removes every publication: no container is ever reachable from outside.
 - It waits for every container healthcheck, then expects `GET /` on that port to answer 2xx/3xx, with an HTML document when there is a frontend.
-- The preview is served from `{settings.preview_scheme}://{settings.preview_public_host}` on a port Mooi assigns, embedded in an iframe from `{settings.cors_origin}`.
+- The browser reaches the app only through Mooi's reverse proxy, at its own origin `{urlsplit(settings.preview_base_url).scheme}://<random-id>.{urlsplit(settings.preview_base_url).netloc}`, embedded in an iframe from `{settings.cors_origin}`. The proxy forwards that public Host header plus `X-Forwarded-Proto/Host/For`, relays WebSockets and lets Mooi frame the app; the iframe may use the microphone, camera and clipboard.
 
 ## Rules
 1. Read the root AGENTS.md/CLAUDE.md and the instructions that apply to the files you edit.
 2. Give each deployable artifact its own Dockerfile at its root, with a `.dockerignore`, dependency cache layers, slim or alpine multistage images, and frontends built as static files without dev servers or HMR.
 3. Keep ONE root Compose file that builds those Dockerfiles through `build.context` and `build.dockerfile`. Databases and caches run as services with named volumes and credentials you choose yourself; give every variable an explicit literal value or, for what the user provides (third-party API keys, tokens, service URLs...), a project development variable such as `${{MOOI_DEVELOPMENT_OPENAI_API_KEY}}`.
-4. Prefer one public frontend port: a static server that proxies the API routes to the backend by its Compose service name, allows being framed by `{settings.cors_origin}`, and a frontend that calls the API through relative same-origin routes.
+4. Prefer one public frontend port: a static server that proxies the API routes to the backend by its Compose service name, and a frontend that calls the API through relative same-origin routes. Accept any Host header (no host allowlists) and never hard-code localhost or absolute origins.
 5. Every service listens on 0.0.0.0 and has a healthcheck on an existing endpoint or a TCP/process check against 127.0.0.1, never localhost. Never add endpoints, dependencies or authentication exceptions for it.
 6. Do not use `container_name`, `env_file`, `profiles`, bind mounts, external networks or volumes, `privileged`, host networking or the Docker socket.
 7. Only edit deployment files: never application source, dependency manifests, authentication rules or runtime application configuration. For third-party credentials, reuse or ask the user for development variables and save them as described in your instructions; use harmless placeholders only when the application still starts without them, and never fabricate real ones.
@@ -3354,7 +3357,6 @@ _DEPLOYMENT_MESSAGES: dict[str, str] = {
     "unsupported_project": "The Docker setup uses features Mooi cannot run",
     "docker_unavailable": "Check Docker Compose and access to the configured Docker engine",
     "invalid_compose": "The repository has no usable root Docker Compose setup",
-    "port_unavailable": "No permitted publication port is available; check the engine and configured range",
     "startup_failed": "The application could not be built or started",
     "health_check_failed": "The application did not become ready",
     "timeout": "The deployment timed out",
@@ -3550,20 +3552,21 @@ async def _run_deployment_start(session: Session, operation_id: UUID) -> None:
             await docker.freeze_compose(manifests=manifests, session_id=session.id, checkout=session.workspace,
                                         compose_files=(Path(plan.compose),), web_service=plan.port.service,
                                         deadline=deadline, variables=variables)
-            await docker.configure_ports(manifests=manifests, session_id=session.id, ports=(plan.port,),
-                                         deadline=deadline)
+            await docker.configure_endpoint(manifests=manifests, session_id=session.id, port=plan.port,
+                                            deadline=deadline)
             try:
                 await docker.up(manifests=manifests, session_id=session.id, deadline=deadline, on_line=log)
             finally:
                 log.flush()
             _publish_deployment_phase(session, operation_id, PHASE_PROBING)
             readiness = await docker.readiness(
-                manifests=manifests, session_id=session.id, container_port=plan.port.container_port,
-                expectation=plan.expectation, deadline=deadline,
+                manifests=manifests, session_id=session.id, expectation=plan.expectation, deadline=deadline,
             )
             if session.closing or session.deployment.operationId != operation_id:
                 raise asyncio.CancelledError
-            _deployment_finish(session, operation_id, "start", url=readiness.preview_url)
+            # No await between publishing the origin and the running snapshot that carries it.
+            _deployment_finish(session, operation_id, "start",
+                               url=previews.publish(session.id, readiness.endpoint.url))
             session.deployment_monitor = _spawn(session, _monitor_deployment(session, operation_id))
             return
     except asyncio.CancelledError:

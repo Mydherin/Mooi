@@ -66,9 +66,11 @@ def _result(snapshot: _Snapshot) -> dict[str, Any]:
     result = {key: dict(value) for key, value in (snapshot.value or {}).items()}
     now = time.time()
     for value in result.values():
+        # An elapsed window starts over empty; keep it visible instead of dropping it.
         if value.get("resetsAt") and value["resetsAt"] <= now:
-            value["percent"] = None
+            value["percent"] = 0
             value["resetsAt"] = None
+            value.pop("status", None)
     return result
 
 

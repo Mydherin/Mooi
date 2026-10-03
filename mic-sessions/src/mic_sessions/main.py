@@ -3,7 +3,8 @@
 The sessions feature owns its own router; `session_count` is registered here for `/health` to read.
 `_lifespan` starts the sessions feature's idle reaper on boot and closes every live session
 (workspace + runtime) on graceful shutdown — the feature exports `start_reaper()`/`close_all()`;
-this module only calls them.
+this module only calls them. The preview gateway wraps the whole API: requests for a preview
+origin go to the embedded reverse proxy before any API middleware runs.
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from mic_sessions.features import agent_connections, health, sessions
-from mic_sessions.shared import web, workspaces
+from mic_sessions.shared import previews, web, workspaces
 from mic_sessions.shared.env import get_settings
 from mic_sessions.shared.logging import CorrelationIdMiddleware, configure_logging
 
@@ -33,10 +34,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     finally:
         await agent_connections.close_all()
         await sessions.close_all()
+        await previews.close()
         await web.close_http_client()
 
 
-def create_app() -> FastAPI:
+def create_app() -> previews.PreviewGateway:
     settings = get_settings()
     configure_logging(settings.log_level)
 
@@ -48,7 +50,7 @@ def create_app() -> FastAPI:
     app.include_router(sessions.router)
     app.state.session_count = sessions.get_registry().count
 
-    return app
+    return previews.PreviewGateway(app)
 
 
 app = create_app()

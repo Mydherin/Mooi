@@ -1,0 +1,16 @@
+/** User-facing dictation copy. Server-side failures arrive already worded by mic-speech. */
+export const DICTATION_MESSAGES = {
+  noTarget: 'This field is not available for dictation.',
+  insecureContext: 'The microphone requires HTTPS or localhost.',
+  microphoneUnavailable: 'Could not access the microphone.',
+  microphoneDisconnected: 'The microphone was disconnected.',
+  sampleRateUnsupported: 'This browser does not support 16 kHz audio.',
+  connectTimeout: 'The dictation service is not responding.',
+  connectFailed: 'Cannot connect to the dictation service.',
+  connectionInterrupted: 'The dictation connection was interrupted.',
+  backpressure: 'The connection cannot keep up with the audio. Try again.',
+  finalizeTimeout: 'The service did not finish the transcription.',
+  invalidResponse: 'Invalid dictation response.',
+  fieldChanged: 'The field changed while dictating; the transcription was not inserted.',
+  emptyResult: 'No voice detected. Try again.',
+} as const;

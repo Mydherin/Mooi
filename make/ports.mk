@@ -12,6 +12,7 @@
 DEV_PORT_SPA      := 28471
 DEV_PORT_MIC      := 39615
 DEV_PORT_SESSIONS := 44913
+DEV_PORT_SPEECH   := 59100
 DEV_PORT_POSTGRES := 54983
 DEV_PORT_PGADMIN  := 51247
 
@@ -22,6 +23,7 @@ DEV_HOST_SPA := $(call env-get,spa-mooi/.env,VITE_DEV_HOST,localhost)
 export VITE_DEV_PORT  := $(DEV_PORT_SPA)
 export SERVER_PORT    := $(DEV_PORT_MIC)
 export SESSIONS_PORT  := $(DEV_PORT_SESSIONS)
+export SPEECH_PORT    := $(DEV_PORT_SPEECH)
 export POSTGRES_PORT  := $(DEV_PORT_POSTGRES)
 export PGADMIN_PORT   := $(DEV_PORT_PGADMIN)
 
@@ -29,6 +31,8 @@ export PGADMIN_PORT   := $(DEV_PORT_PGADMIN)
 export VITE_API_BASE_URL := http://localhost:$(DEV_PORT_MIC)
 export MOOI_API_BASE_URL := http://localhost:$(DEV_PORT_MIC)
 export VITE_SESSIONS_BASE_URL := http://localhost:$(DEV_PORT_SESSIONS)
+# mic-speech binds loopback IPv4 only; 127.0.0.1 avoids a `localhost` -> ::1 miss.
+export VITE_SPEECH_BASE_URL := http://127.0.0.1:$(DEV_PORT_SPEECH)
 export CORS_ORIGIN       := http://$(DEV_HOST_SPA):$(DEV_PORT_SPA)
 # Registered on the GitHub App; it embeds the SPA port, so it follows a change here.
 export GITHUB_REDIRECT_URI := http://$(DEV_HOST_SPA):$(DEV_PORT_SPA)/account/github/callback

@@ -13,6 +13,7 @@ export const env: AppEnv = {
   apiBaseUrl: requireEnv(import.meta.env.VITE_API_BASE_URL, 'VITE_API_BASE_URL'),
   sessionsBaseUrl: requireEnv(import.meta.env.VITE_SESSIONS_BASE_URL, 'VITE_SESSIONS_BASE_URL'),
   sessionsRefreshMs: requirePositiveNumber(import.meta.env.VITE_SESSIONS_REFRESH_SECONDS, 'VITE_SESSIONS_REFRESH_SECONDS') * 1000,
+  speechBaseUrl: requireEnv(import.meta.env.VITE_SPEECH_BASE_URL, 'VITE_SPEECH_BASE_URL'),
   googleClientId: requireEnv(import.meta.env.VITE_GOOGLE_CLIENT_ID, 'VITE_GOOGLE_CLIENT_ID'),
   storagePrefix: requireEnv(import.meta.env.VITE_STORAGE_PREFIX, 'VITE_STORAGE_PREFIX'),
 };

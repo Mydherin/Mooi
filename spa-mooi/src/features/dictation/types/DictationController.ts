@@ -1,0 +1,11 @@
+import type { DictationState } from '@/features/dictation/types/DictationState';
+
+export interface DictationController {
+  state: DictationState;
+  error: string | null;
+  /** True while a session exists, read synchronously by global key and pointer listeners. */
+  isActive: () => boolean;
+  start: () => void;
+  stop: () => void;
+  cancel: () => void;
+}

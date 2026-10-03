@@ -916,7 +916,9 @@ class ClaudeAgentRuntime:
             from mic_sessions.shared import claude_usage
             await claude_usage.remember(self._credential.connection_id, self._credential.token,
                                   info.rate_limit_type, {
-                "percent": info.utilization * 100 if info.utilization is not None else None,
+                # A rejected window is exhausted even when the CLI omits its utilization.
+                "percent": info.utilization * 100 if info.utilization is not None
+                else 100 if info.status == "rejected" else None,
                 "window": info.rate_limit_type, "resetsAt": info.resets_at,
                 "status": info.status, "updatedAt": self._quota_reported_at,
             })
@@ -1013,11 +1015,13 @@ class ClaudeAgentRuntime:
         # The SDK can deliver each block of one message as a separate AssistantMessage.
         # Keep its original stream index across those slices.
         first_index = self._assistant_block_offsets.get(block_key, 0)
-        if parent == "root" and message.usage:
-            tokens = message.usage
-            if any(key in tokens for key in ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")):
-                self._context_input = sum(tokens.get(key, 0) or 0 for key in
-                                          ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"))
+        # Synthetic messages (provider errors, interruptions) carry zeroed usage: never let them
+        # overwrite the context measured by the last real model response.
+        tokens = message.usage if parent == "root" and not message.error else None
+        input_tokens = sum(tokens.get(key, 0) or 0 for key in
+                           ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")) if tokens else 0
+        if tokens and getattr(message, "model", None) != "<synthetic>" and input_tokens > 0:
+            self._context_input = input_tokens
             self._context_output = tokens.get("output_tokens", self._context_output) or 0
             await self._emit_context_usage()
         for index, block in enumerate(message.content, start=first_index):
@@ -1065,8 +1069,11 @@ class ClaudeAgentRuntime:
         self._stream_ids.clear()
         self._assistant_block_offsets.clear()
         self._stream_message_id = None
-        if message.is_error and getattr(message, "errors", None):
-            await self._publish(agent_error(_result_summary("\n".join(message.errors))))
+        # A stopped turn ends as an error with internal diagnostics only; the footer reports it.
+        errors = [error for error in getattr(message, "errors", None) or []
+                  if not str(error).startswith("[ede_diagnostic]")]
+        if message.is_error and errors and not self._interrupted:
+            await self._publish(agent_error(_result_summary("\n".join(errors))))
         await self._publish(
             turn_result(
                 terminal_reason="interrupted" if self._interrupted else "error" if message.is_error else "completed",
