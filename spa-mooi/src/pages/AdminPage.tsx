@@ -33,7 +33,7 @@ export const AdminPage = () => {
   }, []);
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-5 py-7 sm:px-8 lg:px-10 lg:py-10">
+    <div className="mx-auto w-full max-w-6xl px-5 pt-7 pb-[calc(1.75rem+var(--safe-bottom))] sm:px-8 lg:px-10 lg:pt-10 lg:pb-10">
       <h1 className="text-[32px] font-extrabold tracking-[-0.045em] text-ink sm:text-[38px]">Admin</h1>
       <p className="mt-1.5 text-sm text-ink-muted">
         Manage and check access to your workspace.

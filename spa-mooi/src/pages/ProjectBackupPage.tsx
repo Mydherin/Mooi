@@ -115,9 +115,9 @@ export const ProjectBackupPage = () => {
 
   if (!project) {
     if (status === 'loading' || status === 'idle') {
-      return <div className="mx-auto w-full max-w-6xl px-5 py-7 sm:px-8 lg:px-10 lg:py-10"><Card className="h-56 animate-pulse-soft" /></div>;
+      return <div className="mx-auto w-full max-w-6xl px-5 pt-7 pb-[calc(1.75rem+var(--safe-bottom))] sm:px-8 lg:px-10 lg:pt-10 lg:pb-10"><Card className="h-56 animate-pulse-soft" /></div>;
     }
-    return <div className="mx-auto w-full max-w-6xl px-5 py-7 sm:px-8 lg:px-10 lg:py-10">
+    return <div className="mx-auto w-full max-w-6xl px-5 pt-7 pb-[calc(1.75rem+var(--safe-bottom))] sm:px-8 lg:px-10 lg:pt-10 lg:pb-10">
       <EmptyState icon={Compass} title="Project not found" description="This project is not part of your workspace.">
         <Link to={ROUTES.backups} className={buttonStyles('secondary', 'md')}>Back to backups</Link>
       </EmptyState>

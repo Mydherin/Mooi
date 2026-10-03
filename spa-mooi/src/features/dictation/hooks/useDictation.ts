@@ -82,6 +82,8 @@ export const useDictation = (field: RefObject<DictationField | null>): Dictation
 
   const stop = useCallback(() => session.current?.stop(), []);
 
+  const resumeAudio = useCallback(() => session.current?.resumeAudio(), []);
+
   const cancel = useCallback(() => {
     session.current?.dispose();
     transcript.current?.rollback();
@@ -90,6 +92,17 @@ export const useDictation = (field: RefObject<DictationField | null>): Dictation
   }, [end]);
 
   const isActive = useCallback(() => session.current !== null || stateRef.current !== 'idle', []);
+
+  // A backgrounded app loses the microphone (iOS ends it outright): keep what was said, drop the rest.
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== 'hidden' || !session.current) return;
+      if (stateRef.current === 'recording') stop();
+      else cancel();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+  }, [cancel, stop]);
 
   useEffect(() => {
     if (!error) return;
@@ -102,5 +115,5 @@ export const useDictation = (field: RefObject<DictationField | null>): Dictation
     transcript.current?.rollback();
   }, []);
 
-  return { state, error, isActive, start, stop, cancel };
+  return { state, error, isActive, start, stop, cancel, resumeAudio };
 };

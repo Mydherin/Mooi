@@ -102,7 +102,7 @@ export const ChatComposer = ({
   };
 
   return (
-    <div className="mx-auto w-full max-w-[60rem] shrink-0 bg-surface px-3 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-8 sm:pb-6">
+    <div className="mx-auto w-full max-w-[60rem] shrink-0 bg-surface px-2.5 pt-2 pb-[max(0.625rem,var(--safe-bottom))] sm:px-8 sm:pt-3 sm:pb-6">
       <div className="rounded-2xl border border-line bg-surface-2 transition focus-within:border-ink">
         <textarea
           ref={textareaRef}
@@ -128,26 +128,30 @@ export const ChatComposer = ({
           }}
           placeholder={hint ?? 'Describe the next change…'}
           aria-label="Message the agent"
-          className="max-h-[min(12rem,25dvh)] w-full resize-none bg-transparent px-5 pt-4 text-base leading-relaxed text-ink placeholder:text-ink-subtle focus:outline-none disabled:cursor-not-allowed"
+          enterKeyHint="send"
+          data-compose
+          className="max-h-[min(12rem,25dvh)] w-full resize-none bg-transparent px-4 pt-3 text-base leading-relaxed keyboard:max-h-32 sm:px-5 sm:pt-4 text-ink placeholder:text-ink-subtle focus:outline-none disabled:cursor-not-allowed"
         />
-        {hint ? <p role="status" className="px-5 pb-2 text-xs text-ink-muted">{hint}</p> : null}
+        {hint ? <p role="status" className="px-4 pb-2 text-xs text-ink-muted sm:px-5">{hint}</p> : null}
 
-        {activeTurn ? <p className="px-5 pb-2 text-xs text-ink-muted">Model and effort changes apply to your next message.</p> : null}
+        {activeTurn ? <p className="px-4 pb-2 text-xs text-ink-muted sm:px-5">Model and effort changes apply to your next message.</p> : null}
 
-        <div className="flex flex-wrap items-center gap-2 px-2 pb-2">
+        {/* One row at every width: the pickers scroll sideways rather than pushing send to a new line. */}
+        <div className="flex items-center gap-1 px-1.5 pb-1.5 sm:gap-2 sm:px-2 sm:pb-2">
           <ChatUsageIndicators usage={usage} loading={status === 'provisioning' || status === 'compacting'}
             actionsDisabled={busy || deploying || status !== 'ready' || !hasConversation}
             onCompact={onCompact} onClear={onClear} />
           {actions}
+          <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto [scrollbar-width:none] sm:gap-2 [&::-webkit-scrollbar]:hidden">
           {modelOptions.length > 0 ? (
-            <label className="flex min-w-0 items-center gap-1.5 text-xs text-ink-subtle">
+            <label className="flex shrink-0 items-center gap-1.5 text-xs text-ink-subtle">
               <span className="sr-only">Agent model</span>
               <select
                 value={model}
                 onChange={(event) => changeModel(event.target.value)}
                 disabled={configurationDisabled}
                 aria-describedby={modelError ? 'model-error' : undefined}
-                className="max-w-[9rem] truncate rounded-lg border border-line bg-surface px-2 py-1.5 font-medium text-ink outline-none focus:border-brand disabled:cursor-not-allowed disabled:opacity-60"
+                className="max-w-[7.5rem] truncate rounded-lg border border-line bg-surface px-2 py-1.5 font-medium text-ink outline-none focus:border-brand disabled:cursor-not-allowed disabled:opacity-60 sm:max-w-[9rem]"
               >
                 {!modelOptions.some((option) => option.id === model) ? <option value={model}>{model}</option> : null}
                 {modelOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
@@ -161,22 +165,23 @@ export const ChatComposer = ({
           ) : null}
 
           {effortOptions.length > 0 ? (
-            <label className="flex min-w-0 items-center gap-1.5 text-xs text-ink-subtle">
-              <span>Effort</span>
+            <label className="flex shrink-0 items-center gap-1.5 text-xs text-ink-subtle">
+              <span className="hidden sm:inline">Effort</span>
               <select
                 value={effort ?? ''}
                 onChange={(event) => onConfigurationChange({ model, effort: event.target.value || null })}
                 disabled={configurationDisabled}
                 aria-label="Agent effort"
-                className="max-w-[9rem] truncate rounded-lg border border-line bg-surface px-2 py-1.5 font-medium text-ink outline-none focus:border-brand disabled:cursor-not-allowed disabled:opacity-60"
+                className="max-w-[6.5rem] truncate rounded-lg border border-line bg-surface px-2 py-1.5 font-medium text-ink outline-none focus:border-brand disabled:cursor-not-allowed disabled:opacity-60 sm:max-w-[9rem]"
               >
                 {effort && !effortOptions.includes(effort) ? <option value={effort}>{effort}</option> : null}
                 {effortOptions.map((option) => <option key={option} value={option}>{option}</option>)}
               </select>
             </label>
           ) : null}
+          </div>
 
-          <div className="ml-auto flex items-center gap-1.5">
+          <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-1.5">
             {!activeTurn && !blocked ? <span className="mr-1 hidden text-xs text-ink-subtle lg:flex">Enter to send · Shift+Enter for a new line</span> : null}
 
             {!blocked ? <DictationButton field={textareaRef} /> : null}

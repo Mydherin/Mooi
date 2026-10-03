@@ -51,7 +51,7 @@ export const ProjectsPage = () => {
 
   if (resolved && !linked) {
     return (
-      <div className="mx-auto w-full max-w-6xl px-5 py-7 sm:px-8 lg:px-10 lg:py-10">
+      <div className="mx-auto w-full max-w-6xl px-5 pt-7 pb-[calc(1.75rem+var(--safe-bottom))] sm:px-8 lg:px-10 lg:pt-10 lg:pb-10">
         <GithubGateCard
           title="Connect GitHub to add projects"
           description="Mooi builds on your repositories. Link your GitHub account and import the ones you want to work on."
@@ -61,7 +61,7 @@ export const ProjectsPage = () => {
   }
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-5 py-7 sm:px-8 lg:px-10 lg:py-10">
+    <div className="mx-auto w-full max-w-6xl px-5 pt-7 pb-[calc(1.75rem+var(--safe-bottom))] sm:px-8 lg:px-10 lg:pt-10 lg:pb-10">
       <ProjectsHeader
         onAdd={() => setDialogOpen(true)}
         onCreate={() => setCreateOpen(true)}

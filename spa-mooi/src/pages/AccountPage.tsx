@@ -34,7 +34,7 @@ export const AccountPage = () => {
   }
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-5 py-7 sm:px-8 lg:px-10 lg:py-10">
+    <div className="mx-auto w-full max-w-6xl px-5 pt-7 pb-[calc(1.75rem+var(--safe-bottom))] sm:px-8 lg:px-10 lg:pt-10 lg:pb-10">
       <h1 className="text-[32px] font-extrabold tracking-[-0.045em] text-ink sm:text-[38px]">
         Account
       </h1>

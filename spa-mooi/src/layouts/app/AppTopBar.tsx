@@ -17,7 +17,7 @@ export const AppTopBar = () => {
   const open = useSidebarStore((state) => state.open);
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-3 border-b border-line bg-surface px-3 sm:px-4 lg:rounded-t-2xl lg:border lg:px-5">
+    <header className="sticky top-0 z-30 flex h-14 composing:max-lg:hidden shrink-0 items-center gap-3 border-b border-line bg-surface px-3 sm:px-4 lg:rounded-t-2xl lg:border lg:px-5">
       <IconButton icon={Menu} label="Open navigation" onClick={open} className="lg:hidden" />
 
       <Link

@@ -2,10 +2,13 @@ import { DICTATION_MESSAGES } from '@/features/dictation/lib/dictationMessages';
 import { dictationStreamUrl } from '@/features/dictation/lib/dictationStreamUrl';
 import type { DictationCallbacks } from '@/features/dictation/types/DictationCallbacks';
 import type { DictationServerMessage } from '@/features/dictation/types/DictationServerMessage';
+import { microphoneErrorMessage } from '@/features/dictation/lib/microphoneErrorMessage';
 
 const SAMPLE_RATE = 16000;
 const CONNECT_TIMEOUT_MS = 15_000;
 const FINALIZE_TIMEOUT_MS = 30_000;
+/** iOS keeps `resume()` pending forever while its audio session is interrupted: never wait longer. */
+const AUDIO_START_TIMEOUT_MS = 5_000;
 /** ~4 s of PCM16 at 16 kHz queued unsent: the link cannot keep up with real time. */
 const MAX_BUFFERED_BYTES = 128_000;
 const WORKLET_URL = `${import.meta.env.BASE_URL}dictation-worklet.js`;
@@ -14,7 +17,8 @@ const WORKLET_URL = `${import.meta.env.BASE_URL}dictation-worklet.js`;
  * One dictation: microphone → AudioWorklet (PCM16, 16 kHz, 500 ms frames) → WebSocket to
  * mic-speech, and the running transcript back. The microphone is requested first, inside the user
  * gesture, before any server session exists. Every exit path releases every resource, and once
- * disposed no callback fires again.
+ * disposed no callback fires again. Audio start is bounded in time, so a browser that never lets
+ * the audio run (iOS audio interruption, missing user activation) ends in an error, never a hang.
  */
 export class DictationSession {
   private readonly callbacks: DictationCallbacks;
@@ -46,8 +50,8 @@ export class DictationSession {
         return;
       }
       this.stream = stream;
-    } catch {
-      this.fail(DICTATION_MESSAGES.microphoneUnavailable);
+    } catch (error) {
+      this.fail(microphoneErrorMessage(error));
       return;
     }
     this.stream.getAudioTracks().forEach((track) => track.addEventListener('ended', () => this.fail(DICTATION_MESSAGES.microphoneDisconnected)));
@@ -66,14 +70,24 @@ export class DictationSession {
     try {
       await this.context.audioWorklet.addModule(WORKLET_URL);
       if (this.closed) return;
-      await this.context.resume();
+      await this.startAudio(this.context);
       if (this.closed) return;
     } catch {
-      this.fail(DICTATION_MESSAGES.microphoneUnavailable);
+      this.fail(DICTATION_MESSAGES.audioBlocked);
       return;
     }
+    this.context.addEventListener('statechange', this.onAudioStateChange);
 
     this.open();
+  }
+
+  /**
+   * Resumes the audio engine; call it from a user activation (`pointerup`, `click`, `keydown`).
+   * Touch `pointerdown` is not an activation, so the engine may still be waiting for one.
+   */
+  resumeAudio(): void {
+    if (this.closed || !this.context || this.context.state === 'running') return;
+    void this.context.resume().catch(() => undefined);
   }
 
   /** Idempotent. Before `ready` it is deferred; after, the worklet flushes its tail frame first. */
@@ -97,9 +111,35 @@ export class DictationSession {
       this.node.port.close();
       this.node.disconnect();
     }
+    this.context?.removeEventListener('statechange', this.onAudioStateChange);
     void this.context?.close().catch(() => undefined);
     if (this.socket && this.socket.readyState < WebSocket.CLOSING) this.socket.close();
   }
+
+  private async startAudio(context: AudioContext): Promise<void> {
+    if (context.state === 'running') return;
+    let timer: number | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = window.setTimeout(() => reject(new Error('audio start timeout')), AUDIO_START_TIMEOUT_MS);
+    });
+    try {
+      await Promise.race([context.resume(), timeout]);
+    } finally {
+      window.clearTimeout(timer);
+    }
+    if ((context.state as string) !== 'running') throw new Error('audio not running');
+  }
+
+  /** A phone call, Siri or another app takes the audio away (`interrupted` on iOS): recover or end. */
+  private readonly onAudioStateChange = (): void => {
+    const context = this.context;
+    if (this.closed || !context || context.state === 'running') return;
+    if (context.state === 'closed') {
+      this.fail(DICTATION_MESSAGES.microphoneDisconnected);
+      return;
+    }
+    void this.startAudio(context).catch(() => this.fail(DICTATION_MESSAGES.microphoneDisconnected));
+  };
 
   private open(): void {
     const socket = new WebSocket(dictationStreamUrl());

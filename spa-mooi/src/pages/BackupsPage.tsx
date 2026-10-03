@@ -42,7 +42,7 @@ export const BackupsPage = () => {
   const protectedProjects = useMemo(() => [...byProject.values()].filter((backups) => backups[0]?.state === 'succeeded').length, [byProject]);
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-5 py-7 sm:px-8 lg:px-10 lg:py-10">
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-5 pt-7 pb-[calc(1.75rem+var(--safe-bottom))] sm:px-8 lg:px-10 lg:pt-10 lg:pb-10">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="mb-2 text-[11px] font-extrabold tracking-[0.09em] text-ink-subtle uppercase">Production</p>

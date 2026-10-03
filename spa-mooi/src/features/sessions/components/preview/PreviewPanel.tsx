@@ -18,7 +18,7 @@ export const PreviewPanel = ({ sessionId, deployment, visible }: { sessionId: st
   const { panelRef, expanded, fullscreen, toggle } = usePreviewFullscreen(Boolean(url) && visible);
   const activityFailed = usePreviewActivity(sessionId, visible && deployment.state === 'running');
   if (url) {
-    return <div ref={panelRef} className={cn("flex h-full min-h-0 flex-col overflow-hidden bg-surface-2", expanded && "fixed inset-0 z-50 h-dvh")}>
+    return <div ref={panelRef} className={cn("flex h-full min-h-0 flex-col overflow-hidden bg-surface-2", expanded && "fixed inset-x-0 top-0 z-50 h-app")}>
       <PreviewToolbar device={device} onDeviceChange={setDevice} onReload={() => setReload((value) => value + 1)}>
         <IconButton icon={fullscreen ? Minimize : Maximize} label={fullscreen ? 'Exit fullscreen' : 'Enter fullscreen'} onClick={() => void toggle()} />
       </PreviewToolbar>

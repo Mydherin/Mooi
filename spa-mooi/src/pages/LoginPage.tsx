@@ -49,7 +49,7 @@ export const LoginPage = () => {
   );
 
   return (
-    <div className="min-h-dvh bg-canvas text-ink lg:grid lg:grid-cols-[1.1fr_1fr]">
+    <div className="min-h-full bg-canvas text-ink lg:grid lg:grid-cols-[1.1fr_1fr]">
       <aside className="relative hidden overflow-hidden bg-contrast p-12 text-contrast-ink lg:flex lg:flex-col xl:p-16">
         <div className="relative z-10">
           <Logo />
@@ -79,7 +79,7 @@ export const LoginPage = () => {
         </p>
       </aside>
 
-      <main className="relative flex min-h-dvh flex-col justify-center px-4 py-12 sm:px-8 lg:min-h-0">
+      <main className="relative flex min-h-full flex-col justify-center px-4 py-12 sm:px-8 lg:min-h-0">
         <div className="absolute top-5 right-5"><ThemeToggle /></div>
         <div className="mx-auto w-full max-w-sm">
           <LogoMark live className="size-10 lg:hidden" />

@@ -59,7 +59,7 @@ export const SessionsPage = () => {
   const firstLoad = loading && sessions.length === 0;
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-5 py-7 sm:px-8 lg:px-10 lg:py-10">
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-5 pt-7 pb-[calc(1.75rem+var(--safe-bottom))] sm:px-8 lg:px-10 lg:pt-10 lg:pb-10">
       <SessionsOverviewHeader query={query} onQueryChange={setQuery} showSearch={sessions.length > 0}
         refreshing={loading} onRefresh={reload} />
 

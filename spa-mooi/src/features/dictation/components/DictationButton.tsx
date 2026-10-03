@@ -39,32 +39,38 @@ export const DictationButton = ({ field, disabled = false, className }: Dictatio
   }, [cancel, disabled, isActive]);
 
   return (
-    <button
-      type="button"
-      {...handlers}
-      disabled={disabled || state === 'stopping'}
-      aria-label={label}
-      title={label}
-      aria-pressed={state === 'recording'}
-      className={cn(
-        'relative inline-flex size-11 shrink-0 touch-none items-center justify-center rounded-[10px] transition duration-200 select-none [-webkit-touch-callout:none] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand active:scale-95 disabled:cursor-not-allowed disabled:opacity-50',
-        error && state === 'idle' ? 'text-danger hover:bg-danger-soft' : tones[state],
-        className,
-      )}
-    >
-      {state === 'recording' ? (
-        <span aria-hidden="true" className="absolute inset-0 rounded-[inherit] ring-1 ring-danger/40 motion-safe:animate-pulse-soft" />
-      ) : null}
-      {state === 'connecting' || state === 'stopping' ? (
-        <Loader2 aria-hidden="true" className="size-4.5 animate-spin" />
-      ) : state === 'recording' ? (
-        <DictationBars />
-      ) : error ? (
-        <MicOff aria-hidden="true" className="size-4.5" />
-      ) : (
-        <Mic aria-hidden="true" className="size-4.5" />
-      )}
-      <span role="status" className="sr-only">{error ?? ''}</span>
-    </button>
+    <span className="relative inline-flex shrink-0">
+      <button
+        type="button"
+        {...handlers}
+        disabled={disabled || state === 'stopping'}
+        aria-label={label}
+        title={label}
+        aria-pressed={state === 'recording'}
+        className={cn(
+          'relative inline-flex size-11 shrink-0 touch-none items-center justify-center rounded-[10px] transition duration-200 select-none [-webkit-touch-callout:none] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand active:scale-95 disabled:cursor-not-allowed disabled:opacity-50',
+          error && state === 'idle' ? 'text-danger hover:bg-danger-soft' : tones[state],
+          className,
+        )}
+      >
+        {state === 'recording' ? (
+          <span aria-hidden="true" className="absolute inset-0 rounded-[inherit] ring-1 ring-danger/40 motion-safe:animate-pulse-soft" />
+        ) : null}
+        {state === 'connecting' || state === 'stopping' ? (
+          <Loader2 aria-hidden="true" className="size-4.5 animate-spin" />
+        ) : state === 'recording' ? (
+          <DictationBars />
+        ) : error ? (
+          <MicOff aria-hidden="true" className="size-4.5" />
+        ) : (
+          <Mic aria-hidden="true" className="size-4.5" />
+        )}
+      </button>
+      {/* Touch screens have no hover title: the reason the microphone stopped is shown, not hidden. */}
+      <span role="status" className={cn(
+        'pointer-events-none absolute right-0 bottom-full z-30 mb-2 w-max max-w-[min(16rem,calc(100vw-2rem))] rounded-xl bg-contrast px-3 py-2 text-xs leading-snug font-medium text-contrast-ink shadow-lg',
+        error ? 'animate-menu-in' : 'sr-only',
+      )}>{error ?? ''}</span>
+    </span>
   );
 };

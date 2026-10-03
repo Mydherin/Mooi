@@ -1,6 +1,15 @@
 @import 'tailwindcss';
 
 @custom-variant dark (&:where(.dark, .dark *));
+/* An on-screen keyboard is up (touch device, text field focused): chrome steps aside for the draft. */
+@custom-variant keyboard (&:where([data-keyboard], [data-keyboard] *));
+/* Writing a message (`data-compose` field focused with the keyboard up): the conversation takes the screen. */
+@custom-variant composing (&:where(:root[data-keyboard]:has([data-compose]:focus) *));
+
+/* The visible viewport, kept by `useAppViewport`: iOS never shrinks `dvh` for the keyboard. */
+@utility h-app {
+  height: var(--app-height, 100dvh);
+}
 
 :root {
   --canvas: #ffffff;
@@ -42,6 +51,16 @@
   --danger-soft: #ffefed;
   --info-soft: #eff3fe;
   --accent-soft: #f3f0fa;
+
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+}
+
+/* With the keyboard up the home indicator is hidden behind it: no inset to keep clear. */
+[data-keyboard] {
+  --safe-bottom: 0px;
 }
 
 .dark {
@@ -138,6 +157,8 @@
   --animate-pulse-soft: pulse-soft 1.6s ease-in-out infinite;
   --animate-shimmer: shimmer 2s linear infinite;
   --animate-menu-in: menu-in 0.16s cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-drawer-in: drawer-in 0.28s cubic-bezier(0.32, 0.72, 0, 1) both;
+  --animate-sheet-in: sheet-in 0.32s cubic-bezier(0.32, 0.72, 0, 1) both;
   --animate-voice-bar: voice-bar 0.9s ease-in-out infinite;
   --animate-orb-ping: orb-ping 2.4s cubic-bezier(0, 0, 0.2, 1) infinite;
   --animate-step-fill: step-fill linear both;
@@ -216,6 +237,25 @@
     }
   }
 
+  @keyframes drawer-in {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(0);
+    }
+  }
+
+  /* The iOS sheet curve: a bottom sheet slides up from below the screen edge. */
+  @keyframes sheet-in {
+    from {
+      transform: translateY(100%);
+    }
+    to {
+      transform: translateY(0);
+    }
+  }
+
   /* Short and slightly scaled: a menu should read as opening from its trigger, not as arriving. */
   @keyframes menu-in {
     from {
@@ -236,9 +276,21 @@
 
   html.dark { color-scheme: dark; }
 
+  /* An app shell, not a document: the page never scrolls, bounces or zooms; #root fits the visible
+     viewport and every screen scrolls inside its own container. */
+  html,
+  body {
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
   html {
     scroll-behavior: smooth;
     -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    touch-action: manipulation;
   }
 
   body {
@@ -248,6 +300,25 @@
     color: var(--ink);
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+    -webkit-touch-callout: none;
+  }
+
+  #root {
+    height: var(--app-height, 100dvh);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  /* Controls behave like native ones: a long press never selects their label or opens a preview. */
+  button, a, label, nav, [role="tab"], [role="menuitem"], [role="button"], img, svg {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  input, textarea, [contenteditable="true"] {
+    -webkit-touch-callout: default;
+    -webkit-user-select: text;
+    user-select: text;
   }
 
   button, a, input, textarea, select { touch-action: manipulation; }
@@ -289,7 +360,7 @@
   }
 }
 
-/* Keep editable controls readable and prevent automatic zoom on mobile Safari. */
-@media (max-width: 639px) {
+/* Keep editable controls readable and prevent automatic zoom on mobile Safari (any touch device). */
+@media (max-width: 639px), (pointer: coarse) {
   input, textarea, select { font-size: 16px; }
 }

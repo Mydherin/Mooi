@@ -14,7 +14,7 @@ export const AppLayout = () => {
   useRecipeMarketplacesSync();
 
   return (
-    <div className="flex h-dvh overflow-hidden bg-canvas text-ink">
+    <div className="flex h-full overflow-hidden bg-canvas pt-(--safe-top) pr-(--safe-right) pl-(--safe-left) text-ink">
       <AppSidebar className="hidden w-[240px] shrink-0 border-r border-line lg:flex" />
 
       <div className="flex min-w-0 flex-1 flex-col lg:p-3 lg:pl-0">

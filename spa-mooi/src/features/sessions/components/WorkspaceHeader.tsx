@@ -30,7 +30,7 @@ export const WorkspaceHeader = ({
   onClose,
   closeBusy,
 }: WorkspaceHeaderProps) => (
-  <div className="flex shrink-0 items-center gap-1.5 border-b border-line bg-surface py-2 pr-2 pl-1.5 sm:gap-3 sm:px-5 sm:py-2.5">
+  <div className="flex shrink-0 items-center gap-1.5 composing:max-lg:hidden border-b border-line bg-surface py-2 pr-2 pl-1.5 sm:gap-3 sm:px-5 sm:py-2.5">
     <Link
       to={projectPath(project.id)}
       aria-label={`Back to ${project.name}`}

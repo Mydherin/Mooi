@@ -13,10 +13,11 @@ interface PointerHandlers {
 /**
  * Mouse and touch on the microphone button. `pointerdown` is prevented so the button never steals
  * focus from the field being dictated into. Release is tracked on `window` (capture phase): the
- * finger may leave the button while holding it. A click with `detail === 0` is a keyboard
- * activation (Enter/Space on the focused button) and toggles.
+ * finger may leave the button while holding it, and the release is the user activation mobile
+ * browsers require before audio may run. A press while still connecting cancels, so the button is
+ * never stuck waiting. A click with `detail === 0` is a keyboard activation (Enter/Space) and toggles.
  */
-export const useDictationPointer = ({ isActive, start, stop }: DictationController): PointerHandlers => {
+export const useDictationPointer = ({ state, isActive, start, stop, cancel, resumeAudio }: DictationController): PointerHandlers => {
   const press = useRef<{ id: number; at: number } | null>(null);
 
   useEffect(() => {
@@ -24,6 +25,7 @@ export const useDictationPointer = ({ isActive, start, stop }: DictationControll
       const current = press.current;
       if (!current || current.id !== event.pointerId) return;
       press.current = null;
+      resumeAudio();
       if (event.type === 'pointercancel' || performance.now() - current.at >= HOLD_MS) stop();
     };
 
@@ -34,12 +36,16 @@ export const useDictationPointer = ({ isActive, start, stop }: DictationControll
       window.removeEventListener('pointerup', onRelease, true);
       window.removeEventListener('pointercancel', onRelease, true);
     };
-  }, [stop]);
+  }, [resumeAudio, stop]);
 
   return {
     onPointerDown: (event) => {
       if (event.button !== 0) return;
       event.preventDefault();
+      if (state === 'connecting') {
+        cancel();
+        return;
+      }
       if (isActive()) {
         stop();
         return;
@@ -49,7 +55,8 @@ export const useDictationPointer = ({ isActive, start, stop }: DictationControll
     },
     onClick: (event) => {
       if (event.detail !== 0) return;
-      if (isActive()) stop();
+      if (state === 'connecting') cancel();
+      else if (isActive()) stop();
       else start();
     },
     onContextMenu: (event) => event.preventDefault(),

@@ -1,4 +1,8 @@
+import { useCallback, useRef, useState } from 'react';
 import { Activity, Eraser, Layers3, LoaderCircle } from 'lucide-react';
+import { useOnClickOutside } from '@/shared/hooks/useOnClickOutside';
+import { useOnEscape } from '@/shared/hooks/useOnEscape';
+import { cn } from '@/shared/utils/cn';
 import type { SessionUsage } from '@/features/sessions/types/SessionUsage';
 import type { UsageMetric } from '@/features/sessions/types/UsageMetric';
 
@@ -42,16 +46,26 @@ export const ChatUsageIndicators = ({ usage, loading = false, actionsDisabled, o
   const context = usage?.context;
   const known = Object.values(quotas).filter((metric) => percent(metric) != null);
   const updatedAt = Math.min(...known.map((metric) => metric.updatedAt));
+  // Hover and focus reveal it with a mouse; a tap toggles it, since touch has neither.
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLSpanElement>(null);
+  const close = useCallback(() => setOpen(false), []);
+  useOnClickOutside(containerRef, close, open);
+  useOnEscape(close, open);
   return (
-    <span className="group/context relative inline-flex shrink-0" onMouseLeave={(event) => {
+    <span ref={containerRef} className="group/context relative inline-flex shrink-0" onMouseLeave={(event) => {
       if (event.currentTarget.contains(document.activeElement)) (document.activeElement as HTMLElement).blur();
+      close();
     }}>
-      <button type="button" aria-label="Context usage and conversation actions" aria-haspopup="true"
+      <button type="button" aria-label="Context usage and conversation actions" aria-haspopup="true" aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
         className="flex size-9 shrink-0 items-center justify-center rounded-full text-sky-500 transition hover:bg-sky-500/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
       >
         {loading ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <Activity className="size-4" aria-hidden="true" />}
       </button>
-      <span className="pointer-events-none invisible absolute bottom-full left-0 z-50 w-max max-w-[calc(100vw-2rem)] pb-2 opacity-0 transition duration-150 group-hover/context:pointer-events-auto group-hover/context:visible group-hover/context:opacity-100 group-focus-within/context:pointer-events-auto group-focus-within/context:visible group-focus-within/context:opacity-100">
+      <span className={cn('absolute bottom-full left-0 z-50 w-max max-w-[calc(100vw-2rem)] pb-2 transition duration-150', open
+        ? 'pointer-events-auto visible opacity-100'
+        : 'pointer-events-none invisible opacity-0 group-hover/context:pointer-events-auto group-hover/context:visible group-hover/context:opacity-100 group-focus-within/context:pointer-events-auto group-focus-within/context:visible group-focus-within/context:opacity-100')}>
         <span className="flex min-w-56 flex-col gap-2 rounded-xl border border-line-strong bg-surface p-3 font-sans text-xs font-medium normal-case text-ink shadow-[0_12px_32px_rgb(0_0_0/0.2)] dark:shadow-[0_12px_32px_rgb(0_0_0/0.6)]">
         <Row label="Context used" metric={context} loading={loading} />
         {context?.limitTokens != null && <span className="text-ink-subtle">{(context.usedTokens ?? 0).toLocaleString()} / {context.limitTokens.toLocaleString()} tokens</span>}

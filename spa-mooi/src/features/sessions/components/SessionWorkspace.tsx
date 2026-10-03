@@ -77,7 +77,7 @@ export const SessionWorkspace = ({ sessionId, deployEnabled, children }: Session
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-surface">
-      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-line px-3 sm:px-5">
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-line px-3 composing:max-lg:hidden sm:px-5">
         <Tabs items={items} value={visiblePane} onChange={selectPane} ariaLabel="Session view" />
         {visiblePane === 'conversation' ? <span className="hidden text-[11px] text-ink-subtle sm:block">Live</span> : null}
       </div>
