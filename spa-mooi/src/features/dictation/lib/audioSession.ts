@@ -6,7 +6,9 @@ interface AudioSessionNavigator {
 
 /**
  * Tells iOS (Safari 16.4+ Audio Session API) the page records, so the microphone is routed into
- * Web Audio instead of a playback-only session that delivers silence. No-op elsewhere.
+ * Web Audio instead of a playback-only session that delivers silence. It is kept for the page life,
+ * like the shared dictation engine: switching it back and forth can leave a later context silent.
+ * No-op elsewhere.
  */
 export const setAudioSessionType = (type: AudioSessionType): void => {
   const session = (navigator as Navigator & AudioSessionNavigator).audioSession;

@@ -4,6 +4,7 @@ import type { DictationCallbacks } from '@/features/dictation/types/DictationCal
 import type { DictationServerMessage } from '@/features/dictation/types/DictationServerMessage';
 import { microphoneErrorMessage } from '@/features/dictation/lib/microphoneErrorMessage';
 import { setAudioSessionType } from '@/features/dictation/lib/audioSession';
+import { acquireDictationAudio, discardDictationAudio, releaseDictationAudio } from '@/features/dictation/lib/dictationAudio';
 
 const CONNECT_TIMEOUT_MS = 15_000;
 const FINALIZE_TIMEOUT_MS = 30_000;
@@ -11,7 +12,6 @@ const FINALIZE_TIMEOUT_MS = 30_000;
 const AUDIO_START_TIMEOUT_MS = 5_000;
 /** ~4 s of PCM16 at 16 kHz queued unsent: the link cannot keep up with real time. */
 const MAX_BUFFERED_BYTES = 128_000;
-const WORKLET_URL = `${import.meta.env.BASE_URL}dictation-worklet.js`;
 
 /**
  * One dictation: microphone → AudioWorklet (native rate in, PCM16 16 kHz 500 ms frames out) → WebSocket to
@@ -19,12 +19,15 @@ const WORKLET_URL = `${import.meta.env.BASE_URL}dictation-worklet.js`;
  * gesture, before any server session exists. Every exit path releases every resource, and once
  * disposed no callback fires again. Audio start is bounded in time, so a browser that never lets
  * the audio run (iOS audio interruption, missing user activation) ends in an error, never a hang.
+ * The audio engine is shared across dictations (see `dictationAudio`); an audio failure or a
+ * silent result discards it, so the next dictation recovers without reloading the page.
  */
 export class DictationSession {
   private readonly callbacks: DictationCallbacks;
   private closed = false;
   private stopping = false;
   private ready = false;
+  private audioFailed = false;
   private stream: MediaStream | null = null;
   private context: AudioContext | null = null;
   private source: MediaStreamAudioSourceNode | null = null;
@@ -57,20 +60,23 @@ export class DictationSession {
     }
     this.stream.getAudioTracks().forEach((track) => track.addEventListener('ended', () => this.fail(DICTATION_MESSAGES.microphoneDisconnected)));
 
+    let context: AudioContext;
     try {
-      // Native rate, matching the microphone: the worklet downsamples to 16 kHz itself.
-      this.context = new AudioContext({ latencyHint: 'interactive' });
+      context = await acquireDictationAudio();
     } catch {
       this.fail(DICTATION_MESSAGES.audioBlocked);
       return;
     }
+    if (this.closed) {
+      releaseDictationAudio(context);
+      return;
+    }
+    this.context = context;
     try {
-      await this.context.audioWorklet.addModule(WORKLET_URL);
-      if (this.closed) return;
-      await this.startAudio(this.context);
+      await this.startAudio(context);
       if (this.closed) return;
     } catch {
-      this.fail(DICTATION_MESSAGES.audioBlocked);
+      this.failAudio(DICTATION_MESSAGES.audioBlocked);
       return;
     }
     this.context.addEventListener('statechange', this.onAudioStateChange);
@@ -108,9 +114,11 @@ export class DictationSession {
       this.node.port.close();
       this.node.disconnect();
     }
-    this.context?.removeEventListener('statechange', this.onAudioStateChange);
-    void this.context?.close().catch(() => undefined);
-    setAudioSessionType('auto');
+    if (this.context) {
+      this.context.removeEventListener('statechange', this.onAudioStateChange);
+      if (this.audioFailed) discardDictationAudio(this.context);
+      else releaseDictationAudio(this.context);
+    }
     if (this.socket && this.socket.readyState < WebSocket.CLOSING) this.socket.close();
   }
 
@@ -133,10 +141,10 @@ export class DictationSession {
     const context = this.context;
     if (this.closed || !context || context.state === 'running') return;
     if (context.state === 'closed') {
-      this.fail(DICTATION_MESSAGES.microphoneDisconnected);
+      this.failAudio(DICTATION_MESSAGES.microphoneDisconnected);
       return;
     }
-    void this.startAudio(context).catch(() => this.fail(DICTATION_MESSAGES.microphoneDisconnected));
+    void this.startAudio(context).catch(() => this.failAudio(DICTATION_MESSAGES.microphoneDisconnected));
   };
 
   private open(): void {
@@ -165,6 +173,8 @@ export class DictationSession {
         this.callbacks.onPartial(message.text);
         return;
       case 'final':
+        // Nothing heard: the engine may be feeding silence, so the next dictation gets a fresh one.
+        this.audioFailed = !message.text;
         this.dispose();
         this.callbacks.onFinal(message.text);
         return;
@@ -192,7 +202,7 @@ export class DictationSession {
       // The worklet outputs silence; reaching the destination only keeps it processing.
       this.source.connect(this.node).connect(context.destination);
     } catch {
-      this.fail(DICTATION_MESSAGES.microphoneUnavailable);
+      this.failAudio(DICTATION_MESSAGES.microphoneUnavailable);
       return;
     }
     this.ready = true;
@@ -229,6 +239,11 @@ export class DictationSession {
 
   private stopTracks(): void {
     this.stream?.getTracks().forEach((track) => track.stop());
+  }
+
+  private failAudio(message: string): void {
+    this.audioFailed = true;
+    this.fail(message);
   }
 
   private fail(message: string): void {

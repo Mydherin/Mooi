@@ -8,11 +8,19 @@ import { PreviewToolbar } from './PreviewToolbar';
 import type { PreviewDevice } from '@/features/sessions/types/PreviewDevice';
 import { Maximize, Minimize, LoaderCircle, Monitor } from 'lucide-react';
 import { PreviewFrame } from './PreviewFrame';
+import { PreviewViewport } from './PreviewViewport';
+import { PreviewZoomControls } from './PreviewZoomControls';
+import { usePreviewZoom } from '@/features/sessions/hooks/usePreviewZoom';
+import { COMPACT_LAYOUT_QUERY } from '@/features/sessions/lib/previewViewports';
 import { previewUrl } from '@/features/sessions/lib/previewUrl';
 import type { DeploymentSnapshot } from '@/features/sessions/types/DeploymentSnapshot';
 
 export const PreviewPanel = ({ sessionId, deployment, visible }: { sessionId: string; deployment: DeploymentSnapshot; visible: boolean }) => {
-  const [device, setDevice] = useState<PreviewDevice>('desktop');
+  // Phones start where their own users are; desktops on the real 1920×1080 layout.
+  const [device, setDevice] = useState<PreviewDevice>(() => (window.matchMedia(COMPACT_LAYOUT_QUERY).matches ? 'mobile' : 'desktop'));
+  // A scaled desktop is hard to tap on touch screens: there, gestures move and zoom it by default.
+  const [navigating, setNavigating] = useState(() => window.matchMedia('(pointer: coarse)').matches);
+  const zoom = usePreviewZoom();
   const [reload, setReload] = useState(0);
   const url = deployment.state === 'running' ? previewUrl(deployment.previewUrl) : null;
   const { panelRef, expanded, fullscreen, toggle } = usePreviewFullscreen(Boolean(url) && visible);
@@ -20,11 +28,12 @@ export const PreviewPanel = ({ sessionId, deployment, visible }: { sessionId: st
   if (url) {
     return <div ref={panelRef} className={cn("flex h-full min-h-0 flex-col overflow-hidden bg-surface-2", expanded && "fixed inset-x-0 top-(--app-offset) z-50 h-app")}>
       <PreviewToolbar device={device} onDeviceChange={setDevice} onReload={() => setReload((value) => value + 1)}>
+        {device === 'desktop' && <PreviewZoomControls zoom={zoom} navigating={navigating} onNavigatingChange={setNavigating} />}
         <IconButton icon={fullscreen ? Minimize : Maximize} label={fullscreen ? 'Exit fullscreen' : 'Enter fullscreen'} onClick={() => void toggle()} />
       </PreviewToolbar>
-      <div className="mx-auto min-h-0 w-full flex-1" style={{ maxWidth: device === 'mobile' ? 390 : undefined }}>
+      <PreviewViewport device={device} zoom={zoom} navigating={navigating}>
         <PreviewFrame key={`${deployment.operationId}:${url}:${reload}`} url={url} />
-      </div>
+      </PreviewViewport>
       <PreviewDiagnostics url={url} activityFailed={activityFailed} />
     </div>;
   }
