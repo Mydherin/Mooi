@@ -46,9 +46,37 @@ domain="$(sed -n 's/^DOMAIN=//p' .env | tail -n 1)"
 previous="$(readlink current 2>/dev/null | sed 's:^releases/::' || true)"
 docker network inspect mooi-previews >/dev/null 2>&1 || docker network create mooi-previews >/dev/null
 
+# Releases before the `mooi-prod` project ship deploy/production/compose.yml; later ones compose.prod.yml.
+stack() {
+  local release="$1" file
+  shift
+  for file in compose.prod.yml compose.yml; do
+    if [ -f "releases/$release/deploy/production/$file" ]; then
+      MOOI_RELEASE="$release" docker compose --env-file .env -f "releases/$release/deploy/production/$file" "$@"
+      return
+    fi
+  done
+  printf 'release %s has no production compose file\n' "$release" >&2
+  return 1
+}
+
+# Another production project (a renamed one, or the other side of a rollback across the rename) holds
+# the same routes and data: stop it, keeping its data, right before this one starts.
+retire_others() {
+  local keep="$1" other
+  for other in $(docker ps -a --format '{{.Label "com.docker.compose.project"}}|{{.Label "com.docker.compose.project.config_files"}}' \
+      | awk -F'|' -v root="$PWD/releases/" -v keep="$keep" 'index($2, root) == 1 && $1 != keep { print $1 }' | sort -u); do
+    printf '==> retiring production project %s\n' "$other"
+    docker compose -p "$other" down --remove-orphans
+  done
+}
+
 up() {
-  MOOI_RELEASE="$1" docker compose --env-file .env -f "releases/$1/deploy/production/compose.yml" \
-    up -d --build --remove-orphans --wait --wait-timeout 1200
+  local project
+  project="$(stack "$1" config | sed -n 's/^name: //p' | head -n 1)"
+  [ -n "$project" ] || return 1
+  # Images build while the running release keeps serving; only then is anything replaced.
+  stack "$1" build && retire_others "$project" && stack "$1" up -d --remove-orphans --wait --wait-timeout 1200
 }
 
 smoke() {
@@ -77,6 +105,6 @@ ls -1dt releases/*/ | sed 's:/$::' | grep -vx "releases/$release" | tail -n +"$k
 kept="$(ls -1 releases | sed 's/.*/:&$/')"
 docker images --format '{{.Repository}}:{{.Tag}}' | grep '^mooi/' | grep -v -f <(printf '%s\n' "$kept") \
   | xargs -r docker rmi >/dev/null 2>&1 || true
-docker compose --env-file .env -f current/deploy/production/compose.yml ps --format 'table {{.Name}}\t{{.Status}}'
+stack "$release" ps --format 'table {{.Name}}\t{{.Status}}'
 REMOTE
 printf '==> release %s is live\n' "$release"

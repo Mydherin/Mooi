@@ -1,5 +1,5 @@
 # Production image of mic-speech. It binds loopback only, exactly as in development: it runs in the
-# network namespace of the spa-mooi gateway, whose nginx is its only client (see compose.yml).
+# network namespace of the spa-mooi gateway, whose nginx is its only client (see deploy/production/compose.prod.yml).
 #
 # The pinned NeMo-Speech.cpp runtime (same version and SHA-256 as mic_speech.shared.engine) is baked
 # into the image and selected through SPEECH_RUNTIME_PATH. The model (~742 MB) is pulled on start into

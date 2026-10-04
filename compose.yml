@@ -1,3 +1,5 @@
+# Development data layer (Postgres + pgAdmin), driven by the root Makefile (`make dev-*`).
+# Production lives in deploy/production/compose.prod.yml under its own `mooi-prod` project.
 name: mooi
 
 services:

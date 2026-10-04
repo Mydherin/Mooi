@@ -1,5 +1,5 @@
 # Production image of mic-mooi. Configuration comes only from environment variables (no .env file
-# is copied); see deploy/production/compose.yml.
+# is copied); see deploy/production/compose.prod.yml.
 
 # ── Build ────────────────────────────────────────────────────
 FROM eclipse-temurin:25-jdk AS build
