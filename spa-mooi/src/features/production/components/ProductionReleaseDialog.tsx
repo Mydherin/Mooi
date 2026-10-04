@@ -82,7 +82,7 @@ export const ProductionReleaseDialog = ({ projectId, defaultBranch, busy, error,
         </li>)}
       </ul> : <label className="mt-5 flex flex-col gap-2">
         <span className="text-xs font-medium text-ink-muted">Version</span>
-        <input autoFocus value={tag} onChange={(event) => setTag(event.target.value)} disabled={busy}
+        <input autoFocus autoCapitalize="none" autoCorrect="off" spellCheck={false} value={tag} onChange={(event) => setTag(event.target.value)} disabled={busy}
           placeholder="v1.0.0" aria-invalid={tag.length > 0 && !valid}
           className="h-11 rounded-[10px] border border-line bg-surface-2 px-3 font-mono text-sm text-ink outline-none focus:border-brand/50" />
         <span className="text-xs text-ink-subtle">Published on GitHub from the latest {defaultBranch ?? 'default branch'} commit when the deployment starts.</span>

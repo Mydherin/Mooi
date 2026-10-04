@@ -18,6 +18,9 @@ export const SearchInput = ({ value, onChange, placeholder, className }: SearchI
     <Search className="size-4 shrink-0 text-ink-subtle" />
     <input
       type="search"
+      autoCapitalize="none"
+      autoCorrect="off"
+      enterKeyHint="search"
       value={value}
       onChange={(event) => onChange(event.target.value)}
       placeholder={placeholder}

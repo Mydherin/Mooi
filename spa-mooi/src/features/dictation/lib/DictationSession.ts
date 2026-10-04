@@ -3,8 +3,8 @@ import { dictationStreamUrl } from '@/features/dictation/lib/dictationStreamUrl'
 import type { DictationCallbacks } from '@/features/dictation/types/DictationCallbacks';
 import type { DictationServerMessage } from '@/features/dictation/types/DictationServerMessage';
 import { microphoneErrorMessage } from '@/features/dictation/lib/microphoneErrorMessage';
+import { setAudioSessionType } from '@/features/dictation/lib/audioSession';
 
-const SAMPLE_RATE = 16000;
 const CONNECT_TIMEOUT_MS = 15_000;
 const FINALIZE_TIMEOUT_MS = 30_000;
 /** iOS keeps `resume()` pending forever while its audio session is interrupted: never wait longer. */
@@ -14,7 +14,7 @@ const MAX_BUFFERED_BYTES = 128_000;
 const WORKLET_URL = `${import.meta.env.BASE_URL}dictation-worklet.js`;
 
 /**
- * One dictation: microphone → AudioWorklet (PCM16, 16 kHz, 500 ms frames) → WebSocket to
+ * One dictation: microphone → AudioWorklet (native rate in, PCM16 16 kHz 500 ms frames out) → WebSocket to
  * mic-speech, and the running transcript back. The microphone is requested first, inside the user
  * gesture, before any server session exists. Every exit path releases every resource, and once
  * disposed no callback fires again. Audio start is bounded in time, so a browser that never lets
@@ -41,6 +41,7 @@ export class DictationSession {
       this.fail(DICTATION_MESSAGES.insecureContext);
       return;
     }
+    setAudioSessionType('play-and-record');
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
@@ -57,14 +58,10 @@ export class DictationSession {
     this.stream.getAudioTracks().forEach((track) => track.addEventListener('ended', () => this.fail(DICTATION_MESSAGES.microphoneDisconnected)));
 
     try {
-      // The browser resamples the microphone to 16 kHz: no client resampling code.
-      this.context = new AudioContext({ sampleRate: SAMPLE_RATE });
+      // Native rate, matching the microphone: the worklet downsamples to 16 kHz itself.
+      this.context = new AudioContext({ latencyHint: 'interactive' });
     } catch {
-      this.fail(DICTATION_MESSAGES.sampleRateUnsupported);
-      return;
-    }
-    if (this.context.sampleRate !== SAMPLE_RATE) {
-      this.fail(DICTATION_MESSAGES.sampleRateUnsupported);
+      this.fail(DICTATION_MESSAGES.audioBlocked);
       return;
     }
     try {
@@ -113,6 +110,7 @@ export class DictationSession {
     }
     this.context?.removeEventListener('statechange', this.onAudioStateChange);
     void this.context?.close().catch(() => undefined);
+    setAudioSessionType('auto');
     if (this.socket && this.socket.readyState < WebSocket.CLOSING) this.socket.close();
   }
 
@@ -194,8 +192,7 @@ export class DictationSession {
       // The worklet outputs silence; reaching the destination only keeps it processing.
       this.source.connect(this.node).connect(context.destination);
     } catch {
-      // Some engines refuse a microphone stream whose native rate differs from the context's.
-      this.fail(DICTATION_MESSAGES.sampleRateUnsupported);
+      this.fail(DICTATION_MESSAGES.microphoneUnavailable);
       return;
     }
     this.ready = true;

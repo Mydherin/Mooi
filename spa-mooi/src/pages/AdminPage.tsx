@@ -40,11 +40,12 @@ export const AdminPage = () => {
       </p>
 
       <Card className="mt-6 p-5 sm:p-6">
-        <span className="flex size-11 items-center justify-center rounded-[10px] bg-surface-2 text-ink-muted">
-          <ShieldCheck className="size-5" />
-        </span>
-
-        <p className="mt-5 font-mono text-xs text-ink-subtle">Workspace access</p>
+        <div className="flex items-center gap-3">
+          <span className="flex size-11 shrink-0 items-center justify-center rounded-[10px] bg-surface-2 text-ink-muted">
+            <ShieldCheck className="size-5" />
+          </span>
+          <p className="font-mono text-xs text-ink-subtle">Workspace access</p>
+        </div>
 
         <p
           data-state={state}

@@ -1,11 +1,13 @@
 import { useState } from 'react';
-import { Bot, Plus, RefreshCw, TriangleAlert, Unlink } from 'lucide-react';
+import { Bot, Pencil, Plus, RefreshCw, TriangleAlert, Unlink } from 'lucide-react';
 import { AddAgentAccountDialog } from '@/features/agents/components/AddAgentAccountDialog';
 import { useAgentConnections } from '@/features/agents/hooks/useAgentConnections';
 import type { AgentConnection } from '@/features/agents/types/AgentConnection';
 import { Button } from '@/shared/components/Button';
 import { Card } from '@/shared/components/Card';
 import { Modal } from '@/shared/components/Modal';
+import { iconAction } from '@/shared/styles/iconAction';
+import { cn } from '@/shared/utils/cn';
 
 const accountTitle = (connection: AgentConnection) => connection.name || connection.accountLabel || connection.label;
 
@@ -44,7 +46,7 @@ export const AgentConnectionsCard = () => {
     </div>}
 
     {connections.length > 0 && <ul className="mt-5 divide-y divide-line rounded-xl border border-line px-4 sm:px-5">
-      {connections.map((connection) => <li key={connection.id} className="flex flex-wrap items-center gap-3 py-4 sm:flex-nowrap">
+      {connections.map((connection) => <li key={connection.id} className="flex items-center gap-3 py-4">
         <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-surface-2 text-ink-muted"><Bot className="size-5" /></span>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-ink">{accountTitle(connection)}</p>
@@ -53,9 +55,17 @@ export const AgentConnectionsCard = () => {
             {connection.stale && <span className="inline-flex items-center gap-1 text-warning"><TriangleAlert className="size-3" /> Needs attention</span>}
           </p>
         </div>
-        <div className="ml-auto flex shrink-0 items-center gap-1 sm:ml-0">
-          <Button variant="ghost" size="sm" disabled={busy} onClick={() => { clearActionError(); setEditing(connection); setName(connection.name || accountTitle(connection)); }}>Rename</Button>
-          <Button variant="danger" size="sm" disabled={busy} onClick={() => void disconnect(connection.id)}><Unlink className="size-4" /> Disconnect</Button>
+        {/* Icon actions keep the account name readable on phones; the labels live in title and aria-label. */}
+        <div className="flex shrink-0 items-center gap-1.5">
+          <button type="button" aria-label={`Rename ${accountTitle(connection)}`} title="Rename" disabled={busy} className={iconAction}
+            onClick={() => { clearActionError(); setEditing(connection); setName(connection.name || accountTitle(connection)); }}>
+            <Pencil className="size-4" />
+          </button>
+          <button type="button" aria-label={`Disconnect ${accountTitle(connection)}`} title="Disconnect" disabled={busy}
+            className={cn(iconAction, 'border-danger/35 text-danger hover:bg-danger-soft hover:text-danger')}
+            onClick={() => void disconnect(connection.id)}>
+            <Unlink className="size-4" />
+          </button>
         </div>
       </li>)}
     </ul>}

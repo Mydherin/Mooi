@@ -17,6 +17,9 @@ import { SessionsPage } from '@/pages/SessionsPage';
 import { DeploymentsPage } from '@/pages/DeploymentsPage';
 import { ProjectDeploymentPage } from '@/pages/ProjectDeploymentPage';
 import { BackupsPage } from '@/pages/BackupsPage';
+import type { RouteHandle } from '@/shared/types/RouteHandle';
+
+const immersive: RouteHandle = { immersive: true };
 import { ProjectBackupPage } from '@/pages/ProjectBackupPage';
 
 /**
@@ -39,12 +42,12 @@ export const router = createBrowserRouter([
           { path: ROUTES.root, element: <Navigate to={ROUTES.projects} replace /> },
           { path: ROUTES.projects, element: <ProjectsPage /> },
           { path: ROUTES.project, element: <ProjectPage /> },
-          { path: ROUTES.session, element: <SessionPage /> },
+          { path: ROUTES.session, element: <SessionPage />, handle: immersive },
           { path: ROUTES.sessions, element: <SessionsPage /> },
           { path: ROUTES.deployments, element: <DeploymentsPage /> },
-          { path: ROUTES.deployment, element: <ProjectDeploymentPage /> },
+          { path: ROUTES.deployment, element: <ProjectDeploymentPage />, handle: immersive },
           { path: ROUTES.backups, element: <BackupsPage /> },
-          { path: ROUTES.backup, element: <ProjectBackupPage /> },
+          { path: ROUTES.backup, element: <ProjectBackupPage />, handle: immersive },
           { path: ROUTES.account, element: <AccountPage /> },
           { path: ROUTES.githubCallback, element: <GithubCallbackPage /> },
           { path: ROUTES.agentCallback, element: <AgentCallbackPage /> },

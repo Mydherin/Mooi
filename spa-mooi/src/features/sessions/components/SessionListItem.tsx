@@ -29,7 +29,7 @@ export const SessionListItem = ({ session }: SessionListItemProps) => (
         <p className="mt-0.5 truncate text-[11px] text-ink-subtle">
           {session.detail ?? `Updated ${formatDate(session.updatedAt)}`}
         </p>
-        <span className="mt-1 block max-w-48 sm:hidden"><SessionAccountIdentity session={session} compact /></span>
+        <span className="mt-0.5 block sm:hidden"><SessionAccountIdentity session={session} compact /></span>
         <WorkspacePathLabel path={session.workspacePath} className="mt-1" />
       </div>
 

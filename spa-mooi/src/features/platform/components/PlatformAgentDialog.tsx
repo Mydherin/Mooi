@@ -55,17 +55,18 @@ export const PlatformAgentDialog = ({ copy, projectName, connections, busy, erro
         {busy ? 'Starting…' : copy.action}
       </Button>
     </>}>
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-5 sm:gap-6">
       <AgentModelFields choice={choice} onLeave={onClose} />
 
-      {connections.length > 0 ? <label className="flex flex-col gap-2">
+      {/* On phones the request comes first: it is what the dialog is for, the agent defaults rarely change. */}
+      {connections.length > 0 ? <label className="flex flex-col gap-2 max-sm:order-first">
         <span className="text-xs font-medium text-ink-muted">{copy.label}</span>
         <div className="rounded-[12px] border border-line bg-surface-2 transition focus-within:border-brand/50">
           <textarea ref={promptRef} autoFocus rows={5} value={prompt} disabled={busy} onChange={(event) => setPrompt(event.target.value)}
             onKeyDown={onKeyDown} placeholder={copy.placeholder} maxLength={20000}
-            className="block min-h-32 w-full resize-y bg-transparent p-3.5 text-sm leading-6 text-ink placeholder:text-ink-subtle focus:outline-none disabled:opacity-60" />
+            className="block min-h-28 w-full resize-y bg-transparent p-3.5 text-sm leading-6 sm:min-h-32 text-ink placeholder:text-ink-subtle focus:outline-none disabled:opacity-60" />
           <div className="flex items-center justify-between gap-3 border-t border-line py-1.5 pr-1.5 pl-3.5 text-[11px] text-ink-subtle">
-            <span className="inline-flex items-center gap-1.5"><CornerDownLeft className="size-3.5" />Enter to start · Shift+Enter for a new line</span>
+            <span className="inline-flex items-center gap-1.5 pointer-coarse:invisible"><CornerDownLeft className="size-3.5" />Enter to start · Shift+Enter for a new line</span>
             <span className="inline-flex items-center gap-2">
               <span className="tabular-nums">{prompt.length > 0 ? prompt.length : ''}</span>
               <DictationButton field={promptRef} disabled={busy} className="size-8" />

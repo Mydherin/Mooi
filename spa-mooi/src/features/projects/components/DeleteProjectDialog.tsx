@@ -31,7 +31,7 @@ export const DeleteProjectDialog = ({ project, busy, error, onClose, onDelete }:
         <label className="flex flex-col gap-2 text-sm font-bold text-ink">
           Type <span className="font-mono">{project.fullName}</span> to confirm
           <input autoFocus value={confirmation} onChange={(event) => setConfirmation(event.target.value)}
-            autoComplete="off" spellCheck={false}
+            autoComplete="off" autoCapitalize="none" autoCorrect="off" spellCheck={false}
             className="w-full rounded-xl border border-line bg-surface px-4 py-3 font-mono text-sm text-ink outline-none focus:border-danger" />
         </label>
         {error ? <p role="alert" className="rounded-xl border border-danger/40 bg-danger-soft px-4 py-3 text-sm text-danger">{error}</p> : null}

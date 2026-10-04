@@ -42,7 +42,7 @@ export const CreateProjectDialog = ({ open, onClose }: CreateProjectDialogProps)
       <form id="create-project-form" onSubmit={submit} className="flex flex-col gap-6">
         <label className="flex flex-col gap-2 text-sm font-bold text-ink">
           Repository name
-          <input autoFocus required maxLength={100} pattern="[A-Za-z0-9._-]+" value={name}
+          <input autoFocus required maxLength={100} autoCapitalize="none" autoCorrect="off" spellCheck={false} pattern="[A-Za-z0-9._-]+" value={name}
             onChange={(event) => { setName(event.target.value); clearActionError(); }}
             placeholder="my-project"
             className="w-full rounded-xl border border-line bg-surface px-4 py-3 text-sm font-medium text-ink outline-none focus:border-brand" />

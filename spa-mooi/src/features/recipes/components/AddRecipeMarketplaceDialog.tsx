@@ -32,7 +32,7 @@ export const AddRecipeMarketplaceDialog = ({ busy, actionError, onClose, onAdd }
           <span className="flex h-12 items-center gap-2 rounded-[10px] border border-line bg-surface-2 px-3 focus-within:border-brand">
             <Link2 className="size-4 shrink-0 text-ink-subtle" aria-hidden="true" />
             <input value={url} onChange={(event) => setUrl(event.target.value)} maxLength={512} required autoFocus
-              inputMode="url" autoComplete="off" spellCheck={false} placeholder="https://github.com/owner/agent-recipes"
+              inputMode="url" autoComplete="off" autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="https://github.com/owner/agent-recipes"
               className="h-full min-w-0 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-ink-subtle" />
           </span>
         </label>

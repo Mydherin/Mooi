@@ -37,7 +37,7 @@ export const AppMobileDrawer = () => {
   }
 
   return (
-    <dialog ref={dialog} aria-label="Navigation" onCancel={(event) => { event.preventDefault(); close(); }} className="fixed inset-0 m-0 h-app max-h-none w-screen max-w-none bg-transparent p-0 text-ink backdrop:bg-black/50 backdrop:backdrop-blur-sm">
+    <dialog ref={dialog} aria-label="Navigation" onCancel={(event) => { event.preventDefault(); close(); }} className="fixed inset-x-0 top-(--app-offset) m-0 h-app max-h-none w-screen max-w-none bg-transparent p-0 text-ink backdrop:bg-black/50 backdrop:backdrop-blur-sm">
       <button
         type="button"
         tabIndex={-1}
@@ -46,7 +46,7 @@ export const AppMobileDrawer = () => {
         className="fixed inset-0 z-40 cursor-default bg-transparent"
       />
       <AppSidebar
-        className="fixed inset-y-0 left-0 z-50 h-app w-[85%] max-w-[320px] animate-drawer-in border-r pt-(--safe-top) pb-(--safe-bottom) pl-(--safe-left) border-line shadow-[0_24px_60px_-20px_rgba(0,0,0,0.35)]"
+        className="fixed top-(--app-offset) left-0 z-50 h-app w-[85%] max-w-[320px] animate-drawer-in border-r pt-(--safe-top) pb-(--safe-bottom) pl-(--safe-left) border-line shadow-[0_24px_60px_-20px_rgba(0,0,0,0.35)]"
         onNavigate={close}
       />
     </dialog>

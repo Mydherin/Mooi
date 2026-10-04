@@ -42,7 +42,7 @@ export const ProjectHeader = ({ project, busy, onRemove }: ProjectHeaderProps) =
         <span className="min-w-0 truncate text-ink">{project.name}</span>
       </nav>
 
-      <Card className="flex flex-col gap-5 p-5 sm:p-6">
+      <Card className="flex flex-col gap-4 p-4 sm:gap-5 sm:p-6">
         <div className="flex items-center justify-between gap-3">
           <Initials value={project.name} size="lg" />
 
@@ -127,7 +127,7 @@ export const ProjectHeader = ({ project, busy, onRemove }: ProjectHeaderProps) =
           )}
         </div>
 
-        <div className="grid grid-cols-2 gap-x-6 gap-y-4 border-t border-line pt-5 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-x-6 gap-y-3 border-t border-line pt-4 sm:grid-cols-4 sm:gap-y-4 sm:pt-5">
           <div className="min-w-0">
             <Eyebrow>Default branch</Eyebrow>
             <p className="mt-1 truncate font-mono text-[15px] font-extrabold text-ink">

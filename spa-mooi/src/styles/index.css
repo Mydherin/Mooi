@@ -56,6 +56,7 @@
   --safe-right: env(safe-area-inset-right, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
+  --app-offset: 0px;
 }
 
 /* With the keyboard up the home indicator is hidden behind it: no inset to keep clear. */
@@ -304,6 +305,8 @@
   }
 
   #root {
+    position: relative;
+    top: var(--app-offset);
     height: var(--app-height, 100dvh);
     overflow-y: auto;
     overscroll-behavior: contain;
@@ -360,7 +363,8 @@
   }
 }
 
-/* Keep editable controls readable and prevent automatic zoom on mobile Safari (any touch device). */
+/* Keep typing readable and prevent automatic zoom on mobile Safari (any touch device). Selects keep
+   their compact size: they never raise the keyboard and `maximum-scale=1` already blocks their zoom. */
 @media (max-width: 639px), (pointer: coarse) {
-  input, textarea, select { font-size: 16px; }
+  input, textarea { font-size: 16px; }
 }

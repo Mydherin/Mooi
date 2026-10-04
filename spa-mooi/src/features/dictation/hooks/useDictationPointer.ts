@@ -14,7 +14,7 @@ interface PointerHandlers {
  * Mouse and touch on the microphone button. `pointerdown` is prevented so the button never steals
  * focus from the field being dictated into. Release is tracked on `window` (capture phase): the
  * finger may leave the button while holding it, and the release is the user activation mobile
- * browsers require before audio may run. A press while still connecting cancels, so the button is
+ * browsers require before audio may run. A cancelled press (permission prompt) stays a tap. A press while still connecting cancels, so the button is
  * never stuck waiting. A click with `detail === 0` is a keyboard activation (Enter/Space) and toggles.
  */
 export const useDictationPointer = ({ state, isActive, start, stop, cancel, resumeAudio }: DictationController): PointerHandlers => {
@@ -25,8 +25,11 @@ export const useDictationPointer = ({ state, isActive, start, stop, cancel, resu
       const current = press.current;
       if (!current || current.id !== event.pointerId) return;
       press.current = null;
+      // A system cancel is not a release: iOS cancels the touch when it shows the microphone
+      // permission prompt, and stopping there would end the dictation before it starts.
+      if (event.type === 'pointercancel') return;
       resumeAudio();
-      if (event.type === 'pointercancel' || performance.now() - current.at >= HOLD_MS) stop();
+      if (performance.now() - current.at >= HOLD_MS) stop();
     };
 
     window.addEventListener('pointerup', onRelease, true);

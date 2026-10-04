@@ -21,7 +21,8 @@ interface WorkspaceHeaderProps {
 /**
  * The branch is the session's name, so it gets every pixel the controls do not need: icon-only
  * merge and deploy on phones, secondary actions (close included) folded into one menu, and up to two lines
- * for long branch names before truncating.
+ * for long branch names before truncating. Phones drop the clone path (copyable from the menu) and
+ * show the account on one line.
  */
 export const WorkspaceHeader = ({
   project,
@@ -48,8 +49,8 @@ export const WorkspaceHeader = ({
           <span className="line-clamp-2 font-mono break-all sm:line-clamp-1">{session.branch}</span>
         </h1>
       </Tooltip>
-      <WorkspacePathLabel path={session.workspacePath} className="mt-0.5" focusable />
-      <span className="mt-1 block max-w-48 sm:hidden"><SessionAccountIdentity session={session} compact /></span>
+      <WorkspacePathLabel path={session.workspacePath} className="mt-0.5 max-sm:hidden" focusable />
+      <span className="mt-0.5 block sm:hidden"><SessionAccountIdentity session={session} compact /></span>
     </div>
 
     <div className="flex shrink-0 items-center gap-1 sm:gap-2">

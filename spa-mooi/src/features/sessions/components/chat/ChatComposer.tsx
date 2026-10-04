@@ -6,6 +6,7 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowUp, Square } from 'lucide-react';
 import type { SessionStatus } from '@/features/sessions/types/SessionStatus';
 import { DictationButton } from '@/features/dictation/components/DictationButton';
+import { ComposerSelect } from './ComposerSelect';
 import { Button } from '@/shared/components/Button';
 
 interface ChatComposerProps {
@@ -126,7 +127,7 @@ export const ChatComposer = ({
               submit();
             }
           }}
-          placeholder={hint ?? 'Describe the next change…'}
+          placeholder={hint ? undefined : 'Describe the next change…'}
           aria-label="Message the agent"
           enterKeyHint="send"
           data-compose
@@ -144,20 +145,12 @@ export const ChatComposer = ({
           {actions}
           <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto [scrollbar-width:none] sm:gap-2 [&::-webkit-scrollbar]:hidden">
           {modelOptions.length > 0 ? (
-            <label className="flex shrink-0 items-center gap-1.5 text-xs text-ink-subtle">
-              <span className="sr-only">Agent model</span>
-              <select
-                value={model}
-                onChange={(event) => changeModel(event.target.value)}
-                disabled={configurationDisabled}
-                aria-describedby={modelError ? 'model-error' : undefined}
-                className="max-w-[7.5rem] truncate rounded-lg border border-line bg-surface px-2 py-1.5 font-medium text-ink outline-none focus:border-brand disabled:cursor-not-allowed disabled:opacity-60 sm:max-w-[9rem]"
-              >
-                {!modelOptions.some((option) => option.id === model) ? <option value={model}>{model}</option> : null}
-                {modelOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
-              </select>
+            <>
+              <ComposerSelect value={model} options={modelOptions.map((option) => ({ value: option.id, label: option.label }))}
+                onChange={changeModel} disabled={configurationDisabled} ariaLabel="Agent model"
+                describedBy={modelError ? 'model-error' : undefined} />
               {modelError ? <span id="model-error" className="sr-only">{modelError}</span> : null}
-            </label>
+            </>
           ) : modelLoading ? (
             <span className="text-xs text-ink-subtle" role="status">Loading models…</span>
           ) : modelError ? (
@@ -165,26 +158,16 @@ export const ChatComposer = ({
           ) : null}
 
           {effortOptions.length > 0 ? (
-            <label className="flex shrink-0 items-center gap-1.5 text-xs text-ink-subtle">
-              <span className="hidden sm:inline">Effort</span>
-              <select
-                value={effort ?? ''}
-                onChange={(event) => onConfigurationChange({ model, effort: event.target.value || null })}
-                disabled={configurationDisabled}
-                aria-label="Agent effort"
-                className="max-w-[6.5rem] truncate rounded-lg border border-line bg-surface px-2 py-1.5 font-medium text-ink outline-none focus:border-brand disabled:cursor-not-allowed disabled:opacity-60 sm:max-w-[9rem]"
-              >
-                {effort && !effortOptions.includes(effort) ? <option value={effort}>{effort}</option> : null}
-                {effortOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-              </select>
-            </label>
+            <ComposerSelect value={effort ?? ''} options={effortOptions.map((option) => ({ value: option, label: option }))}
+              onChange={(value) => onConfigurationChange({ model, effort: value || null })}
+              disabled={configurationDisabled} ariaLabel="Agent effort" caption="Effort" />
           ) : null}
           </div>
 
           <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-1.5">
             {!activeTurn && !blocked ? <span className="mr-1 hidden text-xs text-ink-subtle lg:flex">Enter to send · Shift+Enter for a new line</span> : null}
 
-            {!blocked ? <DictationButton field={textareaRef} /> : null}
+            {!blocked ? <DictationButton field={textareaRef} className="max-sm:size-10" /> : null}
 
             {activeTurn ? (
               <Button
@@ -192,7 +175,7 @@ export const ChatComposer = ({
                 onClick={() => void onInterrupt()}
                 disabled={busy || !canInterrupt}
                 ariaLabel="Stop turn"
-                className="size-11 shrink-0 p-0"
+                className="size-10 shrink-0 p-0 sm:size-11"
               >
                 <Square className="size-4" />
               </Button>
@@ -202,7 +185,7 @@ export const ChatComposer = ({
                 onClick={submit}
                 disabled={busy || value.trim().length === 0}
                 ariaLabel="Send message"
-                className="size-11 shrink-0 p-0"
+                className="size-10 shrink-0 p-0 sm:size-11"
               >
                 <ArrowUp className="size-4" />
               </Button>

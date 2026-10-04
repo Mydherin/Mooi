@@ -84,7 +84,7 @@ export const PlatformEnvironmentDialog = ({
       {added.map((entry, index) => <li key={index} className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
         <span className={cn(field, 'flex items-center gap-0.5 pr-1')}>
           <span className="shrink-0 text-ink-subtle">{prefix}</span>
-          <input value={entry.name} autoFocus disabled={busy} aria-label="Variable name" placeholder="NAME"
+          <input value={entry.name} autoFocus autoCapitalize="characters" autoCorrect="off" spellCheck={false} disabled={busy} aria-label="Variable name" placeholder="NAME"
             onChange={(event) => setAdded((current) => current.map((item, position) => position === index ? { ...item, name: event.target.value.toUpperCase() } : item))}
             className="h-full min-w-0 flex-1 bg-transparent outline-none" />
         </span>

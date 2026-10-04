@@ -18,7 +18,7 @@ export const RecipesButton = ({ disabled, onApply }: RecipesButtonProps) => {
   return (
     <>
       <button type="button" onClick={() => setOpen(true)} aria-label="Apply a recipe" title="Apply a recipe" aria-haspopup="dialog"
-        className="flex size-9 shrink-0 items-center justify-center rounded-full text-amber-500 transition hover:bg-amber-500/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand">
+        className="flex size-8 shrink-0 items-center justify-center rounded-full sm:size-9 text-amber-500 transition hover:bg-amber-500/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand">
         <ChefHat className="size-4" aria-hidden="true" />
       </button>
       {open ? <RecipesDialog onClose={() => setOpen(false)} onApply={onApply} applyDisabled={disabled} /> : null}

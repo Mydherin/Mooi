@@ -8,7 +8,6 @@ export const DICTATION_MESSAGES = {
   microphoneBusy: 'The microphone is in use by another app. Close it and try again.',
   audioBlocked: 'The microphone could not start. Tap it again.',
   microphoneDisconnected: 'The microphone was disconnected.',
-  sampleRateUnsupported: 'This browser does not support 16 kHz audio.',
   connectTimeout: 'The dictation service is not responding.',
   connectFailed: 'Cannot connect to the dictation service.',
   connectionInterrupted: 'The dictation connection was interrupted.',

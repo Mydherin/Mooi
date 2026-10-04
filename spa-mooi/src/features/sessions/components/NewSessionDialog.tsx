@@ -118,6 +118,9 @@ export const NewSessionDialog = ({
               onChange={(event) => setBranch(event.target.value)}
               placeholder="feat/my-change"
               autoComplete="off"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
               aria-label="Branch name"
               maxLength={MAX_BRANCH_LENGTH}
               className="h-full w-full min-w-0 bg-transparent font-mono text-sm text-ink placeholder:text-ink-subtle focus:outline-none"

@@ -37,7 +37,7 @@ export const MergeDialog = ({ targetBranch, branch, changes, merging, error, onC
       <div className="flex flex-col gap-5">
         <label className="flex flex-col gap-2">
           <span className="text-xs font-semibold text-ink-muted">Commit title <span className="text-danger">*</span></span>
-          <input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={MAX_TITLE}
+          <input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={MAX_TITLE} autoCapitalize="none"
             onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); submit(); } }}
             disabled={merging} required autoFocus placeholder="e.g. feat: add project search"
             className="h-12 rounded-[10px] border border-line bg-surface-2 px-3 text-sm text-ink outline-none transition focus:border-brand disabled:opacity-60" />
