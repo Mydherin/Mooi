@@ -14,7 +14,9 @@ Adding a provider:
    `tool.use`, `tool.result`, `turn.result`, `error`) and only the optional ones the adapter's
    `AgentCapabilities` declares. Absence of an optional event is compliance, not a bug.
 4. `interrupt()` may be a no-op when the `interrupt` capability is `False`.
-5. Register a `ProviderDescriptor` in `PROVIDERS`.
+5. A broken transport costs at most the running turn: `recover()` reconnects keeping the
+   conversation, and a long-lived stream recovers itself before it reports `failed`.
+6. Register a `ProviderDescriptor` in `PROVIDERS`.
 
 Nothing outside this module changes.
 """
@@ -43,10 +45,12 @@ from claude_agent_sdk import (
     AssistantMessage,
     ClaudeAgentOptions,
     ClaudeSDKClient,
+    CLIJSONDecodeError,
     ConversationResetMessage,
     PermissionResult,
     PermissionResultAllow,
     PermissionResultDeny,
+    ProcessError,
     ResultMessage,
     RateLimitEvent,
     ServerToolResultBlock,
@@ -84,6 +88,8 @@ _QUESTION_TOOL = "AskUserQuestion"
 _DENIED_MESSAGE = "The user declined this action"
 _KIND_PERMISSION = "permission"
 _KIND_QUESTION = "question"
+_INTERRUPTED_MESSAGE = "The agent connection was interrupted"
+RECOVERABLE_DETAIL = "The agent lost its connection. Reconnect to continue; the workspace and its changes are kept."
 
 
 class AgentEvent(TypedDict):
@@ -290,6 +296,10 @@ class AgentRuntime(Protocol):
 
     async def close(self) -> None: ...
 
+    async def recover(self) -> None:
+        """Reconnect after a broken provider transport, keeping the conversation and the workspace:
+        only a running turn is lost. Raises when the session cannot continue."""
+
     async def resolve(self, request_id: str, payload: dict[str, Any]) -> None: ...
 
 
@@ -366,7 +376,18 @@ def _tool_title(name: str, input_data: dict[str, Any]) -> str:
     return label[:_TITLE_LIMIT]
 
 
+def _block_summary(block: Any) -> str:
+    """Readable text of one result block; image bytes never reach the transcript."""
+    if isinstance(block, dict) and block.get("type") == "text" and isinstance(block.get("text"), str):
+        return block["text"]
+    if isinstance(block, dict) and block.get("type") == "image":
+        return "[Image]"
+    return block if isinstance(block, str) else json.dumps(block, ensure_ascii=False, default=str)
+
+
 def _result_summary(content: Any) -> str:
+    if isinstance(content, list):
+        content = "\n".join(_block_summary(block) for block in content)
     text = content if isinstance(content, str) else json.dumps(content, ensure_ascii=False, default=str)
     if len(text) > _SUMMARY_LIMIT:
         return text[:_SUMMARY_LIMIT] + "\n[Output truncated at 100,000 characters]"
@@ -555,9 +576,11 @@ class ClaudeAgentRuntime:
         self._quota_reported_at = 0.0
         self._last_quota = None
         self._interrupted = False
+        self._turn_active = False
         self._awaiting_first_event_at: float | None = None
         self._config_dir: Path | None = None
         self._clients: set[ClaudeSDKClient] = set()
+        self._recovery_lock = asyncio.Lock()
         self._conversation_id: str | None = None
         self._compacted_context: str | None = None
         self._transcript_store = _InMemoryTranscriptStore()
@@ -595,6 +618,7 @@ class ClaudeAgentRuntime:
         self._interrupted = False
         started_at = time.perf_counter()
         client = self._require_client()
+        self._turn_active = True
         if images:
             # Images precede the text, as the Messages API recommends for multimodal prompts.
             blocks = await asyncio.to_thread(lambda: [
@@ -722,6 +746,57 @@ class ClaudeAgentRuntime:
             self._config_dir = None
         self._transcript_store = _InMemoryTranscriptStore()
 
+    async def recover(self) -> None:
+        """Reconnects resuming the SDK conversation from this runtime's transcript store. Serialized:
+        the failed pump and a failed delivery may both try at once."""
+        async with self._recovery_lock:
+            if self._config_dir is None:
+                await self.start()
+                return
+            await self._deny_pending(_INTERRUPTED_MESSAGE)
+            replacement = await self._connect_client(self._config, resume=self._conversation_id)
+            if self._client is None:
+                self._client = replacement
+                self._pump = asyncio.create_task(self._pump_messages(replacement))
+            else:
+                await self._replace_client(replacement)
+            self._turn_active = False
+            self._interrupted = False
+            self._reset_stream_state()
+
+    async def _recover_stream(self, error: Exception) -> None:
+        """A broken stream loses only its running turn: reconnect with backoff, resuming the
+        conversation, and fail the session only when every attempt does. Runs on the failed pump."""
+        LOG.error("The Claude message stream failed", exc_info=error)
+        turn_active = self._turn_active
+        await self._deny_pending(_INTERRUPTED_MESSAGE)
+        await self._publish(agent_error(_stream_failure_message(error)))
+        attempts = get_settings().agent_recovery_attempts
+        for attempt in range(attempts):
+            if attempt:
+                await asyncio.sleep(2 ** attempt)
+            try:
+                await self.recover()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                LOG.warning("Claude reconnection attempt %s/%s failed", attempt + 1, attempts, exc_info=True)
+                continue
+            LOG.info("Claude stream recovered after %s attempt(s)", attempt + 1)
+            await self._emit("agent.activity", {
+                "kind": "stream_recovered",
+                "description": "Reconnected and restored the conversation. Send a message to continue.",
+            })
+            if turn_active:
+                await self._publish(turn_result("error", subtype="stream_interrupted"))
+            return
+        await self._publish(session_status(STATUS_FAILED, RECOVERABLE_DETAIL))
+
+    def _reset_stream_state(self) -> None:
+        self._stream_ids.clear()
+        self._assistant_block_offsets.clear()
+        self._stream_message_id = None
+
     async def _connect_client(self, config: AgentConfig, resume: str | None = None) -> ClaudeSDKClient:
         """Validate the checkout before every connection, including resume."""
         workspace = await asyncio.to_thread(self._validate_workspace)
@@ -745,7 +820,8 @@ class ClaudeAgentRuntime:
         previous_client = self._require_client()
         previous_pump = self._pump
         self._client = replacement
-        if previous_pump is not None:
+        # A recovering pump replaces its own client: it ends by itself once recovery returns.
+        if previous_pump is not None and previous_pump is not asyncio.current_task():
             previous_pump.cancel()
             with suppress(asyncio.CancelledError, Exception):
                 await previous_pump
@@ -808,6 +884,7 @@ class ClaudeAgentRuntime:
             can_use_tool=self._can_use_tool,
             sandbox={"enabled": False},
             include_partial_messages=True,
+            max_buffer_size=settings.agent_claude_max_message_bytes,
             # Native project discovery; cwd and these settings are not a host
             # filesystem boundary. Hooks and tools run as the service user.
             setting_sources=["project", "local"],
@@ -911,10 +988,7 @@ class ClaudeAgentRuntime:
             # cancels this old pump. Never let an obsolete client fail a ready
             # session after the successor has taken over.
             if client is self._client:
-                LOG.error("The Claude message stream failed", exc_info=error)
-                await self._deny_pending("The agent stream failed")
-                await self._publish(agent_error("The agent stream failed"))
-                await self._publish(session_status(STATUS_FAILED, "The agent stream failed"))
+                await self._recover_stream(error)
 
     async def _translate(self, message: Any) -> None:
         session_id = getattr(message, "session_id", None)
@@ -1093,9 +1167,8 @@ class ClaudeAgentRuntime:
             self._context_window = window
         await self._emit_context_usage()
         await self._deny_pending("The turn ended")
-        self._stream_ids.clear()
-        self._assistant_block_offsets.clear()
-        self._stream_message_id = None
+        self._turn_active = False
+        self._reset_stream_state()
         # A stopped turn ends as an error with internal diagnostics only; the footer reports it.
         errors = [error for error in getattr(message, "errors", None) or []
                   if not str(error).startswith("[ede_diagnostic]")]
@@ -1110,6 +1183,16 @@ class ClaudeAgentRuntime:
                 usage=getattr(message, "usage", None),
             )
         )
+
+
+def _stream_failure_message(error: Exception) -> str:
+    if isinstance(error, CLIJSONDecodeError):
+        cause = "an agent message exceeded the size limit"
+    elif isinstance(error, ProcessError):
+        cause = "the agent process exited"
+    else:
+        cause = "the agent stream broke"
+    return f"{_INTERRUPTED_MESSAGE} ({cause}). Restoring the conversation; the workspace and its changes are kept."
 
 
 CODEX_CAPABILITIES = AgentCapabilities(streaming=True, thinking=True, questions=True, interrupt=True, images=True)
@@ -1349,6 +1432,16 @@ class CodexAgentRuntime:
                     LOG.debug("Codex quota is unavailable after compaction")
             finally:
                 self._client = None
+
+    async def recover(self):
+        """Each turn opens its own connection, so a broken one already ended its turn: only the
+        workspace and the account need to be in place again."""
+        from mic_sessions.shared import codex
+        if self._closing:
+            raise ApiException.conflict("Codex session is closed")
+        await asyncio.to_thread(_validate_agent_workspace, self._workspace, self._branch)
+        if self._account is None:
+            self._account = codex.acquire(self._credential)
 
     async def close(self):
         from mic_sessions.shared import codex

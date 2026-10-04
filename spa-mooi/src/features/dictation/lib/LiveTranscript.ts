@@ -1,3 +1,4 @@
+import { revealCaret } from '@/features/dictation/lib/revealCaret';
 import { setNativeValue } from '@/features/dictation/lib/setNativeValue';
 import type { DictationTarget } from '@/features/dictation/types/DictationTarget';
 
@@ -46,6 +47,7 @@ export class LiveTranscript {
     this.rendered = slice;
     this.changed = true;
     element.setSelectionRange(this.caret, this.caret);
+    revealCaret(element);
     return true;
   }
 

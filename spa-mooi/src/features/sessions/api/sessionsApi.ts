@@ -21,6 +21,7 @@ const messagesPath = (sessionId: string) => `/sessions/${sessionId}/messages`;
 const imagePath = (sessionId: string, imageId: string) => `/sessions/${sessionId}/images/${imageId}`;
 const configurationPath = (sessionId: string) => `/sessions/${sessionId}/configuration`;
 const interruptPath = (sessionId: string) => `/sessions/${sessionId}/interrupt`;
+const recoverPath = (sessionId: string) => `/sessions/${sessionId}/recover`;
 const compactPath = (sessionId: string) => `/sessions/${sessionId}/compact`;
 const clearPath = (sessionId: string) => `/sessions/${sessionId}/clear`;
 const permissionPath = (sessionId: string, requestId: string) =>
@@ -116,6 +117,11 @@ export const interruptSession = async (sessionId: string): Promise<void> => {
   if (!response.ok) {
     throw new Error(await apiErrorMessage(response, 'Could not interrupt the agent.'));
   }
+};
+
+export const recoverSession = async (sessionId: string): Promise<void> => {
+  const response = await sessionsFetch(recoverPath(sessionId), { method: 'POST' });
+  if (!response.ok) throw new Error(await apiErrorMessage(response, 'Could not reconnect the agent.'));
 };
 
 export const compactSession = async (sessionId: string): Promise<void> => {

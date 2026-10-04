@@ -70,6 +70,14 @@ class Settings(BaseSettings):
     event_log_bytes: int = Field(default=8 * 1024 * 1024, gt=0)
     sse_heartbeat_seconds: int = Field(default=15, gt=0)
     changes_debounce_seconds: float = Field(default=1.5, ge=0)
+    # Dependency and cache directories hidden from Changes even when no .gitignore lists them.
+    changes_excluded_directories: Annotated[list[str], NoDecode] = Field(default_factory=lambda: [
+        "node_modules", "bower_components", "jspm_packages", ".pnpm-store", ".yarn/cache", ".venv", "venv",
+        "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".tox", ".next", ".nuxt", ".svelte-kit",
+        ".turbo", ".parcel-cache", ".angular", ".gradle", ".dart_tool",
+    ])
+    # Largest file shown as a text diff, and largest diff text returned (cut at a line boundary).
+    changes_preview_max_bytes: int = Field(default=4 * 1024 * 1024, ge=64 * 1024)
 
     # Session deployments. Docker talks to the host engine, not a nested daemon.
     docker_binary: str = Field(default="docker", min_length=1)
@@ -98,6 +106,10 @@ class Settings(BaseSettings):
     agent_claude_model: str = "sonnet"
     agent_claude_effort: str = "high"
     agent_claude_disallowed_tools: Annotated[list[str], NoDecode] = []
+    # Largest single CLI message (a tool result carrying screenshots or a big file read is one line).
+    agent_claude_max_message_bytes: int = Field(default=64 * 1024 * 1024, ge=1024 * 1024)
+    # Reconnections tried, with backoff, when a provider stream breaks before the session fails.
+    agent_recovery_attempts: int = Field(default=3, ge=0, le=10)
 
     # Logging
     log_level: str = "INFO"
@@ -131,9 +143,9 @@ class Settings(BaseSettings):
             raise ValueError("Docker host must be an absolute unix socket URI")
         return value
 
-    @field_validator("agent_claude_disallowed_tools", mode="before")
+    @field_validator("agent_claude_disallowed_tools", "changes_excluded_directories", mode="before")
     @classmethod
-    def _split_disallowed_tools(cls, value: object) -> object:
+    def _split_comma_list(cls, value: object) -> object:
         if isinstance(value, str):
             return [item.strip() for item in value.split(",") if item.strip()]
         return value

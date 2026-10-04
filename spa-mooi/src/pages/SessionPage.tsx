@@ -30,6 +30,7 @@ export const SessionPage = () => {
     actionError,
     send,
     interrupt,
+    recover,
     compact,
     clearConversation,
     allowPermission,
@@ -127,6 +128,7 @@ export const SessionPage = () => {
               actionError={actionError}
               onSend={send}
               onInterrupt={interrupt}
+              onRecover={recover}
               onCompact={compact}
               onClear={clearConversation}
               onConfigurationChange={(configuration) => void updateConfiguration(configuration)}

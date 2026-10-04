@@ -8,11 +8,14 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import difflib
+import contextlib
 import logging
 import os
 import re
 import shutil
+import signal
+import time
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -28,6 +31,38 @@ _BRANCH_PATTERN = re.compile(r"^[A-Za-z0-9._\-/]{1,120}$")
 _CREDENTIAL_PATTERN = re.compile(r"//[^/@\s]*@")
 _NO_CREDENTIAL_HELPER = ("-c", "credential.helper=")
 _SNAPSHOT_IDENTITY = GitIdentity(name="Mooi", email="mooi@localhost")
+
+
+def _processes_inside(directory: Path) -> list[int]:
+    """Processes whose working directory is inside `directory`; empty where `/proc` is unavailable."""
+    found = []
+    with contextlib.suppress(OSError):
+        for entry in Path("/proc").iterdir():
+            if not entry.name.isdigit() or int(entry.name) == os.getpid():
+                continue
+            with contextlib.suppress(OSError, ValueError):
+                if Path(os.readlink(entry / "cwd")).is_relative_to(directory):
+                    found.append(int(entry.name))
+    return found
+
+
+def _terminate_processes(directory: Path, grace_seconds: float = 5.0) -> None:
+    """Stops what agents left running in a workspace (background dev servers, `nohup` jobs): they
+    would outlive the session holding its ports and keep writing into the tree being removed."""
+    directory = directory.resolve()
+    pids = _processes_inside(directory)
+    if pids:
+        LOG.info("Stopping %s process(es) left running in %s", len(pids), directory)
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        for pid in pids:
+            with contextlib.suppress(ProcessLookupError, PermissionError):
+                os.kill(pid, sig)
+        deadline = time.monotonic() + grace_seconds
+        while pids and time.monotonic() < deadline:
+            time.sleep(0.1)
+            pids = _processes_inside(directory)
+        if not pids:
+            return
 
 
 @dataclass(frozen=True)
@@ -78,6 +113,15 @@ class ChangesSummary:
     removed: int
 
 
+@dataclass(frozen=True)
+class FileDiff:
+    diff: str
+    # "text", or "binary" / "too_large" when there is no diff to read.
+    preview: str
+    truncated: bool = False
+
+
+_BINARY_DIFF = re.compile(r"^Binary files .* differ$", re.MULTILINE)
 _CHANGE_KINDS = {"A": "added", "M": "modified", "D": "deleted", "R": "renamed", "C": "renamed", "T": "modified"}
 
 
@@ -123,7 +167,7 @@ class Workspaces:
     # --- git ----------------------------------------------------------------------------------
 
     async def _run(self, *args: str, cwd: Path | None = None, auth: str | None = None,
-                   extra_env: dict[str, str] | None = None) -> tuple[int, str, str]:
+                   extra_env: dict[str, str] | None = None, stdin: str | None = None) -> tuple[int, str, str]:
         """Runs one git command to completion and returns `(exit code, stdout, redacted stderr)`."""
         settings = get_settings()
         env = {**os.environ, "GIT_TERMINAL_PROMPT": "0", **(extra_env or {})}
@@ -137,11 +181,13 @@ class Workspaces:
             *args,
             cwd=str(cwd) if cwd else None,
             env=env,
+            stdin=asyncio.subprocess.PIPE if stdin is not None else None,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
         try:
-            stdout, stderr = await asyncio.wait_for(process.communicate(), settings.git_timeout_seconds)
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(stdin.encode() if stdin is not None else None), settings.git_timeout_seconds)
         except (TimeoutError, asyncio.CancelledError) as error:
             if process.returncode is None:
                 process.kill()
@@ -156,9 +202,9 @@ class Workspaces:
         return process.returncode or 0, stdout.decode("utf-8", "replace"), detail
 
     async def _git(self, *args: str, cwd: Path | None = None, auth: str | None = None,
-                   extra_env: dict[str, str] | None = None) -> str:
+                   extra_env: dict[str, str] | None = None, stdin: str | None = None) -> str:
         """Runs one git command and returns its stdout, failing the request on a non-zero exit."""
-        code, stdout, detail = await self._run(*args, cwd=cwd, auth=auth, extra_env=extra_env)
+        code, stdout, detail = await self._run(*args, cwd=cwd, auth=auth, extra_env=extra_env, stdin=stdin)
         if code != 0:
             LOG.warning("git %s failed with %s: %s", args[0], code, detail or "no output")
             raise ApiException.bad_gateway(detail or "The git command failed")
@@ -249,6 +295,7 @@ class Workspaces:
             # Keep ownership evidence until all potentially large deletions succeed.
             # A failed/terminated removal can then be retried at startup.
             marker = directory / ".mooi-session"
+            _terminate_processes(directory)
             for child in directory.iterdir():
                 if child == marker:
                     continue
@@ -436,10 +483,11 @@ class Workspaces:
 
     # --- diffs ----------------------------------------------------------------------------------
 
-    async def _numstat(self, workspace: Path, base_commit: str) -> dict[str, tuple[int, int]]:
+    async def _numstat(self, workspace: Path, base_commit: str, env: dict[str, str]) -> dict[str, tuple[int, int]]:
         """Maps each changed path to `(added, removed)`, using `-z` so a renamed path's two names
         arrive as separate NUL-terminated fields instead of an ambiguous `old => new` string."""
-        raw = await self._git("-C", str(workspace), "diff", "--numstat", "-M", "-z", base_commit)
+        raw = await self._git("-C", str(workspace), "diff", "--numstat", "-M", "-z", base_commit, "--",
+                              *_visible_pathspec(), extra_env=env)
         fields = raw.split("\0")
         counts: dict[str, tuple[int, int]] = {}
         i = 0
@@ -456,9 +504,10 @@ class Workspaces:
             counts[path] = (added, removed)
         return counts
 
-    async def _name_status(self, workspace: Path, base_commit: str) -> list[tuple[str, str]]:
+    async def _name_status(self, workspace: Path, base_commit: str, env: dict[str, str]) -> list[tuple[str, str]]:
         """Lists `(status, final_path)` pairs; `status` is the first letter of git's status code."""
-        raw = await self._git("-C", str(workspace), "diff", "--name-status", "-M", "-z", base_commit)
+        raw = await self._git("-C", str(workspace), "diff", "--name-status", "-M", "-z", base_commit, "--",
+                              *_visible_pathspec(), extra_env=env)
         fields = [field for field in raw.split("\0") if field != ""]
         entries: list[tuple[str, str]] = []
         i = 0
@@ -473,59 +522,56 @@ class Workspaces:
             i += 1
         return entries
 
+    async def _untracked(self, workspace: Path, *pathspec: str) -> list[str]:
+        """Untracked files the working tree's own .gitignore files (edited or not, at any depth) and
+        the excluded directories leave visible; an excluded directory is never even walked."""
+        excludes = [f"--exclude={directory.strip('/')}/" for directory in get_settings().changes_excluded_directories]
+        raw = await self._git("--literal-pathspecs", "-C", str(workspace), "ls-files", "--others",
+                              "--exclude-standard", *excludes, "-z", *(("--", *pathspec) if pathspec else ()))
+        return [path for path in raw.split("\0") if path]
+
+    async def _ignored(self, workspace: Path, paths: list[str]) -> set[str]:
+        """The given paths that the working tree's .gitignore files match, tracked ones included."""
+        if not paths:
+            return set()
+        code, stdout, detail = await self._run("-C", str(workspace), "check-ignore", "--no-index", "-z", "--stdin",
+                                               stdin="\0".join(paths) + "\0")
+        if code not in (0, 1):  # 1: nothing ignored
+            LOG.warning("git check-ignore failed with %s: %s", code, detail or "no output")
+            return set()
+        return {path for path in stdout.split("\0") if path}
+
+    @contextlib.asynccontextmanager
+    async def _intent_index(self, workspace: Path, untracked: list[str]) -> AsyncIterator[dict[str, str]]:
+        """A throwaway copy of the index where untracked files are only intended to be added, so one
+        diff against the base lists them (renames included) without hashing them nor touching the
+        agent's own index."""
+        git_dir = Path((await self._git("-C", str(workspace), "rev-parse", "--absolute-git-dir")).strip())
+        index = git_dir / f"mooi-changes-{uuid4().hex}.index"
+        env = {"GIT_INDEX_FILE": str(index)}
+        try:
+            if (git_dir / "index").is_file():
+                await asyncio.to_thread(shutil.copyfile, git_dir / "index", index)
+            else:
+                await self._git("-C", str(workspace), "read-tree", "HEAD", extra_env=env)
+            if untracked:
+                await self._git("--literal-pathspecs", "-C", str(workspace), "add", "--intent-to-add",
+                                "--pathspec-from-file=-", "--pathspec-file-nul", extra_env=env,
+                                stdin="\0".join(untracked) + "\0")
+            yield env
+        finally:
+            index.unlink(missing_ok=True)
+
     async def changes(self, workspace: Path, base_commit: str) -> ChangesSummary:
-        """Read tracked and untracked changes without touching the workspace index."""
-        counts = await self._numstat(workspace, base_commit)
-        statuses = await self._name_status(workspace, base_commit)
-
-        untracked = list(
-            filter(
-                None,
-                (
-                    await self._git(
-                        "-C", str(workspace), "ls-files", "--others", "--exclude-standard", "-z"
-                    )
-                ).split("\0"),
-            )
-        )
-        deleted = [path for status, path in statuses if status[0] == "D"]
-        renamed_from: set[str] = set()
-        renamed_to: set[str] = set()
-        renamed_counts: dict[str, tuple[int, int]] = {}
-        for path in untracked:
-            target_hash = await self._git("-C", str(workspace), "hash-object", "--", path)
-            for old_path in deleted:
-                if old_path in renamed_from:
-                    continue
-                base_hash = await self._git("-C", str(workspace), "rev-parse", f"{base_commit}:{old_path}")
-                if target_hash.strip() == base_hash.strip():
-                    renamed_from.add(old_path)
-                    renamed_to.add(path)
-                    renamed_counts[path] = (0, 0)
-                    break
-                try:
-                    old_text = await self._git("-C", str(workspace), "show", f"{base_commit}:{old_path}")
-                    new_text = await asyncio.to_thread((workspace / path).read_text, encoding="utf-8")
-                except (ApiException, OSError, UnicodeError):
-                    continue
-                old_lines = old_text.splitlines()
-                new_lines = new_text.splitlines()
-                matcher = difflib.SequenceMatcher(None, old_lines, new_lines)
-                similarity = matcher.ratio()
-                if similarity < 0.6:
-                    continue
-                added = 0
-                removed = 0
-                for opcode, old_start, old_end, new_start, new_end in matcher.get_opcodes():
-                    if opcode in ("replace", "delete"):
-                        removed += old_end - old_start
-                    if opcode in ("replace", "insert"):
-                        added += new_end - new_start
-                renamed_from.add(old_path)
-                renamed_to.add(path)
-                renamed_counts[path] = (added, removed)
-                break
-
+        """Read tracked and untracked changes without touching the workspace index. Anything the
+        working tree's .gitignore files match, or inside an excluded directory, is never listed."""
+        untracked = await self._untracked(workspace)
+        # A nested repository is listed as its directory and has no lines of its own to count.
+        repositories = [path for path in untracked if path.endswith("/")]
+        async with self._intent_index(workspace, [path for path in untracked if not path.endswith("/")]) as env:
+            counts = await self._numstat(workspace, base_commit, env)
+            statuses = await self._name_status(workspace, base_commit, env) + [("A", path) for path in repositories]
+        ignored = await self._ignored(workspace, [path for _, path in statuses])
         files = [
             ChangedFile(
                 path=path,
@@ -534,41 +580,55 @@ class Workspaces:
                 removed=counts.get(path, (0, 0))[1],
             )
             for status, path in statuses
-            if path not in renamed_from
+            if path not in ignored
         ]
-        for path in untracked:
-            diff = await self.file_diff(workspace, base_commit, path)
-            added = sum(line.startswith("+") and not line.startswith("+++") for line in diff.splitlines())
-            rename_added, rename_removed = renamed_counts.get(path, (0, 0))
-            files.append(
-                ChangedFile(
-                    path=path,
-                    change="renamed" if path in renamed_to else "added",
-                    added=rename_added if path in renamed_to else added,
-                    removed=rename_removed,
-                )
-            )
         return ChangesSummary(
             files=files,
             added=sum(file.added for file in files),
             removed=sum(file.removed for file in files),
         )
 
-    async def file_diff(self, workspace: Path, base_commit: str, path: str) -> str:
-        """Returns the unified diff of one file, rejecting a path that escapes the workspace."""
+    async def file_diff(self, workspace: Path, base_commit: str, path: str) -> FileDiff:
+        """Returns the unified diff of one file, rejecting a path that escapes the workspace. Binary
+        files and files over the preview limit come back without a diff; a long diff is cut."""
         relative = Path(path)
         if relative.is_absolute() or ".." in relative.parts:
             raise ApiException.bad_request("Invalid file path")
         target = workspace / relative
         if not target.resolve().is_relative_to(workspace.resolve()):
             raise ApiException.bad_request("Invalid file path")
-        untracked = await self._git("-C", str(workspace), "ls-files", "--others", "--exclude-standard", "-z", "--", path)
-        if path in untracked.split("\0"):
+        limit = get_settings().changes_preview_max_bytes
+        with contextlib.suppress(OSError):
+            if target.is_dir():  # a nested repository
+                return FileDiff(diff="", preview="binary")
+            if target.is_file() and target.stat().st_size > limit:
+                return FileDiff(diff="", preview="too_large")
+        if path in await self._untracked(workspace, path):
             code, diff, _ = await self._run("diff", "--no-index", "--", "/dev/null", path, cwd=workspace)
             if code not in (0, 1):
                 raise ApiException.bad_gateway("Could not read untracked file diff")
-            return diff
-        return await self._git("-C", str(workspace), "diff", base_commit, "--", relative.as_posix())
+        else:
+            diff = await self._git("--literal-pathspecs", "-C", str(workspace), "diff", base_commit, "--",
+                                   relative.as_posix())
+        return _preview(diff, limit)
+
+
+def _visible_pathspec() -> list[str]:
+    """Pathspec of the whole tree minus the excluded directories, at any depth."""
+    return [".", *(f":(exclude,glob)**/{directory.strip('/')}/**"
+                   for directory in get_settings().changes_excluded_directories)]
+
+
+def _preview(diff: str, limit: int) -> FileDiff:
+    """Classifies a one-file diff: binary when git found no text to compare, and cut at the last
+    whole line within `limit` bytes when longer."""
+    if "\n@@ " not in diff and _BINARY_DIFF.search(diff):
+        return FileDiff(diff="", preview="binary")
+    encoded = diff.encode("utf-8", "replace")
+    if len(encoded) <= limit:
+        return FileDiff(diff=diff, preview="text")
+    cut = encoded[:limit]
+    return FileDiff(diff=cut[: cut.rfind(b"\n") + 1].decode("utf-8", "ignore"), preview="text", truncated=True)
 
 
 @lru_cache
@@ -594,7 +654,7 @@ async def changes(workspace: Path, base_commit: str) -> ChangesSummary:
     return await get_workspaces().changes(workspace, base_commit)
 
 
-async def file_diff(workspace: Path, base_commit: str, path: str) -> str:
+async def file_diff(workspace: Path, base_commit: str, path: str) -> FileDiff:
     return await get_workspaces().file_diff(workspace, base_commit, path)
 
 

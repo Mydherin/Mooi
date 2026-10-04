@@ -57,6 +57,7 @@ from pydantic import (
 from mic_sessions.shared import images, mooi, previews, workspaces
 from mic_sessions.shared.agents import (
     PROVIDERS,
+    RECOVERABLE_DETAIL,
     STATUS_COMPACTING,
     STATUS_FAILED,
     STATUS_PROVISIONING,
@@ -504,6 +505,8 @@ class SessionPayload(BaseModel):
     # A normal session's clone; hidden for platform chats.
     workspacePath: str | None
     baseCommit: str | None
+    # Failed with its runtime and workspace intact: `POST /sessions/{id}/recover` reconnects it.
+    recoverable: bool = False
 
 
 class SessionsResponse(BaseModel):
@@ -593,6 +596,9 @@ class ChangesPayload(BaseModel):
 class FileDiffPayload(BaseModel):
     path: str
     diff: str
+    # "text", or "binary" / "too_large" when the file has no readable diff.
+    preview: Literal["text", "binary", "too_large"] = "text"
+    truncated: bool = False
 
 
 MergeState = Literal["clean", "conflicts", "up_to_date", "merged"]
@@ -713,7 +719,13 @@ class Session:
             deploymentConfigured=self.deployment_configured,
             workspacePath=None if self.kind in _PLATFORM_KINDS or self.workspace == _UNSET_PATH else str(self.workspace),
             baseCommit=self.base_commit or None,
+            recoverable=self.status == STATUS_FAILED and _recoverable(self),
         )
+
+
+def _recoverable(session: Session) -> bool:
+    """A failure that left the runtime and the workspace in place loses no work: it can reconnect."""
+    return not session.closing and session.runtime is not None and session.workspace != _UNSET_PATH
 
 
 def new_session(
@@ -862,6 +874,8 @@ def record(session: Session, type_: str, data: dict[str, Any]) -> Event:
 
     if type_ == "message.user":
         session.turn_id = uuid4().hex
+    if type_ == EVENT_SESSION_STATUS and data.get("status") == STATUS_FAILED:
+        data = {**data, "recoverable": _recoverable(session)}
     event = session.log.append(type_, {**data, "turnId": session.turn_id})
     session.updated_at = event.at
     if type_ == "message.user":
@@ -1452,11 +1466,42 @@ async def _deliver(session: Session, runtime: AgentRuntime, text: str,
     try:
         await runtime.send(text, attached)
     except Exception:
-        LOG.debug("Background operation encountered an exception", exc_info=True)
-        record(session, "error", {"message": "The message could not be delivered to the agent"})
-        _record_status(session, STATUS_FAILED, "Agent transport failed")
-        raise ApiException.bad_gateway("The message could not be delivered") from None
+        # A dead transport is reconnected, resuming the conversation, and the message sent once more.
+        LOG.warning("Session %s could not deliver a message; reconnecting the agent", session.id, exc_info=True)
+        try:
+            await runtime.recover()
+            await runtime.send(text, attached)
+        except Exception:
+            LOG.warning("Session %s could not reconnect its agent", session.id, exc_info=True)
+            record(session, "error", {"message": "The message could not be delivered to the agent"})
+            _record_status(session, STATUS_FAILED, RECOVERABLE_DETAIL)
+            raise ApiException.bad_gateway("The message could not be delivered") from None
     return SendMessageResponse(seq=event.seq, images=[image.payload() for image in attached])
+
+
+@router.post("/sessions/{session_id}/recover", status_code=status.HTTP_204_NO_CONTENT)
+async def recover_session(session_id: UUID, caller: Annotated[Caller, Depends(current_caller)]) -> None:
+    """Reconnects a failed session's agent, resuming its conversation when the provider can."""
+    session = get_registry().get_for(caller, session_id)
+    session.agent_caller = caller
+    async with session.operation_lock:
+        if session.status != STATUS_FAILED or session.closing:
+            raise ApiException.conflict("Only a failed session can be reconnected")
+        if not _recoverable(session):
+            raise ApiException.conflict("This session cannot be recovered. Start a new one.")
+        _touch_activity(session)
+        try:
+            await _runtime(session).recover()
+        except Exception:
+            LOG.warning("Session %s could not reconnect its agent", session.id, exc_info=True)
+            record(session, "error", {"message": "The agent could not reconnect. Try again in a moment."})
+            _record_status(session, STATUS_FAILED, RECOVERABLE_DETAIL)
+            raise ApiException.bad_gateway("The agent could not reconnect") from None
+        record(session, "agent.activity", {
+            "kind": "stream_recovered",
+            "description": "Reconnected and restored the conversation. Send a message to continue.",
+        })
+        _record_status(session, STATUS_READY)
 
 
 @router.get("/sessions/{session_id}/images/{image_id}")
@@ -1633,7 +1678,7 @@ async def get_file_diff(
         if session.workspace == _UNSET_PATH:
             raise ApiException.conflict("The workspace is still being prepared")
         diff = await workspaces.file_diff(session.workspace, session.base_commit, path)
-        return FileDiffPayload(path=path, diff=diff)
+        return FileDiffPayload(path=path, diff=diff.diff, preview=diff.preview, truncated=diff.truncated)
 
 
 
@@ -1693,8 +1738,8 @@ async def _reset_conversation(session: Session, caller: Caller) -> AgentRuntime:
         await runtime.start()
     except Exception:
         LOG.exception("Session %s could not restart its agent", session.id)
-        record(session, "error", {"message": "The agent could not be restarted. Close the session and start a new one."})
-        _record_status(session, STATUS_FAILED, "Agent restart failed")
+        record(session, "error", {"message": "The agent could not be restarted. Reconnect to try again."})
+        _record_status(session, STATUS_FAILED, RECOVERABLE_DETAIL)
         raise ApiException.bad_gateway("The agent could not be restarted") from None
     return runtime
 

@@ -45,6 +45,7 @@ export const PlatformChatPanel = ({ sessionId, completion, loadingLabel }: Platf
           actionError={chat.actionError}
           onSend={chat.send}
           onInterrupt={chat.interrupt}
+          onRecover={chat.recover}
           onCompact={chat.compact}
           onClear={chat.clearConversation}
           onConfigurationChange={(configuration) => void chat.updateConfiguration(configuration)}

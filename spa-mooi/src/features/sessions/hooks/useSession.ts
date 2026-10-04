@@ -9,6 +9,7 @@ import {
   fetchSession,
   fetchSessionProvider,
   interruptSession,
+  recoverSession,
   sendSessionMessage,
   updateSessionConfiguration,
 } from '@/features/sessions/api/sessionsApi';
@@ -26,6 +27,7 @@ interface UseSession {
   actionError: string | null;
   send: (text: string, images?: PreparedImage[]) => Promise<boolean>;
   interrupt: () => Promise<boolean>;
+  recover: () => Promise<boolean>;
   compact: () => Promise<boolean>;
   clearConversation: () => Promise<boolean>;
   allowPermission: (requestId: string, updatedInput?: Record<string, unknown>) => Promise<boolean>;
@@ -183,6 +185,12 @@ export const useSession = (sessionId: string | undefined): UseSession => {
     [sessionId, runAction],
   );
 
+  const recover = useCallback(
+    () => (sessionId && useSessionsStore.getState().sessions.some((item) => item.id === sessionId && item.status === 'failed')
+      ? runAction(() => recoverSession(sessionId)) : Promise.resolve(false)),
+    [sessionId, runAction],
+  );
+
   const compact = useCallback(
     () => (sessionId && useSessionsStore.getState().sessions.some((item) => item.id === sessionId && item.status === 'ready')
       ? runAction(() => compactSession(sessionId)) : Promise.resolve(false)),
@@ -237,6 +245,7 @@ export const useSession = (sessionId: string | undefined): UseSession => {
     actionError,
     send,
     interrupt,
+    recover,
     compact,
     clearConversation,
     allowPermission,

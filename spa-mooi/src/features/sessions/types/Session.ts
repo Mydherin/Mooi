@@ -33,4 +33,6 @@ export interface Session {
   /** The session's own clone on the sessions pod; null until provisioning has cloned it. */
   workspacePath: string | null;
   baseCommit: string | null;
+  /** Failed with its agent and workspace intact: reconnecting resumes the conversation. */
+  recoverable?: boolean;
 }

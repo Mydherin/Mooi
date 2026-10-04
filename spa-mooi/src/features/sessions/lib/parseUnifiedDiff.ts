@@ -31,8 +31,11 @@ export const parseUnifiedDiff = (diff: string): DiffLine[] => {
   let newLine = 0;
   let id = 0;
 
+  let inHunk = false;
+
   for (const raw of rawLines) {
-    if (skippedPrefixes.some((prefix) => raw.startsWith(prefix))) {
+    // Header lines only precede the first hunk: inside one, `--- x` is a removed `-- x` line.
+    if (!inHunk && skippedPrefixes.some((prefix) => raw.startsWith(prefix))) {
       continue;
     }
 
@@ -49,6 +52,7 @@ export const parseUnifiedDiff = (diff: string): DiffLine[] => {
       const match = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(raw);
       oldLine = match ? Number(match[1]) : 0;
       newLine = match ? Number(match[2]) : 0;
+      inHunk = true;
       lines.push({ id: `d${id++}`, kind: 'hunk', oldLine: null, newLine: null, content: raw });
       continue;
     }

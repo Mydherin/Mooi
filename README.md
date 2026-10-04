@@ -134,6 +134,10 @@ Configure `mic-sessions/.env` using its example:
 | `SESSION_IDLE_TIMEOUT_MINUTES` | Inactivity expiry; active turns/questions are retained |
 | `AGENT_CLAUDE_MODEL`, `AGENT_CLAUDE_EFFORT` | Defaults for new sessions |
 | `AGENT_CLAUDE_DISALLOWED_TOOLS` | Comma-separated tool exclusions |
+| `AGENT_CLAUDE_MAX_MESSAGE_BYTES` | Largest single Claude CLI message (default 64 MiB) |
+| `AGENT_RECOVERY_ATTEMPTS` | Reconnections (resuming the conversation) before a broken agent stream fails the session |
+| `CHANGES_EXCLUDED_DIRECTORIES` | Directories hidden from Changes besides `.gitignore` (comma-separated; defaults to dependency/cache dirs such as `node_modules`) |
+| `CHANGES_PREVIEW_MAX_BYTES` | Largest file previewed as a text diff, and diff size cap (default 4 MiB) |
 | `EVENT_LOG_LIMIT`, `EVENT_LOG_BYTES` | Per-session retained event limits |
 
 Adding a repository does not clone it. A new session checks out its requested remote branch,

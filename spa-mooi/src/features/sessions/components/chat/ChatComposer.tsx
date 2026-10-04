@@ -3,7 +3,7 @@ import type { SessionUsage } from '@/features/sessions/types/SessionUsage';
 import type { SessionConfiguration } from '@/features/sessions/types/SessionConfiguration';
 import type { SessionProvider } from '@/features/sessions/types/SessionProvider';
 import { useLayoutEffect, useRef, useState, type DragEvent, type ReactNode } from 'react';
-import { ArrowUp, ImagePlus, Square } from 'lucide-react';
+import { ArrowUp, ImagePlus, RotateCw, Square } from 'lucide-react';
 import type { SessionStatus } from '@/features/sessions/types/SessionStatus';
 import { DictationButton } from '@/features/dictation/components/DictationButton';
 import { useImageDraft } from '@/features/sessions/hooks/useImageDraft';
@@ -31,6 +31,9 @@ interface ChatComposerProps {
   acceptsImages?: boolean;
   onSend: (text: string, images: PreparedImage[]) => Promise<boolean>;
   onInterrupt: () => Promise<boolean>;
+  /** The session failed with its agent and workspace intact: offer to reconnect it. */
+  recoverable?: boolean;
+  onRecover: () => Promise<boolean>;
   onCompact: () => Promise<boolean>;
   onClear: () => Promise<boolean>;
   onConfigurationChange: (configuration: SessionConfiguration) => void;
@@ -45,6 +48,7 @@ const hints: Partial<Record<SessionStatus, string>> = {
   closed: 'This session is closed.',
   compacting: 'Compacting context… Your draft is saved.',
 };
+const recoverableHint = 'The agent lost its connection. Your draft, workspace and changes are kept.';
 
 export const ChatComposer = ({
   status,
@@ -61,6 +65,8 @@ export const ChatComposer = ({
   acceptsImages = false,
   onSend,
   onInterrupt,
+  recoverable = false,
+  onRecover,
   onCompact,
   onClear,
   onConfigurationChange,
@@ -81,7 +87,8 @@ export const ChatComposer = ({
       ? effort : option?.defaultEffort ?? supported[0] ?? null });
   };
 
-  const hint = hints[status] ?? (deploying ? 'Deployment in progress. Your draft is saved; chat resumes when it finishes.' : null);
+  const reconnectable = status === 'failed' && recoverable;
+  const hint = (reconnectable ? recoverableHint : hints[status]) ?? (deploying ? 'Deployment in progress. Your draft is saved; chat resumes when it finishes.' : null);
   const blocked = hint !== null;
   const activeTurn = status === 'working' || status === 'waiting';
   const imagesReason = modelOptions.find((option) => option.id === model)?.images === false
@@ -107,8 +114,11 @@ export const ChatComposer = ({
     const textarea = textareaRef.current;
 
     if (textarea) {
+      // Collapsing to `auto` to measure resets the scroll: keep the reader (or a dictation) where it was.
+      const { scrollTop } = textarea;
       textarea.style.height = 'auto';
       textarea.style.height = `${textarea.scrollHeight}px`;
+      textarea.scrollTop = scrollTop;
     }
   };
 
@@ -242,6 +252,12 @@ export const ChatComposer = ({
                 className="size-10 shrink-0 p-0 sm:size-11"
               >
                 <Square className="size-4" />
+              </Button>
+            ) : reconnectable ? (
+              <Button variant="brand" onClick={() => void onRecover()} disabled={busy} ariaLabel="Reconnect the agent"
+                className="h-10 shrink-0 gap-1.5 px-3 sm:h-11 sm:px-4">
+                <RotateCw className={cn('size-4', busy && 'animate-spin')} />
+                Reconnect
               </Button>
             ) : !blocked ? (
               <Button

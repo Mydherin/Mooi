@@ -23,6 +23,7 @@ interface ChatPanelProps {
   actionError: string | null;
   onSend: (text: string, images?: PreparedImage[]) => Promise<boolean>;
   onInterrupt: () => Promise<boolean>;
+  onRecover: () => Promise<boolean>;
   onCompact: () => Promise<boolean>;
   onClear: () => Promise<boolean>;
   onConfigurationChange: (configuration: SessionConfiguration) => void;
@@ -48,6 +49,7 @@ export const ChatPanel = ({
   actionError,
   onSend,
   onInterrupt,
+  onRecover,
   onCompact,
   onClear,
   onConfigurationChange,
@@ -120,6 +122,8 @@ export const ChatPanel = ({
       acceptsImages={Boolean(session.capabilities.images)}
       onSend={send}
       onInterrupt={onInterrupt}
+      recoverable={Boolean(session.recoverable)}
+      onRecover={onRecover}
       onCompact={onCompact}
       onClear={onClear}
       onConfigurationChange={onConfigurationChange}

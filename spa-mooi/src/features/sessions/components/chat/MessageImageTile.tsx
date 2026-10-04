@@ -31,16 +31,18 @@ export const MessageImageTile = ({ sessionId, image, single, onOpen }: MessageIm
         single ? '[--tile:18rem] sm:[--tile:22rem]' : 'aspect-square w-full',
       )}
     >
+      {/* Pinned to the tile's box: a percentage height inside a <button> sized only by its aspect
+          ratio does not resolve in every engine, which left the picture overflowing the tile. */}
       {url ? (
         <img src={url} alt={image.name} draggable={false} decoding="async"
-          className="size-full object-cover transition duration-300 group-hover:scale-[1.03]" />
+          className="absolute inset-0 size-full object-cover transition duration-300 group-hover:scale-[1.03]" />
       ) : failed ? (
-        <span className="flex size-full flex-col items-center justify-center gap-1 p-2 text-xs text-ink-subtle">
+        <span className="absolute inset-0 flex flex-col items-center justify-center gap-1 p-2 text-xs text-ink-subtle">
           <ImageOff aria-hidden="true" className="size-5" />
           Unavailable
         </span>
       ) : (
-        <span aria-hidden="true" className="block size-full animate-pulse-soft bg-surface-3" />
+        <span aria-hidden="true" className="absolute inset-0 animate-pulse-soft bg-surface-3" />
       )}
     </button>
   );

@@ -7,6 +7,7 @@ import { DiffView } from '@/features/sessions/components/changes/DiffView';
 import { EmptyState } from '@/shared/components/EmptyState';
 import { useSessionsStore } from '@/stores/sessionsStore';
 import { Button } from '@/shared/components/Button';
+import { useIncrementalCount } from '@/shared/hooks/useIncrementalCount';
 
 interface ChangesPanelProps {
   sessionId: string;
@@ -26,6 +27,7 @@ export const ChangesPanel = ({
   const lastSeq = useSessionsStore((state) => state.byId[sessionId]?.lastSeq ?? 0);
   const files = changes?.files ?? [];
   const [selectedPath, setSelectedPath] = useState<string | null>(files[0]?.path ?? null);
+  const { count, more, sentinel } = useIncrementalCount(files.length, 200);
 
   const retry = useCallback(async () => {
     const requestSeq = useSessionsStore.getState().byId[sessionId]?.lastSeq ?? lastSeq;
@@ -77,7 +79,7 @@ export const ChangesPanel = ({
       ) : (
         <div className="grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] lg:grid-cols-[288px_minmax(0,1fr)] lg:grid-rows-1">
           <ul className="min-w-0 max-h-44 overflow-y-auto border-b border-line p-1.5 lg:max-h-none lg:border-r lg:border-b-0">
-            {files.map((file) => (
+            {files.slice(0, count).map((file) => (
               <ChangedFileRow
                 key={file.path}
                 file={file}
@@ -85,6 +87,7 @@ export const ChangesPanel = ({
                 onSelect={setSelectedPath}
               />
             ))}
+            {more ? <li ref={sentinel} aria-hidden="true" className="h-px" /> : null}
           </ul>
 
           <div className="relative flex min-w-0 min-h-0 flex-col">

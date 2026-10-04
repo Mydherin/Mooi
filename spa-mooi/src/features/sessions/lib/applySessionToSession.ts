@@ -31,6 +31,7 @@ export const applySessionToSession = (session: Session, event: SessionEvent): Se
   } else if (type === 'session.status') {
     patch.status = (data.status as SessionStatus | undefined) ?? session.status;
     patch.detail = (data.detail as string | null | undefined) ?? null;
+    patch.recoverable = data.recoverable === true;
     if (typeof data.workspacePath === 'string') {
       patch.workspacePath = data.workspacePath;
       patch.baseCommit = (data.baseCommit as string | null | undefined) ?? session.baseCommit;
