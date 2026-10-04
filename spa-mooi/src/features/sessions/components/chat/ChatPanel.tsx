@@ -6,6 +6,7 @@ import { ChatComposer } from '@/features/sessions/components/chat/ChatComposer';
 import { ChatMessageList } from '@/features/sessions/components/chat/ChatMessageList';
 import { RecipesButton } from '@/features/recipes/components/RecipesButton';
 import type { SessionStreamState } from '@/features/sessions/lib/openSessionStream';
+import type { PreparedImage } from '@/features/sessions/types/PreparedImage';
 import type { Session } from '@/features/sessions/types/Session';
 import type { SessionPendingRequest } from '@/features/sessions/types/SessionPendingRequest';
 import type { TranscriptEntry } from '@/features/sessions/types/TranscriptEntry';
@@ -20,7 +21,7 @@ interface ChatPanelProps {
   modelLoading: boolean;
   modelError: string | null;
   actionError: string | null;
-  onSend: (text: string) => Promise<boolean>;
+  onSend: (text: string, images?: PreparedImage[]) => Promise<boolean>;
   onInterrupt: () => Promise<boolean>;
   onCompact: () => Promise<boolean>;
   onClear: () => Promise<boolean>;
@@ -63,9 +64,9 @@ export const ChatPanel = ({
     if (working) setSending(false);
   }, [working]);
 
-  const send = async (text: string) => {
+  const send = async (text: string, images: PreparedImage[] = []) => {
     setSending(true);
-    const sent = await onSend(text);
+    const sent = await onSend(text, images);
     if (!sent) setSending(false);
     return sent;
   };
@@ -82,6 +83,7 @@ export const ChatPanel = ({
     {session.detail && session.status !== 'failed' && session.status !== 'closed' ? <p role="status" className="max-h-[20%] shrink-0 overflow-y-auto px-4 py-2 text-sm text-ink-muted [overflow-wrap:anywhere]">{session.detail}</p> : null}
     <ChatMessageList
       key={`transcript-${session.id}`}
+      sessionId={session.id}
       entries={entries}
       pending={pending}
       providerLabel={session.providerLabel}
@@ -115,12 +117,13 @@ export const ChatPanel = ({
       modelError={modelError}
       canInterrupt={session.capabilities.interrupt}
       hasConversation={entries.some((entry) => entry.kind === 'user')}
+      acceptsImages={Boolean(session.capabilities.images)}
       onSend={send}
       onInterrupt={onInterrupt}
       onCompact={onCompact}
       onClear={onClear}
       onConfigurationChange={onConfigurationChange}
-      actions={session.kind === 'session' ? <RecipesButton disabled={!canSend} onApply={send} /> : null}
+      actions={session.kind === 'session' ? <RecipesButton disabled={!canSend} onApply={(text) => send(text)} /> : null}
     />
   </div>
   );

@@ -5,5 +5,5 @@ export interface SessionProvider {
   providerDefaultModel?: string;
   defaultEffort: string | null;
   unavailable?: string;
-  models: { id: string; label: string; efforts: string[]; defaultEffort?: string }[];
+  models: { id: string; label: string; efforts: string[]; defaultEffort?: string; images?: boolean }[];
 }

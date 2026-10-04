@@ -6,4 +6,6 @@ export interface AgentCapabilities {
   interrupt: boolean;
   editableToolInput: boolean;
   cost: boolean;
+  /** Messages may carry images; each model may still decline them (see `SessionProvider`). */
+  images?: boolean;
 }

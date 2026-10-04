@@ -2,12 +2,18 @@ import { ChatUsageIndicators } from './ChatUsageIndicators';
 import type { SessionUsage } from '@/features/sessions/types/SessionUsage';
 import type { SessionConfiguration } from '@/features/sessions/types/SessionConfiguration';
 import type { SessionProvider } from '@/features/sessions/types/SessionProvider';
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { ArrowUp, Square } from 'lucide-react';
+import { useLayoutEffect, useRef, useState, type DragEvent, type ReactNode } from 'react';
+import { ArrowUp, ImagePlus, Square } from 'lucide-react';
 import type { SessionStatus } from '@/features/sessions/types/SessionStatus';
 import { DictationButton } from '@/features/dictation/components/DictationButton';
+import { useImageDraft } from '@/features/sessions/hooks/useImageDraft';
+import { imageFilesFrom } from '@/features/sessions/lib/imageFilesFrom';
+import type { PreparedImage } from '@/features/sessions/types/PreparedImage';
+import { AttachImageButton } from './AttachImageButton';
+import { ComposerImageStrip } from './ComposerImageStrip';
 import { ComposerSelect } from './ComposerSelect';
 import { Button } from '@/shared/components/Button';
+import { cn } from '@/shared/utils/cn';
 
 interface ChatComposerProps {
   status: SessionStatus;
@@ -21,7 +27,9 @@ interface ChatComposerProps {
   modelError: string | null;
   canInterrupt: boolean;
   hasConversation: boolean;
-  onSend: (text: string) => Promise<boolean>;
+  /** The provider takes images; each model may still decline them. */
+  acceptsImages?: boolean;
+  onSend: (text: string, images: PreparedImage[]) => Promise<boolean>;
   onInterrupt: () => Promise<boolean>;
   onCompact: () => Promise<boolean>;
   onClear: () => Promise<boolean>;
@@ -50,6 +58,7 @@ export const ChatComposer = ({
   modelError,
   canInterrupt,
   hasConversation,
+  acceptsImages = false,
   onSend,
   onInterrupt,
   onCompact,
@@ -59,6 +68,8 @@ export const ChatComposer = ({
 }: ChatComposerProps) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [value, setValue] = useState('');
+  const [dragging, setDragging] = useState(false);
+  const draft = useImageDraft();
 
   const effortOptions = modelOptions.find((option) => option.id === model)?.efforts ?? [];
   const configurationDisabled = deploying || busy || status === 'closed' || status === 'failed' || status === 'compacting' || modelLoading || Boolean(modelError);
@@ -73,6 +84,24 @@ export const ChatComposer = ({
   const hint = hints[status] ?? (deploying ? 'Deployment in progress. Your draft is saved; chat resumes when it finishes.' : null);
   const blocked = hint !== null;
   const activeTurn = status === 'working' || status === 'waiting';
+  const imagesReason = modelOptions.find((option) => option.id === model)?.images === false
+    ? 'The selected model does not accept images' : null;
+  const canAttach = acceptsImages && !blocked && !draft.full;
+  const readyImages = draft.images.filter((image) => image.status === 'ready');
+  const hasImages = draft.images.length > 0;
+  const sendable = (value.trim().length > 0 || readyImages.length > 0) && !draft.preparing && !(hasImages && imagesReason);
+  const imageStatus = draft.notice ?? (hasImages && imagesReason ? `${imagesReason}. Pick another model or remove them.` : null);
+
+  const attach = (files: File[]) => {
+    if (acceptsImages && !blocked) draft.add(files);
+  };
+
+  const onDragOver = (event: DragEvent) => {
+    if (!acceptsImages || blocked || !event.dataTransfer.types.includes('Files')) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+    setDragging(true);
+  };
 
   const resize = () => {
     const textarea = textareaRef.current;
@@ -90,12 +119,14 @@ export const ChatComposer = ({
   const submit = async () => {
     const text = value.trim();
 
-    if (text.length === 0 || blocked || activeTurn || busy || status !== 'ready') {
+    if (!sendable || blocked || activeTurn || busy || status !== 'ready') {
       return;
     }
 
-    if (!await onSend(text)) return;
+    const sent = readyImages;
+    if (!await onSend(text, sent.flatMap((image) => image.prepared ? [image.prepared] : []))) return;
     setValue((current) => current.trim() === text ? '' : current);
+    draft.discard(sent.map((image) => image.key));
 
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
@@ -104,7 +135,28 @@ export const ChatComposer = ({
 
   return (
     <div className="mx-auto w-full max-w-[60rem] shrink-0 bg-surface px-2.5 pt-2 pb-[max(0.625rem,var(--safe-bottom))] sm:px-8 sm:pt-3 sm:pb-6">
-      <div className="rounded-2xl border border-line bg-surface-2 transition focus-within:border-ink">
+      <div
+        onDragEnter={onDragOver}
+        onDragOver={onDragOver}
+        onDragLeave={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false);
+        }}
+        onDrop={(event) => {
+          if (!dragging) return;
+          event.preventDefault();
+          setDragging(false);
+          attach(imageFilesFrom(event.dataTransfer));
+        }}
+        className={cn('relative rounded-2xl border bg-surface-2 transition focus-within:border-ink',
+          dragging ? 'border-brand' : 'border-line')}
+      >
+        {dragging ? (
+          <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center gap-2 rounded-[inherit] border-2 border-dashed border-brand bg-brand-soft/90 text-sm font-semibold text-brand-strong">
+            <ImagePlus className="size-5" />
+            Drop images to attach
+          </div>
+        ) : null}
+        {hasImages ? <ComposerImageStrip images={draft.images} onRemove={draft.remove} /> : null}
         <textarea
           ref={textareaRef}
           rows={2}
@@ -112,6 +164,13 @@ export const ChatComposer = ({
           disabled={blocked}
           onChange={(event) => {
             setValue(event.target.value);
+          }}
+          onPaste={(event) => {
+            const files = acceptsImages ? imageFilesFrom(event.clipboardData) : [];
+            if (files.length === 0) return;
+            // A screenshot carries no text: keep the native paste only when there is text to insert.
+            if (!event.clipboardData.types.includes('text/plain')) event.preventDefault();
+            attach(files);
           }}
           onKeyDown={(event) => {
             if (
@@ -134,6 +193,7 @@ export const ChatComposer = ({
           className="max-h-[min(12rem,25dvh)] w-full resize-none bg-transparent px-4 pt-3 text-base leading-relaxed keyboard:max-h-32 sm:px-5 sm:pt-4 text-ink placeholder:text-ink-subtle focus:outline-none disabled:cursor-not-allowed"
         />
         {hint ? <p role="status" className="px-4 pb-2 text-xs text-ink-muted sm:px-5">{hint}</p> : null}
+        {imageStatus ? <p role="status" className="px-4 pb-2 text-xs text-warning sm:px-5">{imageStatus}</p> : null}
 
         {activeTurn ? <p className="px-4 pb-2 text-xs text-ink-muted sm:px-5">Model and effort changes apply to your next message.</p> : null}
 
@@ -167,6 +227,10 @@ export const ChatComposer = ({
           <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-1.5">
             {!activeTurn && !blocked ? <span className="mr-1 hidden text-xs text-ink-subtle lg:flex">Enter to send · Shift+Enter for a new line</span> : null}
 
+            {acceptsImages && !blocked ? (
+              <AttachImageButton onPick={attach} disabled={!canAttach} reason={imagesReason} className="max-sm:size-10" />
+            ) : null}
+
             {!blocked ? <DictationButton field={textareaRef} className="max-sm:size-10" /> : null}
 
             {activeTurn ? (
@@ -183,7 +247,7 @@ export const ChatComposer = ({
               <Button
                 variant="brand"
                 onClick={submit}
-                disabled={busy || value.trim().length === 0}
+                disabled={busy || !sendable}
                 ariaLabel="Send message"
                 className="size-10 shrink-0 p-0 sm:size-11"
               >

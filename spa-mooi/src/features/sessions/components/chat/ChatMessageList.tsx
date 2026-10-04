@@ -9,6 +9,7 @@ import type { SessionPendingRequest } from '@/features/sessions/types/SessionPen
 import type { TranscriptEntry } from '@/features/sessions/types/TranscriptEntry';
 
 interface ChatMessageListProps {
+  sessionId: string;
   entries: TranscriptEntry[];
   pending: SessionPendingRequest[];
   providerLabel: string;
@@ -23,6 +24,7 @@ interface ChatMessageListProps {
 }
 
 export const ChatMessageList = ({
+  sessionId,
   entries,
   pending,
   providerLabel,
@@ -84,7 +86,7 @@ export const ChatMessageList = ({
             <h2 className="mt-5 text-xl font-extrabold tracking-[-0.03em] text-ink">{loading ? 'Loading conversation…' : working ? 'Processing your message…' : 'What shall we build?'}</h2>
             <p className="mt-2 max-w-sm text-sm leading-relaxed text-ink-muted">{loading ? 'Restoring the messages in this session.' : 'Describe an idea, ask about your code, or work through a change together.'}</p>
           </li> : <>
-            {visibleEntries.map((entry) => <ChatMessageItem key={entry.id} entry={entry} providerLabel={providerLabel} capabilities={capabilities} working={working} />)}
+            {visibleEntries.map((entry) => <ChatMessageItem key={entry.id} sessionId={sessionId} entry={entry} providerLabel={providerLabel} capabilities={capabilities} working={working} />)}
             {working && !hasStreamingAssistant && pending.length === 0 ? (
               <li role="status" aria-live="polite" className="flex items-center gap-3 text-sm text-ink-muted">
                 <LoaderCircle className="size-4 shrink-0 animate-spin text-brand" aria-hidden="true" />

@@ -45,7 +45,7 @@ from urllib.parse import quote
 import httpx
 
 from fastapi import APIRouter, Depends, Request, Response, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import (
     AwareDatetime,
     BaseModel,
@@ -54,7 +54,7 @@ from pydantic import (
     model_validator,
 )
 
-from mic_sessions.shared import mooi, previews, workspaces
+from mic_sessions.shared import images, mooi, previews, workspaces
 from mic_sessions.shared.agents import (
     PROVIDERS,
     STATUS_COMPACTING,
@@ -536,8 +536,17 @@ class DeploymentSetupRequest(BaseModel):
     instructions: str = Field(min_length=1, max_length=20_000)
 
 
+class ImageUploadRequest(BaseModel):
+    mediaType: Literal["image/png", "image/jpeg", "image/webp", "image/gif"]
+    data: str = Field(min_length=1, max_length=images.MAX_ENCODED)
+    name: str | None = Field(default=None, max_length=200)
+    width: int | None = None
+    height: int | None = None
+
+
 class SendMessageRequest(BaseModel):
-    text: str = Field(min_length=1, max_length=100_000)
+    text: str = Field(default="", max_length=100_000)
+    images: list[ImageUploadRequest] = Field(default_factory=list, max_length=images.MAX_IMAGES)
 
 
 class UpdateSessionConfigurationRequest(BaseModel):
@@ -549,6 +558,8 @@ class UpdateSessionConfigurationRequest(BaseModel):
 
 class SendMessageResponse(BaseModel):
     seq: int
+    # Stored image metadata, in upload order, so the sender can show its local copies at once.
+    images: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class PermissionDecisionRequest(BaseModel):
@@ -1397,8 +1408,10 @@ async def send_message(
 ) -> SendMessageResponse:
     session = get_registry().get_for(caller, session_id)
     session.agent_caller = caller
-    if not body.text.strip():
+    if not body.text.strip() and not body.images:
         raise ApiException.bad_request("Message cannot be blank")
+    if body.images and not describe(session.provider).capabilities.images:
+        raise ApiException.bad_request("This agent does not accept images")
     async with session.operation_lock:
         if session.status != STATUS_READY or session.closing or session.deployment.state == "starting":
             raise ApiException.conflict("The session is not ready to accept a message")
@@ -1418,10 +1431,13 @@ async def send_message(
             raise ApiException.bad_gateway("The agent could not apply the selected configuration") from None
         if session.status != STATUS_READY or session.closing or session.deployment.state == "starting":
             raise ApiException.conflict("The session is not ready to accept a message")
-        return await _deliver(session, runtime, body.text)
+        attached = await images.store(session.workspace, [
+            images.Upload(item.data, item.mediaType, item.name, item.width, item.height) for item in body.images])
+        return await _deliver(session, runtime, body.text.strip() if attached else body.text, attached)
 
 
-async def _deliver(session: Session, runtime: AgentRuntime, text: str) -> SendMessageResponse:
+async def _deliver(session: Session, runtime: AgentRuntime, text: str,
+                   attached: list[images.Image] | None = None) -> SendMessageResponse:
     """Records the user message and hands it to the agent; the caller holds the operation lock.
 
     A platform conversation opens with its brief around the user's text, recorded as the message
@@ -1429,16 +1445,30 @@ async def _deliver(session: Session, runtime: AgentRuntime, text: str) -> SendMe
     if session.kind in _PLATFORM_KINDS and not session.platform_briefed:
         text = _production_prompt(session, text) if session.kind == "production" else _backup_prompt(session, text)
         session.platform_briefed = True
-    event = _record_event(session, message_user(uuid4().hex, text))
+    attached = attached or []
+    event = _record_event(session, message_user(uuid4().hex, text, attached))
     _record_status(session, STATUS_WORKING)
     try:
-        await runtime.send(text)
+        await runtime.send(text, attached)
     except Exception:
         LOG.debug("Background operation encountered an exception", exc_info=True)
         record(session, "error", {"message": "The message could not be delivered to the agent"})
         _record_status(session, STATUS_FAILED, "Agent transport failed")
         raise ApiException.bad_gateway("The message could not be delivered") from None
-    return SendMessageResponse(seq=event.seq)
+    return SendMessageResponse(seq=event.seq, images=[image.payload() for image in attached])
+
+
+@router.get("/sessions/{session_id}/images/{image_id}")
+async def session_image(
+    session_id: UUID, image_id: str, caller: Annotated[Caller, Depends(current_caller)]
+) -> FileResponse:
+    """One image the player attached to this session; ids are random, so the bytes never change."""
+    session = get_registry().get_for(caller, session_id)
+    if session.workspace == _UNSET_PATH:
+        raise ApiException.not_found("Unknown image")
+    path, media_type = images.locate(session.workspace, image_id)
+    return FileResponse(path, media_type=media_type, headers={
+        "Cache-Control": "private, max-age=31536000, immutable", "X-Content-Type-Options": "nosniff"})
 
 
 @router.patch("/sessions/{session_id}/configuration")

@@ -3,6 +3,7 @@ import { DEPLOYMENT_LOG_LIMIT } from './deploymentLogLimit';
 import type { SessionPendingRequest } from '@/features/sessions/types/SessionPendingRequest';
 import type { AgentQuestion } from '@/features/sessions/types/AgentQuestion';
 import type { ChangesSummary } from '@/features/sessions/types/ChangesSummary';
+import type { ImageAttachment } from '@/features/sessions/types/ImageAttachment';
 import type { SessionEvent } from '@/features/sessions/types/SessionEvent';
 import type { SessionTranscriptState } from '@/features/sessions/types/SessionTranscriptState';
 import type { TranscriptBlock } from '@/features/sessions/types/TranscriptBlock';
@@ -202,7 +203,8 @@ export const applySessionEvent = (state: SessionTranscriptState, event: SessionE
   switch (type) {
     case 'message.user': {
       entries = closeOpenEntry(entries);
-      entries = [...entries, { id: String(data.messageId), kind: 'user', at, text: String(data.text ?? '') }];
+      entries = [...entries, { id: String(data.messageId), kind: 'user', at, text: String(data.text ?? ''),
+        images: Array.isArray(data.images) ? data.images as ImageAttachment[] : [] }];
       break;
     }
     case 'assistant.delta': {

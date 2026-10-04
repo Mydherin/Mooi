@@ -9,7 +9,7 @@ Adding a provider:
 
 1. Implement the `AgentRuntime` protocol in a new class in this module.
 2. The adapter owns all vendor state — subprocess, HTTP session, and its own conversation history
-   when the vendor SDK is stateless: `send(text)` must work N times on a live runtime.
+   when the vendor SDK is stateless: `send(text, images)` must work N times on a live runtime.
 3. Emit the required domain events (`session.status`, `message.user`, `assistant.message`,
    `tool.use`, `tool.result`, `turn.result`, `error`) and only the optional ones the adapter's
    `AgentCapabilities` declares. Absence of an optional event is compliance, not a bug.
@@ -30,7 +30,7 @@ import shutil
 import subprocess
 import tempfile
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from contextlib import suppress
 from contextvars import ContextVar
 from dataclasses import dataclass, replace
@@ -62,6 +62,7 @@ from claude_agent_sdk import (
 )
 
 from mic_sessions.shared.env import get_settings
+from mic_sessions.shared.images import Image
 from mic_sessions.shared.mooi import Credential
 from mic_sessions.shared.web import ApiException
 
@@ -96,8 +97,9 @@ def session_status(status: str, detail: str | None = None) -> AgentEvent:
     return {"type": "session.status", "data": {"status": status, "detail": detail}}
 
 
-def message_user(message_id: str, text: str) -> AgentEvent:
-    return {"type": "message.user", "data": {"messageId": message_id, "text": text}}
+def message_user(message_id: str, text: str, images: Sequence[Image] = ()) -> AgentEvent:
+    return {"type": "message.user", "data": {
+        "messageId": message_id, "text": text, "images": [image.payload() for image in images]}}
 
 
 def assistant_delta(message_id: str, text: str) -> AgentEvent:
@@ -221,6 +223,7 @@ class AgentCapabilities:
     interrupt: bool = False
     editable_tool_input: bool = False
     cost: bool = False
+    images: bool = False
 
     def as_payload(self) -> dict[str, bool]:
         return {
@@ -231,6 +234,7 @@ class AgentCapabilities:
             "interrupt": self.interrupt,
             "editableToolInput": self.editable_tool_input,
             "cost": self.cost,
+            "images": self.images,
         }
 
 
@@ -271,7 +275,8 @@ class AgentRuntime(Protocol):
 
     async def start(self) -> None: ...
 
-    async def send(self, text: str) -> None: ...
+    async def send(self, text: str, images: Sequence[Image] = ()) -> None:
+        """Start a turn. `images` reach the model only when the `images` capability is declared."""
 
     async def refresh_usage(self) -> None: ...
 
@@ -294,6 +299,7 @@ CLAUDE_CAPABILITIES = AgentCapabilities(
     interrupt=True,
     editable_tool_input=False,
     cost=True,
+    images=True,
 )
 
 
@@ -473,7 +479,9 @@ class ClaudeAgentRuntime:
             efforts = entry.get("supportedEffortLevels") or []
             models.append({"id": model_id, "label": entry.get("displayName") or model_id,
                            "contextWindow": entry.get("contextWindow"),
-                           "efforts": efforts if isinstance(efforts, list) else []})
+                           "efforts": efforts if isinstance(efforts, list) else [],
+                           # Every Claude Code model is multimodal; the CLI does not list modalities.
+                           "images": True})
         if not models:
             raise ApiException(502, "Claude returned no available models. Check your connection and try again.")
         settings = get_settings()
@@ -579,10 +587,24 @@ class ClaudeAgentRuntime:
     async def refresh_usage(self) -> None:
         await self._refresh_quota()
 
-    async def send(self, text: str) -> None:
+    async def send(self, text: str, images: Sequence[Image] = ()) -> None:
         self._interrupted = False
         started_at = time.perf_counter()
-        await self._require_client().query(text)
+        client = self._require_client()
+        if images:
+            # Images precede the text, as the Messages API recommends for multimodal prompts.
+            blocks = await asyncio.to_thread(lambda: [
+                {"type": "image", "source": {"type": "base64", "media_type": image.media_type,
+                                             "data": image.base64()}} for image in images])
+            if text:
+                blocks.append({"type": "text", "text": text})
+
+            async def prompt():
+                yield {"type": "user", "message": {"role": "user", "content": blocks}, "parent_tool_use_id": None}
+
+            await client.query(prompt())
+        else:
+            await client.query(text)
         self._awaiting_first_event_at = time.perf_counter()
         LOG.info("Claude turn submitted in %.0f ms", (time.perf_counter() - started_at) * 1000)
 
@@ -1085,7 +1107,7 @@ class ClaudeAgentRuntime:
         )
 
 
-CODEX_CAPABILITIES = AgentCapabilities(streaming=True, thinking=True, questions=True, interrupt=True)
+CODEX_CAPABILITIES = AgentCapabilities(streaming=True, thinking=True, questions=True, interrupt=True, images=True)
 
 # Full access, like the Claude adapter: Codex never asks for approvals and runs unsandboxed
 # inside the session's own clone. Only the agent's own questions reach the player.
@@ -1201,13 +1223,16 @@ class CodexAgentRuntime:
                 if snapshot:
                     await self._emit("session.usage", {"quota": snapshot})
 
-    async def send(self, text):
+    async def send(self, text, images=()):
         if self._closing or self._account is None:
             raise ApiException.conflict("Codex session is closed")
         if self._task and not self._task.done():
             raise ApiException.conflict("A Codex turn is already running")
         self._interrupted = False
-        self._task = asyncio.create_task(self._run(text))
+        # The bundled CLI reads each stored image from the session directory itself.
+        items = [*({"type": "localImage", "path": str(image.path)} for image in images),
+                 *([{"type": "text", "text": text}] if text else [])]
+        self._task = asyncio.create_task(self._run(items))
         await asyncio.sleep(0)
 
     async def refresh_credential(self, credential):
@@ -1325,7 +1350,7 @@ class CodexAgentRuntime:
             codex.release(self._account)
             self._account = None
 
-    async def _run(self, text):
+    async def _run(self, items):
         from mic_sessions.shared import codex
         terminal = "error"
         started = time.monotonic()
@@ -1337,7 +1362,7 @@ class CodexAgentRuntime:
                 thread = (await client.call("thread_resume", self._thread_id, params) if self._thread_id
                           else await client.call("thread_start", params))
                 self._thread_id = thread.thread.id
-                turn = await client.call("turn_start", self._thread_id, text,
+                turn = await client.call("turn_start", self._thread_id, items,
                                          {"model": self._config.model, "effort": self._config.effort})
                 self._turn_id = turn.turn.id
                 if self._interrupted:

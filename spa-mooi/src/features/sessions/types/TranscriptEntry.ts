@@ -1,3 +1,4 @@
+import type { ImageAttachment } from '@/features/sessions/types/ImageAttachment';
 import type { TranscriptBlock } from '@/features/sessions/types/TranscriptBlock';
 import type { TurnResult } from '@/features/sessions/types/TurnResult';
 
@@ -7,7 +8,7 @@ import type { TurnResult } from '@/features/sessions/types/TurnResult';
  * `AssistantMessage`s and tool calls render as one continuous, ordered set of `blocks`.
  */
 export type TranscriptEntry =
-  | { id: string; kind: 'user'; at: string; text: string }
+  | { id: string; kind: 'user'; at: string; text: string; images: ImageAttachment[] }
   | { id: string; kind: 'assistant'; at: string; streaming: boolean; blocks: TranscriptBlock[]; result: TurnResult | null }
   | { id: string; kind: 'error'; at: string; text: string }
   | { id: string; kind: 'notice'; at: string; tone: 'success' | 'info' | 'progress'; title: string; text: string | null };

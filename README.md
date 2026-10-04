@@ -143,6 +143,10 @@ only marked session leftovers; legacy repositories and unowned directories are p
 `dev-clean` preserves workspace storage; the next start reconciles owned leftovers, including
 when `WORKSPACE_ROOT` points outside the artifact directory.
 
+Messages accept up to 8 images (pick, paste or drop; PNG, JPEG, WebP, GIF; HEIC is converted in the
+browser). The SPA scales them to 2048 px and ≤ 3.5 MB; they are stored in `sessions/<UUID>/images`
+(outside the clone) and sent natively to Claude (base64 blocks) and Codex (local image input).
+
 Codex uses a private account directory and does not inherit the host's Codex login, configuration or
 API keys. Turns sharing one Codex connection are serialized to coordinate refresh-token rotation.
 The current launcher supports macOS and Linux. Model availability still depends on the linked account.

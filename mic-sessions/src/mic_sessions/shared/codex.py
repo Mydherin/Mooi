@@ -209,6 +209,12 @@ def _context_windows(home: Path) -> dict[str, int]:
         return {}
 
 
+def _accepts_images(model: Any) -> bool:
+    """The catalog omits modalities for models that take the SDK default, text and image."""
+    modalities = model.input_modalities
+    return modalities is None or "image" in {getattr(item, "value", item) for item in modalities}
+
+
 def context_window(connection_id: str, model: str) -> int | None:
     cached = _catalogs.get(connection_id)
     if not cached or cached[0] <= time.monotonic():
@@ -289,7 +295,8 @@ async def models(credential: Credential, refresh: bool = False) -> dict[str, Any
                 {"id": model.model, "label": model.display_name,
                  "contextWindow": windows.get(model.model),
                  "defaultEffort": model.default_reasoning_effort.value,
-                 "efforts": [option.reasoning_effort.value for option in model.supported_reasoning_efforts]}
+                 "efforts": [option.reasoning_effort.value for option in model.supported_reasoning_efforts],
+                 "images": _accepts_images(model)}
                 for model in entries], "defaultModel": default.model if default else "",
                 "defaultEffort": default.default_reasoning_effort.value if default else None}
             # Bound memory and retain only public model metadata, never credentials.

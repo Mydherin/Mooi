@@ -12,6 +12,8 @@ import {
   sendSessionMessage,
   updateSessionConfiguration,
 } from '@/features/sessions/api/sessionsApi';
+import { seedSessionImage } from '@/features/sessions/lib/sessionImageCache';
+import type { PreparedImage } from '@/features/sessions/types/PreparedImage';
 import type { Session } from '@/features/sessions/types/Session';
 import type { SessionProvider } from '@/features/sessions/types/SessionProvider';
 import { useSessionsStore } from '@/stores/sessionsStore';
@@ -22,7 +24,7 @@ interface UseSession {
   error: string | null;
   busy: boolean;
   actionError: string | null;
-  send: (text: string) => Promise<boolean>;
+  send: (text: string, images?: PreparedImage[]) => Promise<boolean>;
   interrupt: () => Promise<boolean>;
   compact: () => Promise<boolean>;
   clearConversation: () => Promise<boolean>;
@@ -162,10 +164,16 @@ export const useSession = (sessionId: string | undefined): UseSession => {
   }, []);
 
   const send = useCallback(
-    (text: string) => {
+    (text: string, images: PreparedImage[] = []) => {
       const current = useSessionsStore.getState().sessions.find((candidate) => candidate.id === sessionId);
       if (!sessionId || current?.status !== 'ready' || current.deployment.state === 'starting') return Promise.resolve(false);
-      return runAction(() => sendSessionMessage(sessionId, text));
+      return runAction(async () => {
+        const sent = await sendSessionMessage(sessionId, text, images.map((image) => image.upload));
+        // The transcript shows the sender's images from their local copies, never a download.
+        sent.images?.forEach((stored, index) => {
+          if (images[index]) seedSessionImage(sessionId, stored.id, images[index].blob);
+        });
+      });
     },
     [sessionId, runAction],
   );

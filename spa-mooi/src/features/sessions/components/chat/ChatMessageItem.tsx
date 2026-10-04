@@ -1,5 +1,6 @@
 import { memo } from 'react';
 import { CircleAlert } from 'lucide-react';
+import { MessageImageGrid } from './MessageImageGrid';
 import { NoticeItem } from './NoticeItem';
 import { TranscriptContent } from './TranscriptContent';
 import { ThinkingIndicator } from '@/features/sessions/components/chat/ThinkingIndicator';
@@ -10,6 +11,7 @@ import { LogoMark } from '@/shared/components/LogoMark';
 import { formatTime } from '@/shared/utils/formatTime';
 
 interface ChatMessageItemProps {
+  sessionId: string;
   entry: TranscriptEntry;
   providerLabel: string;
   capabilities: AgentCapabilities;
@@ -23,7 +25,7 @@ interface ChatMessageItemProps {
  * a provider without `thinking` never produces one, and one declaring the bare
  * minimum still renders correctly.
  */
-export const ChatMessageItem = memo(function ChatMessageItem({ entry, providerLabel, capabilities, working }: ChatMessageItemProps) {
+export const ChatMessageItem = memo(function ChatMessageItem({ sessionId, entry, providerLabel, capabilities, working }: ChatMessageItemProps) {
   if (entry.kind === 'error') {
     return (
       <li className="flex items-start gap-2.5 rounded-xl border border-danger/40 bg-danger-soft px-3.5 py-2.5 text-sm leading-relaxed text-danger">
@@ -39,10 +41,13 @@ export const ChatMessageItem = memo(function ChatMessageItem({ entry, providerLa
 
   if (entry.kind === 'user') {
     return (
-      <li className="flex flex-col items-end gap-1">
-        <p className="max-w-[95%] sm:max-w-[85%] break-words rounded-2xl rounded-br-md bg-surface-2 px-5 py-3.5 text-[15px] leading-relaxed whitespace-pre-wrap text-ink">
-          {entry.text}
-        </p>
+      <li className="flex flex-col items-end gap-1.5">
+        {entry.images.length > 0 ? <MessageImageGrid sessionId={sessionId} images={entry.images} /> : null}
+        {entry.text ? (
+          <p className="max-w-[95%] sm:max-w-[85%] break-words rounded-2xl rounded-br-md bg-surface-2 px-5 py-3.5 text-[15px] leading-relaxed whitespace-pre-wrap text-ink">
+            {entry.text}
+          </p>
+        ) : null}
         <span className="text-xs text-ink-subtle">{formatTime(entry.at)}</span>
       </li>
     );

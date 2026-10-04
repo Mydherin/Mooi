@@ -5,6 +5,7 @@ import { sessionsFetch } from '@/features/sessions/lib/sessionsFetch';
 import type { ChangesSummary } from '@/features/sessions/types/ChangesSummary';
 import type { CreateSessionRequest } from '@/features/sessions/types/CreateSessionRequest';
 import type { FileDiffPayload } from '@/features/sessions/types/FileDiffPayload';
+import type { ImageUpload } from '@/features/sessions/types/ImageUpload';
 import type { MergeResult } from '@/features/sessions/types/MergeResult';
 import type { SendMessageResponse } from '@/features/sessions/types/SendMessageResponse';
 import type { Session } from '@/features/sessions/types/Session';
@@ -17,6 +18,7 @@ const sessionsPath = (projectId?: string) =>
 const workspacesPath = (projectId: string) => `/sessions/workspaces?projectId=${encodeURIComponent(projectId)}`;
 const sessionPath = (sessionId: string) => `/sessions/${sessionId}`;
 const messagesPath = (sessionId: string) => `/sessions/${sessionId}/messages`;
+const imagePath = (sessionId: string, imageId: string) => `/sessions/${sessionId}/images/${imageId}`;
 const configurationPath = (sessionId: string) => `/sessions/${sessionId}/configuration`;
 const interruptPath = (sessionId: string) => `/sessions/${sessionId}/interrupt`;
 const compactPath = (sessionId: string) => `/sessions/${sessionId}/compact`;
@@ -74,11 +76,11 @@ export const closeSession = async (sessionId: string): Promise<void> => {
   }
 };
 
-export const sendSessionMessage = async (sessionId: string, text: string): Promise<SendMessageResponse> => {
+export const sendSessionMessage = async (sessionId: string, text: string, images: ImageUpload[] = []): Promise<SendMessageResponse> => {
   const response = await sessionsFetch(messagesPath(sessionId), {
     method: 'POST',
     headers: jsonHeaders,
-    body: JSON.stringify({ text }),
+    body: JSON.stringify(images.length ? { text, images } : { text }),
   });
 
   if (!response.ok) {
@@ -86,6 +88,12 @@ export const sendSessionMessage = async (sessionId: string, text: string): Promi
   }
 
   return (await response.json()) as SendMessageResponse;
+};
+
+export const fetchSessionImage = async (sessionId: string, imageId: string): Promise<Blob> => {
+  const response = await sessionsFetch(imagePath(sessionId, imageId));
+  if (!response.ok) throw new Error(await apiErrorMessage(response, 'Could not load this image.'));
+  return response.blob();
 };
 
 export const updateSessionConfiguration = async (sessionId: string, configuration: SessionConfiguration): Promise<Session> => {
