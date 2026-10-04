@@ -30,7 +30,7 @@ import shutil
 import subprocess
 import tempfile
 import time
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextlib import suppress
 from contextvars import ContextVar
 from dataclasses import dataclass, replace
@@ -249,8 +249,9 @@ class AgentRuntime(Protocol):
     """One live agent conversation on one workspace.
 
     `capabilities` is a class attribute so a runtime instance and its descriptor can never disagree.
-    Constructor contract: `(credential, workspace, branch, emit, ask, config, *, instructions="")`, where
-    `instructions` are session-level guidance the provider adds to its own system instructions.
+    Constructor contract: `(credential, workspace, branch, emit, ask, config, *, instructions="",
+    environment=None)`, where `instructions` are session-level guidance the provider adds to its own
+    system instructions and `environment` are variables every agent tool command receives.
     """
 
     capabilities: ClassVar[AgentCapabilities]
@@ -265,6 +266,7 @@ class AgentRuntime(Protocol):
         config: AgentConfig,
         *,
         instructions: str = "",
+        environment: Mapping[str, str] | None = None,
     ) -> None: ...
 
     @staticmethod
@@ -530,9 +532,11 @@ class ClaudeAgentRuntime:
         config: AgentConfig,
         *,
         instructions: str = "",
+        environment: Mapping[str, str] | None = None,
     ) -> None:
         self._config = config
         self._instructions = instructions
+        self._environment = dict(environment or {})
         self._credential = credential
         self._workspace = workspace
         self._branch = branch
@@ -787,6 +791,7 @@ class ClaudeAgentRuntime:
         return ClaudeAgentOptions(
             cwd=str(self._workspace),
             env={
+                **self._environment,
                 **self._credential_env(),
                 "CLAUDE_CONFIG_DIR": str(self._config_dir),
                 # Prevent inherited alternative auth from overriding this session's PAT.
@@ -1165,10 +1170,11 @@ class CodexAgentRuntime:
             raise ApiException.bad_request("Unsupported effort for this model")
         return AgentConfig(chosen, value)
 
-    def __init__(self, credential, workspace, branch, emit, ask, config, *, instructions=""):
+    def __init__(self, credential, workspace, branch, emit, ask, config, *, instructions="", environment=None):
         self._credential, self._workspace, self._branch = credential, workspace, branch
         self._emit, self._ask, self._config = emit, ask, config
         self._instructions = instructions
+        self._environment = dict(environment or {})
         self._account = None
         self._client = None
         self._thread_id = None
@@ -1187,6 +1193,11 @@ class CodexAgentRuntime:
         params = {"cwd": str(self._workspace), "model": self._config.model, **_CODEX_ACCESS}
         if self._instructions:
             params["developerInstructions"] = self._instructions
+        if self._environment:
+            # The account's app-server is shared by sessions: per-thread overrides scope the variables
+            # to this conversation's shell commands, on top of the server's `inherit="none"` policy.
+            params["config"] = {f"shell_environment_policy.set.{key}": value
+                                for key, value in self._environment.items()}
         return params
 
     async def start(self):
@@ -1503,5 +1514,7 @@ def create_runtime(
     config: AgentConfig,
     *,
     instructions: str = "",
+    environment: Mapping[str, str] | None = None,
 ) -> AgentRuntime:
-    return describe(provider).runtime_class(credential, workspace, branch, emit, ask, config, instructions=instructions)
+    return describe(provider).runtime_class(credential, workspace, branch, emit, ask, config,
+                                            instructions=instructions, environment=environment)

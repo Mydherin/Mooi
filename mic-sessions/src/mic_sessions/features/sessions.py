@@ -1222,6 +1222,7 @@ async def _provision(session: Session, caller: Caller, project: mooi.Project,
             _asker(session),
             session.config,
             instructions=_session_instructions(session),
+            environment=_session_environment(session),
         )
         session.runtime = runtime
         await runtime.start()
@@ -1685,7 +1686,8 @@ async def _reset_conversation(session: Session, caller: Caller) -> AgentRuntime:
     record(session, EVENT_SESSION_CLEARED, {})
     runtime = create_runtime(session.provider, credential, session.workspace, session.branch,
                              _emitter(session), _asker(session), session.config,
-                             instructions=_session_instructions(session))
+                             instructions=_session_instructions(session),
+                             environment=_session_environment(session))
     session.runtime = runtime
     try:
         await runtime.start()
@@ -1834,7 +1836,26 @@ This project keeps development environment variables named `MOOI_DEVELOPMENT_<NA
 
 Use Python urllib with an inline JSON body, never a temporary file, and send the header `X-Environment-Token: {session.agent_token}`:
 - `GET {base}`: `values` (the project's variables) and `serverProvided` (names of server-wide defaults whose values you cannot read).
-- `PUT {base}` with JSON `{{"values": {{"MOOI_DEVELOPMENT_NAME": "value"}}}}` (null removes a variable): saves them and returns the stored names."""
+- `PUT {base}` with JSON `{{"values": {{"MOOI_DEVELOPMENT_NAME": "value"}}}}` (null removes a variable): saves them and returns the stored names.
+
+## Shared Docker host
+Docker here is the host's shared engine: other projects' live containers, volumes and networks (production ones included) run on it, and the same names may appear in this repository.
+- Compose commands are scoped to this session's project through `COMPOSE_PROJECT_NAME={_compose_project(session)}`; keep it, never pass `--project-name`/`-p` or override it.
+- Only act on resources labelled `com.docker.compose.project={_compose_project(session)}`. Never stop, remove, recreate, prune or attach to anything else, even when a name conflicts: report the conflict to the user instead."""
+
+
+def _compose_project(session: Session) -> str:
+    """Compose project of a plain session's own commands, distinct from the host's stacks and from
+    its Deploy preview project."""
+    return f"mooi-session-{session.id.hex[:12]}"
+
+
+def _session_environment(session: Session) -> dict[str, str]:
+    """Variables every agent tool command of a plain session receives. Scoping Compose keeps a
+    repository whose project name matches a host stack (Mooi's own dev stack and its production
+    `mooi` project) from recreating that stack's containers. Platform chats run the real
+    deployment scripts, so they keep the scripts' own project names."""
+    return {"COMPOSE_PROJECT_NAME": _compose_project(session)} if session.kind == "session" else {}
 
 
 @router.get("/development/projects/{project_id}/environment")

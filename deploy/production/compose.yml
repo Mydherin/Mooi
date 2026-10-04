@@ -9,6 +9,10 @@
 #
 # Session deployments are sibling containers on the host engine (mounted socket); they join only the
 # external `mooi-previews` network and are never published.
+#
+# Container names carry `mooi-prod-` so no development stack on this engine (Mooi's own
+# compose.dev.yml run by a session agent included) can claim them; session agents also run Compose
+# under their own COMPOSE_PROJECT_NAME, never this `mooi` project.
 
 name: mooi
 
@@ -36,7 +40,7 @@ services:
 
   postgres:
     image: postgres:18-alpine
-    container_name: mooi-postgres
+    container_name: mooi-prod-postgres
     restart: unless-stopped
     environment:
       POSTGRES_DB: mooi
@@ -61,7 +65,7 @@ services:
     build:
       context: ../../mic-mooi
     image: mooi/mic-mooi:${MOOI_RELEASE:-latest}
-    container_name: mooi-mic-mooi
+    container_name: mooi-prod-mic-mooi
     restart: unless-stopped
     environment:
       SERVER_PORT: "8080"
@@ -95,7 +99,7 @@ services:
     build:
       context: ../../mic-sessions
     image: mooi/mic-sessions:${MOOI_RELEASE:-latest}
-    container_name: mooi-mic-sessions
+    container_name: mooi-prod-mic-sessions
     restart: unless-stopped
     # tini reaps the agent, Git and Docker CLI children the service spawns.
     init: true
@@ -141,7 +145,7 @@ services:
         VITE_SPEECH_BASE_URL: https://${DOMAIN:?}
         VITE_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?}
     image: mooi/spa-mooi:${MOOI_RELEASE:-latest}
-    container_name: mooi-spa-mooi
+    container_name: mooi-prod-spa-mooi
     restart: unless-stopped
     networks:
       - internal
@@ -164,7 +168,7 @@ services:
     build:
       context: ../../mic-speech
     image: mooi/mic-speech:${MOOI_RELEASE:-latest}
-    container_name: mooi-mic-speech
+    container_name: mooi-prod-mic-speech
     restart: unless-stopped
     network_mode: service:spa-mooi
     environment:

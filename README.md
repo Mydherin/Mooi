@@ -306,6 +306,13 @@ Do not delete deployment records manually while resources remain. Conversations 
 restart. The default inactivity expiry is 180 minutes; a visible, focused Preview sends activity
 every 60 seconds. Hidden previews and automatic health checks do not prevent expiry.
 
+Sessions run server-side, independent of any client: closing or suspending the browser never stops
+them, and any device reconnects to the live stream (replayed from the last seen event; a silent
+stream reconnects after `VITE_STREAM_STALE_SECONDS` or as soon as the app is visible again).
+Agent commands of plain sessions run Compose as `COMPOSE_PROJECT_NAME=mooi-session-<id>`, so a
+repository's own stack (Mooi's `compose.dev.yml` included) never recreates a host stack sharing its
+project name; agents are told to leave every other Docker resource alone.
+
 ### Dictation
 
 Microphone button inside the agent chat composers (sessions, deployments, backups and their start dialogs);
@@ -332,6 +339,7 @@ directory), served behind the host's Traefik (external `proxy` network, `cloudfl
 | --- | --- |
 | `https://<DOMAIN>` | `spa-mooi` nginx: SPA, `/api/mooi` → `mic-mooi`, `/api/sessions` → `mic-sessions`, `/api/stt` → `mic-speech`, `/preview` → `mic-sessions` preview proxy |
 
+- Containers are named `mooi-prod-*`, disjoint from the development stack's names.
 - `mic-speech` stays loopback-only: it shares the `spa-mooi` network namespace, nginx is its only client.
 - `mic-sessions` mounts the host Docker socket (`DOCKER_GID`), runs with `PREVIEW_UPSTREAM=network` on the
   external `mooi-previews` network and ships Git, Docker CLI + Compose/Buildx, Node, Bun, Python + uv,
@@ -501,6 +509,7 @@ All variables must be prefixed with `VITE_`.
 | `VITE_SESSIONS_BASE_URL` | mic-sessions base URL |
 | `VITE_SPEECH_BASE_URL` | mic-speech base URL (`ws:`/`wss:` derived) |
 | `VITE_SESSIONS_REFRESH_SECONDS` | Live session status refresh interval |
+| `VITE_STREAM_STALE_SECONDS` | Silence before a live stream reconnects (server pings every `SSE_HEARTBEAT_SECONDS`) |
 | `VITE_GOOGLE_CLIENT_ID` | Google OAuth2 client id |
 | `VITE_STORAGE_PREFIX` | Local storage key prefix |
 

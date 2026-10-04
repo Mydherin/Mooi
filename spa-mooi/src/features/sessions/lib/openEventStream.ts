@@ -57,6 +57,10 @@ const parseFrame = (frame: string): StreamFrame | null => {
  * Opens a mic-sessions SSE stream with `fetch` + `ReadableStream`, since `EventSource` cannot
  * carry an `Authorization` header. Reconnects with exponential backoff, resuming from the last
  * seen `seq` so replay on the server fills the gap exactly once.
+ *
+ * The server pings while idle, so silence past `streamStaleMs` means a dead connection (a phone
+ * that slept, a network switch): it is dropped and reopened. Coming back to the app (visible,
+ * online, restored from the page cache) reconnects at once instead of waiting for the backoff.
  */
 export const openEventStream = ({ path, after, onFrame, onState, onGone }: OpenEventStreamOptions): (() => void) => {
   let closed = false;
@@ -64,6 +68,25 @@ export const openEventStream = ({ path, after, onFrame, onState, onGone }: OpenE
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
   let lastSeq = after;
   let backoffMs = MIN_BACKOFF_MS;
+  let lastDataAt = Date.now();
+  let watchdog: ReturnType<typeof setInterval> | null = null;
+
+  const restart = () => {
+    if (closed) {
+      return;
+    }
+
+    if (retryTimer) {
+      clearTimeout(retryTimer);
+      retryTimer = null;
+    }
+
+    controller?.abort();
+    backoffMs = MIN_BACKOFF_MS;
+    void connect();
+  };
+
+  const isStale = () => Date.now() - lastDataAt > env.streamStaleMs;
 
   const scheduleReconnect = () => {
     if (closed) {
@@ -72,6 +95,7 @@ export const openEventStream = ({ path, after, onFrame, onState, onGone }: OpenE
 
     onState('reconnecting');
     retryTimer = setTimeout(() => {
+      retryTimer = null;
       backoffMs = Math.min(backoffMs * 2, MAX_BACKOFF_MS);
       void connect();
     }, backoffMs);
@@ -82,7 +106,9 @@ export const openEventStream = ({ path, after, onFrame, onState, onGone }: OpenE
       return;
     }
 
-    controller = new AbortController();
+    const attempt = new AbortController();
+    controller = attempt;
+    lastDataAt = Date.now();
 
     try {
       const token = await getAccessToken();
@@ -94,7 +120,7 @@ export const openEventStream = ({ path, after, onFrame, onState, onGone }: OpenE
       const separator = path.includes('?') ? '&' : '?';
       const response = await fetch(`${env.sessionsBaseUrl}${path}${separator}after=${lastSeq}`, {
         headers: { Authorization: `Bearer ${token}` },
-        signal: controller.signal,
+        signal: attempt.signal,
       });
 
       if (response.status === 404 || response.status === 403) {
@@ -121,6 +147,8 @@ export const openEventStream = ({ path, after, onFrame, onState, onGone }: OpenE
           break;
         }
 
+        lastDataAt = Date.now();
+
         buffer += decoder.decode(value, { stream: true });
 
         let boundary = buffer.indexOf('\n\n');
@@ -141,13 +169,29 @@ export const openEventStream = ({ path, after, onFrame, onState, onGone }: OpenE
 
       throw new Error('Event stream ended');
     } catch (error) {
-      if (closed || (error instanceof DOMException && error.name === 'AbortError')) {
+      // An aborted attempt was replaced by `restart` or closed: its successor owns reconnection.
+      if (closed || attempt.signal.aborted) {
         return;
       }
 
       scheduleReconnect();
     }
   };
+
+  const onResume = () => {
+    if (document.visibilityState === 'visible' && (retryTimer !== null || isStale())) {
+      restart();
+    }
+  };
+
+  watchdog = setInterval(() => {
+    if (retryTimer === null && isStale()) {
+      restart();
+    }
+  }, Math.min(env.streamStaleMs, 5000));
+  document.addEventListener('visibilitychange', onResume);
+  window.addEventListener('online', onResume);
+  window.addEventListener('pageshow', onResume);
 
   void connect();
 
@@ -157,7 +201,13 @@ export const openEventStream = ({ path, after, onFrame, onState, onGone }: OpenE
     if (retryTimer) {
       clearTimeout(retryTimer);
     }
+    if (watchdog) {
+      clearInterval(watchdog);
+    }
 
+    document.removeEventListener('visibilitychange', onResume);
+    window.removeEventListener('online', onResume);
+    window.removeEventListener('pageshow', onResume);
     controller?.abort();
     onState('closed');
   };
