@@ -6,6 +6,7 @@ import { env } from '@/config/env';
 import { PipelineShowcase } from '@/features/brand/components/PipelineShowcase';
 import { loginWithGoogle } from '@/features/auth/api/authApi';
 import { GoogleSignInButton } from '@/features/auth/components/GoogleSignInButton';
+import { MockSignInButton } from '@/features/auth/components/MockSignInButton';
 import { toAuthSession } from '@/features/auth/lib/toAuthSession';
 import { ThemeToggle } from '@/shared/components/ThemeToggle';
 import { Logo } from '@/shared/components/Logo';
@@ -91,7 +92,11 @@ export const LoginPage = () => {
 
           <div className="mt-8 rounded-[14px] border border-line bg-surface p-5">
             <p className="mb-4 flex items-center gap-2 text-sm font-bold text-ink">Your next idea starts here <ArrowUpRight className="size-4 text-brand" /></p>
-            <GoogleSignInButton onCredential={handleCredential} busy={busy} />
+            {env.googleAuthMock ? (
+              <MockSignInButton onCredential={handleCredential} busy={busy} />
+            ) : (
+              <GoogleSignInButton onCredential={handleCredential} busy={busy} />
+            )}
           </div>
 
           {error ? (

@@ -8,7 +8,8 @@ Monorepository. Each artifact lives in its own root-level directory.
 | `mic-mooi` | Spring Boot microservice (API) |
 | `mic-sessions` | FastAPI microservice (real-time agent sessions) |
 | `mic-speech` | FastAPI microservice (local push-to-talk dictation, loopback only) |
-| `compose.yml` | Postgres + pgAdmin data layer (dev, project `mooi`) |
+| `compose.yml` | Mooi session preview stack only (Deploy button of a Mooi session) |
+| `deploy/development/` | Postgres + pgAdmin data layer (`make dev-*`, project `mooi`) |
 | `deploy/production/` | Production stack (`compose.prod.yml`, project `mooi-prod`) |
 
 ## Requirements
@@ -315,8 +316,28 @@ Sessions run server-side, independent of any client: closing or suspending the b
 them, and any device reconnects to the live stream (replayed from the last seen event; a silent
 stream reconnects after `VITE_STREAM_STALE_SECONDS` or as soon as the app is visible again).
 Agent commands of plain sessions run Compose as `COMPOSE_PROJECT_NAME=mooi-session-<id>`, so a
-repository's own stack (Mooi's dev `compose.yml` included) never recreates a host stack sharing its
-project name; agents are told to leave every other Docker resource alone.
+repository's own stack never recreates a host stack sharing its project name; agents are told to leave
+every other Docker resource alone.
+
+### Previewing Mooi itself
+
+The root `compose.yml` is the preview stack of this repository (Postgres, `mic-mooi`, `mic-sessions`,
+`spa-mooi` under `MOOI_PREVIEW_BASE_PATH`), disjoint from production: own database, volumes, secrets,
+same-origin API routes and `mooi-preview` browser storage. No dictation and no nested deployments.
+
+| Development variable | Use |
+| --- | --- |
+| `MOOI_DEVELOPMENT_PUBLIC_ORIGIN` | Mooi's public origin (CORS, OAuth callbacks) |
+| `MOOI_DEVELOPMENT_JWT_SECRET`, `_SERVICE_TOKEN`, `_SECRETS_KEY` | Preview-only secrets, never production's |
+| `MOOI_DEVELOPMENT_GOOGLE_CLIENT_ID` | Google client id |
+| `MOOI_DEVELOPMENT_GOOGLE_AUTH_MOCK` | `true` (default): "Continue as developer" signs in `developer@mooi.dev` (admin) without Google |
+| `MOOI_DEVELOPMENT_GITHUB_CLIENT_ID`, `_CLIENT_SECRET`, `_APP_SLUG` | Optional; placeholders otherwise (GitHub OAuth linking off) |
+| `MOOI_DEVELOPMENT_GITHUB_TOKEN` | GitHub personal access token (classic, `repo` scope): linked at boot, no OAuth |
+| `MOOI_DEVELOPMENT_CLAUDE_TOKEN` | `claude setup-token` token: linked at boot |
+| `MOOI_DEVELOPMENT_CODEX_AUTH_JSON` | `~/.codex/auth.json` of a Codex login made for previews: linked once, rotations kept |
+
+Linked accounts must be independent of production: GitHub App and Codex refresh tokens rotate, so a
+copied production credential breaks production on the preview's first renewal.
 
 ### Dictation
 
@@ -344,7 +365,7 @@ directory), served behind the host's Traefik (external `proxy` network, `cloudfl
 | --- | --- |
 | `https://<DOMAIN>` | `spa-mooi` nginx: SPA, `/api/mooi` → `mic-mooi`, `/api/sessions` → `mic-sessions`, `/api/stt` → `mic-speech`, `/preview` → `mic-sessions` preview proxy |
 
-- Project, containers and networks are `mooi-prod*`, disjoint from the dev stack (`compose.yml`, project `mooi`).
+- Project, containers and networks are `mooi-prod*`, disjoint from the dev stack (`deploy/development/compose.yml`, project `mooi`) and from session previews (root `compose.yml`).
 - `mic-speech` stays loopback-only: it shares the `spa-mooi` network namespace, nginx is its only client.
 - `mic-sessions` mounts the host Docker socket (`DOCKER_GID`), runs with `PREVIEW_UPSTREAM=network` on the
   external `mooi-previews` network and ships Git, Docker CLI + Compose/Buildx, Node, Bun, Python + uv,
@@ -517,6 +538,8 @@ All variables must be prefixed with `VITE_`.
 | `VITE_SESSIONS_REFRESH_SECONDS` | Live session status refresh interval |
 | `VITE_STREAM_STALE_SECONDS` | Silence before a live stream reconnects (server pings every `SSE_HEARTBEAT_SECONDS`) |
 | `VITE_GOOGLE_CLIENT_ID` | Google OAuth2 client id |
+| `VITE_AUTH_GOOGLE_MOCK` | Development only: `true` replaces Google sign-in with "Continue as developer" |
+| `VITE_BASE_PATH` | Public path prefix (default `/`; previews: `MOOI_PREVIEW_BASE_PATH`) |
 | `VITE_STORAGE_PREFIX` | Local storage key prefix |
 
 ### mic-mooi (`mic-mooi/.env`)
@@ -543,6 +566,8 @@ the root `.env`.
 | `REFRESH_TOKEN_PURGE_CRON` | Cron deleting expired refresh tokens |
 | `REPLAY_GRACE_SECONDS` | Grace window for concurrent refresh-token reuse |
 | `ADMIN_EMAILS` | Comma-separated addresses granted admin at signup |
+| `AUTH_GOOGLE_MOCK_ENABLED`, `AUTH_GOOGLE_MOCK_EMAIL` | Development only: skip Google, every sign-in is that address |
+| `AUTH_GOOGLE_MOCK_GITHUB_TOKEN`, `_CLAUDE_TOKEN`, `_CODEX_AUTH_JSON` | Development only, with the mock: accounts linked to the mocked player at boot |
 | `SECRETS_KEY` | AES-256-GCM key encrypting third-party tokens at rest (32 bytes, base64) |
 | `GITHUB_CLIENT_ID` | GitHub App client id |
 | `GITHUB_CLIENT_SECRET` | GitHub App client secret |

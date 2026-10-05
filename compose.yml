@@ -1,56 +1,106 @@
-# Development data layer (Postgres + pgAdmin), driven by the root Makefile (`make dev-*`).
-# Production lives in deploy/production/compose.prod.yml under its own `mooi-prod` project.
-name: mooi
+# Mooi session preview stack: what Mooi's Deploy button builds from a session checkout, never production
+# (deploy/production/compose.prod.yml) nor the local dev data layer (deploy/development/compose.yml).
+#
+#   /preview/<id>/  -> spa-mooi nginx: SPA + /api/mooi -> mic-mooi + /api/sessions -> mic-sessions
+#
+# Fully disjoint from production: own database, volumes, secrets (MOOI_DEVELOPMENT_*), browser storage
+# prefix and same-origin API routes under MOOI_PREVIEW_BASE_PATH. Mooi renames the project, volumes,
+# networks and images per session and drops every published port. Google sign-in is mocked unless
+# MOOI_DEVELOPMENT_GOOGLE_AUTH_MOCK=false; GitHub, Claude and Codex accounts are linked from MOOI_DEVELOPMENT_*.
+# Left out: dictation (mic-speech, a ~742 MB local model) and nested deployments (no Docker engine inside).
 
 services:
   postgres:
     image: postgres:18-alpine
-    container_name: mooi-postgres
-    restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-mooi}
-      POSTGRES_USER: ${POSTGRES_USER:-mooi}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      POSTGRES_DB: mooi
+      POSTGRES_USER: mooi
+      POSTGRES_PASSWORD: mooi-preview
       PGDATA: /var/lib/postgresql/data/pgdata
-    ports:
-      - "${POSTGRES_PORT:-54983}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test:
-        - CMD-SHELL
-        - pg_isready -U ${POSTGRES_USER:-mooi} -d ${POSTGRES_DB:-mooi}
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
-    networks:
-      - data
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U mooi -d mooi"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
-  pgadmin:
-    image: dpage/pgadmin4:9.17
-    container_name: mooi-pgadmin
-    restart: unless-stopped
+  mic-mooi:
+    build:
+      context: ./mic-mooi
+      dockerfile: Dockerfile
     environment:
-      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@mooi.dev}
-      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-change-me}
-      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
-    ports:
-      - "${PGADMIN_PORT:-51247}:80"
-    volumes:
-      - pgadmin-data:/var/lib/pgadmin
+      SERVER_PORT: "8080"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: mooi
+      POSTGRES_USER: mooi
+      POSTGRES_PASSWORD: mooi-preview
+      POSTGRES_SCHEMA: public
+      CORS_ORIGIN: ${MOOI_DEVELOPMENT_PUBLIC_ORIGIN:?set MOOI_DEVELOPMENT_PUBLIC_ORIGIN}
+      SECRETS_KEY: ${MOOI_DEVELOPMENT_SECRETS_KEY:?set MOOI_DEVELOPMENT_SECRETS_KEY}
+      SERVICE_TOKEN: ${MOOI_DEVELOPMENT_SERVICE_TOKEN:?set MOOI_DEVELOPMENT_SERVICE_TOKEN}
+      JWT_SECRET: ${MOOI_DEVELOPMENT_JWT_SECRET:?set MOOI_DEVELOPMENT_JWT_SECRET}
+      GOOGLE_CLIENT_ID: ${MOOI_DEVELOPMENT_GOOGLE_CLIENT_ID:?set MOOI_DEVELOPMENT_GOOGLE_CLIENT_ID}
+      AUTH_GOOGLE_MOCK_ENABLED: ${MOOI_DEVELOPMENT_GOOGLE_AUTH_MOCK:-true}
+      AUTH_GOOGLE_MOCK_EMAIL: developer@mooi.dev
+      ADMIN_EMAILS: developer@mooi.dev
+      # Linked to the mocked player at boot, all optional. Independent long-lived credentials only:
+      # production's GitHub App / Codex refresh tokens rotate and would break production if shared.
+      AUTH_GOOGLE_MOCK_GITHUB_TOKEN: ${MOOI_DEVELOPMENT_GITHUB_TOKEN:-}
+      AUTH_GOOGLE_MOCK_CLAUDE_TOKEN: ${MOOI_DEVELOPMENT_CLAUDE_TOKEN:-}
+      AUTH_GOOGLE_MOCK_CODEX_AUTH_JSON: ${MOOI_DEVELOPMENT_CODEX_AUTH_JSON:-}
+      GITHUB_CLIENT_ID: ${MOOI_DEVELOPMENT_GITHUB_CLIENT_ID:-preview-github-client-id}
+      GITHUB_CLIENT_SECRET: ${MOOI_DEVELOPMENT_GITHUB_CLIENT_SECRET:-preview-github-client-secret}
+      GITHUB_APP_SLUG: ${MOOI_DEVELOPMENT_GITHUB_APP_SLUG:-}
+      GITHUB_REDIRECT_URI: ${MOOI_DEVELOPMENT_PUBLIC_ORIGIN}${MOOI_PREVIEW_BASE_PATH:-/}account/github/callback
+      AGENT_CLAUDE_REDIRECT_URI: ${MOOI_DEVELOPMENT_PUBLIC_ORIGIN}${MOOI_PREVIEW_BASE_PATH:-/}account/agents/claude/callback
+      LOG_LEVEL_APP: INFO
     depends_on:
       postgres:
         condition: service_healthy
-    networks:
-      - data
+
+  mic-sessions:
+    build:
+      context: ./mic-sessions
+      dockerfile: Dockerfile
+    init: true
+    environment:
+      MOOI_API_BASE_URL: http://mic-mooi:8080
+      SERVICE_TOKEN: ${MOOI_DEVELOPMENT_SERVICE_TOKEN}
+      JWT_SECRET: ${MOOI_DEVELOPMENT_JWT_SECRET}
+      CORS_ORIGIN: ${MOOI_DEVELOPMENT_PUBLIC_ORIGIN}
+      # The service home is a volume (created owned by the image's `mooi` user); workspaces live in it.
+      WORKSPACE_ROOT: /home/mooi/workspaces
+      MAX_SESSIONS: "4"
+      MAX_SESSIONS_PER_PLAYER: "2"
+      MAX_DEPLOYMENTS: "1"
+      LOG_LEVEL: INFO
+    volumes:
+      - sessions-home:/home/mooi
+    depends_on:
+      mic-mooi:
+        condition: service_healthy
+
+  spa-mooi:
+    build:
+      context: ./spa-mooi
+      dockerfile: Dockerfile
+      args:
+        VITE_BASE_PATH: ${MOOI_PREVIEW_BASE_PATH:-/}
+        VITE_API_BASE_URL: ${MOOI_PREVIEW_BASE_PATH:-/}api/mooi
+        VITE_SESSIONS_BASE_URL: ${MOOI_PREVIEW_BASE_PATH:-/}api/sessions
+        VITE_SPEECH_BASE_URL: ${MOOI_PREVIEW_BASE_PATH:-/}
+        VITE_GOOGLE_CLIENT_ID: ${MOOI_DEVELOPMENT_GOOGLE_CLIENT_ID}
+        VITE_AUTH_GOOGLE_MOCK: ${MOOI_DEVELOPMENT_GOOGLE_AUTH_MOCK:-true}
+        # Previews share Mooi's origin: never read or overwrite production's browser storage.
+        VITE_STORAGE_PREFIX: mooi-preview
+    ports:
+      - "28480:80"
+    depends_on:
+      - mic-mooi
+      - mic-sessions
 
 volumes:
   postgres-data:
-    name: mooi-postgres-data
-  pgadmin-data:
-    name: mooi-pgadmin-data
-
-networks:
-  data:
-    name: mooi-data
+  sessions-home:

@@ -16,5 +16,7 @@ export const env: AppEnv = {
   streamStaleMs: requirePositiveNumber(import.meta.env.VITE_STREAM_STALE_SECONDS, 'VITE_STREAM_STALE_SECONDS') * 1000,
   speechBaseUrl: requireEnv(import.meta.env.VITE_SPEECH_BASE_URL, 'VITE_SPEECH_BASE_URL'),
   googleClientId: requireEnv(import.meta.env.VITE_GOOGLE_CLIENT_ID, 'VITE_GOOGLE_CLIENT_ID'),
+  // Development only (Mooi session previews): sign in as a fixed player without Google.
+  googleAuthMock: import.meta.env.VITE_AUTH_GOOGLE_MOCK === 'true',
   storagePrefix: requireEnv(import.meta.env.VITE_STORAGE_PREFIX, 'VITE_STORAGE_PREFIX'),
 };

@@ -68,6 +68,15 @@ app:
     refresh-token-purge-cron: ${REFRESH_TOKEN_PURGE_CRON:0 30 3 * * *}
     replay-grace-seconds: ${REPLAY_GRACE_SECONDS:30}
     admin-emails: ${ADMIN_EMAILS:}
+    # Development only (Mooi session previews): sign in as a fixed player without Google.
+    google-mock:
+      enabled: ${AUTH_GOOGLE_MOCK_ENABLED:false}
+      email: ${AUTH_GOOGLE_MOCK_EMAIL:developer@mooi.dev}
+      # Accounts linked to the mocked player at boot; each one is optional. Long-lived, non-rotating
+      # credentials only (see MockAccountsFeature): never copy a production refresh token here.
+      github-token: ${AUTH_GOOGLE_MOCK_GITHUB_TOKEN:}
+      claude-token: ${AUTH_GOOGLE_MOCK_CLAUDE_TOKEN:}
+      codex-auth-json: ${AUTH_GOOGLE_MOCK_CODEX_AUTH_JSON:}
   github:
     client-id: ${GITHUB_CLIENT_ID:}
     client-secret: ${GITHUB_CLIENT_SECRET:}

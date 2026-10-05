@@ -11,6 +11,8 @@ export default defineConfig(({ mode }) => {
   const devHost = !env.VITE_DEV_HOST || env.VITE_DEV_HOST === 'localhost' ? '127.0.0.1' : env.VITE_DEV_HOST;
 
   return {
+    // Public path prefix: `/` in development and production, `/preview/<id>/` in Mooi session previews.
+    base: env.VITE_BASE_PATH || '/',
     plugins: [
       react(),
       tailwindcss(),

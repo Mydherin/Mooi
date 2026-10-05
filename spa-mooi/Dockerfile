@@ -10,6 +10,8 @@ COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile
 
 # Vite resolves import.meta.env at build time: every VITE_* value is a build argument.
+# VITE_BASE_PATH is the public path prefix (bundler base and router basename); production serves from /.
+ARG VITE_BASE_PATH=/
 ARG VITE_APP_NAME=Mooi
 ARG VITE_APP_TAGLINE="ship from a chat"
 ARG VITE_APP_DESCRIPTION="Mooi turns your GitHub repositories into agent sessions: chat, watch the code change, preview the running app and deploy to production without leaving the workspace."
@@ -23,9 +25,11 @@ ARG VITE_SPEECH_BASE_URL
 ARG VITE_SESSIONS_REFRESH_SECONDS=5
 ARG VITE_STREAM_STALE_SECONDS=45
 ARG VITE_GOOGLE_CLIENT_ID
+ARG VITE_AUTH_GOOGLE_MOCK=false
 ARG VITE_STORAGE_PREFIX=mooi
 
-ENV VITE_APP_NAME=${VITE_APP_NAME} \
+ENV VITE_BASE_PATH=${VITE_BASE_PATH} \
+    VITE_APP_NAME=${VITE_APP_NAME} \
     VITE_APP_TAGLINE=${VITE_APP_TAGLINE} \
     VITE_APP_DESCRIPTION=${VITE_APP_DESCRIPTION} \
     VITE_APP_VERSION=${VITE_APP_VERSION} \
@@ -38,6 +42,7 @@ ENV VITE_APP_NAME=${VITE_APP_NAME} \
     VITE_SESSIONS_REFRESH_SECONDS=${VITE_SESSIONS_REFRESH_SECONDS} \
     VITE_STREAM_STALE_SECONDS=${VITE_STREAM_STALE_SECONDS} \
     VITE_GOOGLE_CLIENT_ID=${VITE_GOOGLE_CLIENT_ID} \
+    VITE_AUTH_GOOGLE_MOCK=${VITE_AUTH_GOOGLE_MOCK} \
     VITE_STORAGE_PREFIX=${VITE_STORAGE_PREFIX}
 
 COPY . .

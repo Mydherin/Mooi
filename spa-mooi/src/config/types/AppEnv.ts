@@ -12,5 +12,6 @@ export interface AppEnv {
   streamStaleMs: number;
   speechBaseUrl: string;
   googleClientId: string;
+  googleAuthMock: boolean;
   storagePrefix: string;
 }

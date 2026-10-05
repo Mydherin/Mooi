@@ -234,6 +234,12 @@ public class Auth {
          * check happens lazily, in {@link AuthInterceptor}, on the first call that needs it.
          */
         private final String serviceToken;
+        /**
+         * Development only (Mooi session previews): Google is never called and every sign-in resolves
+         * to the fixed player {@link #googleMockEmail}. Off unless {@code AUTH_GOOGLE_MOCK_ENABLED=true}.
+         */
+        private final boolean googleMockEnabled;
+        private final String googleMockEmail;
 
         Settings(@Value("${app.auth.google-client-id:}") String googleClientId,
                  @Value("${app.auth.google-jwks-uri}") String googleJwksUri,
@@ -243,12 +249,17 @@ public class Auth {
                  @Value("${app.auth.session-max-lifetime}") String sessionMaxLifetime,
                  @Value("${app.auth.replay-grace-seconds}") long replayGraceSeconds,
                  @Value("${app.auth.admin-emails:}") String adminEmails,
-                 @Value("${app.service.token:}") String serviceToken) {
+                 @Value("${app.service.token:}") String serviceToken,
+                 @Value("${app.auth.google-mock.enabled:false}") boolean googleMockEnabled,
+                 @Value("${app.auth.google-mock.email:}") String googleMockEmail) {
             if (googleClientId == null || googleClientId.isBlank()) {
                 throw new IllegalStateException("GOOGLE_CLIENT_ID must be set");
             }
             if (jwtSecret == null || jwtSecret.getBytes(StandardCharsets.UTF_8).length < 32) {
                 throw new IllegalStateException("JWT_SECRET must be at least 32 bytes long");
+            }
+            if (googleMockEnabled && (googleMockEmail == null || !googleMockEmail.contains("@"))) {
+                throw new IllegalStateException("AUTH_GOOGLE_MOCK_EMAIL must be an email address");
             }
             if (replayGraceSeconds < 0) {
                 throw new IllegalStateException("REPLAY_GRACE_SECONDS must not be negative");
@@ -265,6 +276,8 @@ public class Auth {
                     .filter(email -> !email.isEmpty())
                     .collect(Collectors.toUnmodifiableSet());
             this.serviceToken = serviceToken == null ? "" : serviceToken.strip();
+            this.googleMockEnabled = googleMockEnabled;
+            this.googleMockEmail = googleMockEnabled ? googleMockEmail.strip().toLowerCase(Locale.ROOT) : "";
         }
 
         /**
@@ -417,6 +430,7 @@ public class Auth {
         private static final int MAX_AVATAR_URL_LENGTH = 512;
 
         private final ConfigurableJWTProcessor<SecurityContext> processor;
+        private final GoogleIdentity mockIdentity;
 
         GoogleIdentityProvider(Settings settings) {
             JWKSource<SecurityContext> jwkSource = JWKSourceBuilder.<SecurityContext>create(settings.getGoogleJwksUri())
@@ -427,13 +441,25 @@ public class Auth {
             jwtProcessor.setJWTClaimsSetVerifier(
                     new DefaultJWTClaimsVerifier<>(settings.getGoogleClientId(), null, REQUIRED_CLAIMS));
             this.processor = jwtProcessor;
+            this.mockIdentity = settings.isGoogleMockEnabled() ? mockIdentityOf(settings.getGoogleMockEmail()) : null;
+            if (mockIdentity != null) {
+                LOG.warn("Google sign-in is MOCKED: every sign-in resolves to {}", mockIdentity.email());
+            }
         }
 
         /** The Google profile behind a verified ID token. {@code googleId} never leaves the server. */
         public record GoogleIdentity(String googleId, String email, String username, String avatarUrl) {
         }
 
+        /** The fixed development identity every sign-in resolves to, only while Google is mocked. */
+        public Optional<GoogleIdentity> mockIdentity() {
+            return Optional.ofNullable(mockIdentity);
+        }
+
         public GoogleIdentity verify(String idToken) {
+            if (mockIdentity != null) {
+                return mockIdentity;
+            }
             try {
                 JWTClaimsSet claims = processor.process(idToken, null);
                 if (!ISSUERS.contains(String.valueOf(claims.getIssuer()))) {
@@ -457,6 +483,10 @@ public class Auth {
                 LOG.debug("Google ID token rejected: {}", exception.getMessage());
                 throw new AuthenticationException(INVALID_CREDENTIAL);
             }
+        }
+
+        private static GoogleIdentity mockIdentityOf(String email) {
+            return new GoogleIdentity("mock-" + email, email, username(null, email), null);
         }
 
         private static String username(String name, String email) {

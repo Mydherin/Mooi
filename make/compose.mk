@@ -1,8 +1,10 @@
 # Single responsibility: infrastructure dependencies (docker compose).
-# Detection is dynamic; when no compose file exists the whole layer is
-# skipped silently and the global commands keep working with artifacts only.
+# Only the dev data layer is driven here: the root compose.yml belongs to Mooi
+# session previews and deploy/production/ to production. When the file is
+# missing the whole layer is skipped silently and the global commands keep
+# working with artifacts only.
 
-COMPOSE_FILES := $(sort $(wildcard compose.y*ml docker-compose.y*ml compose.*.y*ml docker-compose.*.y*ml */compose.y*ml */docker-compose.y*ml */compose.*.y*ml */docker-compose.*.y*ml))
+COMPOSE_FILES := $(wildcard deploy/development/compose.yml)
 COMPOSE_ARGS := $(foreach file,$(COMPOSE_FILES),-f $(file))
 COMPOSE_ENV_ARG := $(if $(wildcard $(ENV_FILE)),--env-file $(ENV_FILE))
 COMPOSE := docker compose $(COMPOSE_ENV_ARG) $(COMPOSE_ARGS)
