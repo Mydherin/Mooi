@@ -2,9 +2,10 @@ import { ChatUsageIndicators } from './ChatUsageIndicators';
 import type { SessionUsage } from '@/features/sessions/types/SessionUsage';
 import type { SessionConfiguration } from '@/features/sessions/types/SessionConfiguration';
 import type { SessionProvider } from '@/features/sessions/types/SessionProvider';
-import { useLayoutEffect, useRef, useState, type DragEvent, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import { ArrowUp, ImagePlus, RotateCw, Square } from 'lucide-react';
 import type { SessionStatus } from '@/features/sessions/types/SessionStatus';
+import { useDictation } from '@/features/dictation/hooks/useDictation';
 import { DictationButton } from '@/features/dictation/components/DictationButton';
 import { useImageDraft } from '@/features/sessions/hooks/useImageDraft';
 import { imageFilesFrom } from '@/features/sessions/lib/imageFilesFrom';
@@ -74,6 +75,7 @@ export const ChatComposer = ({
   actions,
 }: ChatComposerProps) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const dictation = useDictation(textareaRef);
   const [value, setValue] = useState('');
   const [dragging, setDragging] = useState(false);
   const draft = useImageDraft();
@@ -91,6 +93,10 @@ export const ChatComposer = ({
   const reconnectable = status === 'failed' && recoverable;
   const hint = (reconnectable ? recoverableHint : hints[status]) ?? (deploying ? 'Deployment in progress. Your draft is saved; chat resumes when it finishes.' : null);
   const blocked = hint !== null;
+  const { finish } = dictation;
+  useEffect(() => {
+    if (blocked) finish();
+  }, [blocked, finish]);
   const activeTurn = status === 'working' || status === 'waiting';
   const imagesReason = modelOptions.find((option) => option.id === model)?.images === false
     ? 'The selected model does not accept images' : null;
@@ -134,6 +140,7 @@ export const ChatComposer = ({
       return;
     }
 
+    dictation.finish();
     const sent = readyImages;
     if (!await onSend(text, sent.flatMap((image) => image.prepared ? [image.prepared] : []))) return;
     setValue((current) => current.trim() === text ? '' : current);
@@ -251,7 +258,7 @@ export const ChatComposer = ({
               <AttachImageButton onPick={attach} disabled={!canAttach} reason={imagesReason} className="max-sm:size-10" />
             ) : null}
 
-            {!blocked ? <DictationButton field={textareaRef} className="max-sm:size-10" /> : null}
+            {!blocked ? <DictationButton field={textareaRef} dictation={dictation} className="max-sm:size-10" /> : null}
 
             {activeTurn ? (
               <Button
