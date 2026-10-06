@@ -4,13 +4,16 @@ import { projectPath } from '@/app/paths';
 import { SessionListItem } from '@/features/sessions/components/SessionListItem';
 import type { SessionGroup } from '@/features/sessions/types/SessionGroup';
 import { Initials } from '@/shared/components/Initials';
+import type { BackLink } from '@/shared/types/BackLink';
 
 interface SessionGroupSectionProps {
   group: SessionGroup;
+  /** Sessions opened from here lead back here. */
+  backLink: BackLink;
 }
 
 /** One project's sessions under a heading that leads back to the project. */
-export const SessionGroupSection = ({ group }: SessionGroupSectionProps) => (
+export const SessionGroupSection = ({ group, backLink }: SessionGroupSectionProps) => (
   <section aria-label={group.projectName}>
     <div className="flex items-center justify-between gap-3 border-b border-line pb-2.5">
       <Link
@@ -28,7 +31,7 @@ export const SessionGroupSection = ({ group }: SessionGroupSectionProps) => (
 
     <ul className="flex flex-col">
       {group.sessions.map((session) => (
-        <SessionListItem key={session.id} session={session} />
+        <SessionListItem key={session.id} session={session} backLink={backLink} />
       ))}
     </ul>
   </section>

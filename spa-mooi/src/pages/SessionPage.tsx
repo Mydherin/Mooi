@@ -14,6 +14,7 @@ import { useSession } from '@/features/sessions/hooks/useSession';
 import { useSessionStream } from '@/features/sessions/hooks/useSessionStream';
 import { Card } from '@/shared/components/Card';
 import { EmptyState } from '@/shared/components/EmptyState';
+import { useBackLink } from '@/shared/hooks/useBackLink';
 import { buttonStyles } from '@/shared/styles/buttonStyles';
 import { useSessionsStore } from '@/stores/sessionsStore';
 
@@ -44,6 +45,7 @@ export const SessionPage = () => {
   useSessionStream(sessionId);
   const { close, busy: closing } = useProjectSessions(projectId);
   const transcript = useSessionsStore((state) => (sessionId ? state.byId[sessionId] : undefined));
+  const back = useBackLink(project ? { to: projectPath(project.id), label: project.name } : { to: ROUTES.projects, label: 'projects' });
 
   if (!project || !session) {
     const stillLoading = projectsStatus === 'loading' || projectsStatus === 'idle' || sessionLoading;
@@ -64,11 +66,8 @@ export const SessionPage = () => {
           title="Session not found"
           description={sessionError ?? 'This session is not part of your workspace.'}
         >
-          <Link
-            to={project ? projectPath(project.id) : ROUTES.projects}
-            className={buttonStyles('secondary', 'md')}
-          >
-            Back to {project ? 'project' : 'projects'}
+          <Link to={back.to} className={buttonStyles('secondary', 'md')}>
+            Back to {back.label}
           </Link>
         </EmptyState>
       </div>
@@ -84,7 +83,7 @@ export const SessionPage = () => {
   const handleClose = () => {
     void close(session.id).then((closed) => {
       if (closed) {
-        navigate(projectPath(project.id), { replace: true });
+        navigate(back.to, { replace: true });
       }
     });
   };
@@ -92,7 +91,9 @@ export const SessionPage = () => {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <WorkspaceHeader
+        key={session.id}
         project={project}
+        back={back}
         session={session}
         deployEnabled={deployEnabled}
         onClose={handleClose}
@@ -107,7 +108,7 @@ export const SessionPage = () => {
               <p className="mt-1 break-words text-sm text-ink-muted">{session.detail ?? 'Your conversation is available below. Start a new session to continue.'}</p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Link to={projectPath(project.id)} className={buttonStyles('secondary', 'sm')}>Back to project</Link>
+              <Link to={back.to} className={buttonStyles('secondary', 'sm')}>Back to {back.label}</Link>
             </div>
           </div>
         </div>

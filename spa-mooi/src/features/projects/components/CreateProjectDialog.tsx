@@ -1,16 +1,19 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { ProjectKindField } from '@/features/projects/components/ProjectKindField';
 import { useProjects } from '@/features/projects/hooks/useProjects';
+import type { Project } from '@/features/projects/types/Project';
 import { Button } from '@/shared/components/Button';
 import { Modal } from '@/shared/components/Modal';
 
 interface CreateProjectDialogProps {
   open: boolean;
   onClose: () => void;
+  /** Called with the new project right before the dialog closes. */
+  onAdded?: (project: Project) => void;
 }
 
 /** Creates the repository on GitHub and adds it as a project whose kind the player chose up front. */
-export const CreateProjectDialog = ({ open, onClose }: CreateProjectDialogProps) => {
+export const CreateProjectDialog = ({ open, onClose, onAdded }: CreateProjectDialogProps) => {
   const { busy, actionError, create, clearActionError } = useProjects();
   const [name, setName] = useState('');
   const [isPrivate, setPrivate] = useState(true);
@@ -29,7 +32,10 @@ export const CreateProjectDialog = ({ open, onClose }: CreateProjectDialogProps)
     event.preventDefault();
     if (!valid || busy || webApplication === null) return;
     void create(name, isPrivate, { webApplication }).then((project) => {
-      if (project) onClose();
+      if (project) {
+        onAdded?.(project);
+        onClose();
+      }
     });
   };
 

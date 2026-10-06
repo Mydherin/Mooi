@@ -1,4 +1,4 @@
-import { RefreshCw } from 'lucide-react';
+import { Plus, RefreshCw } from 'lucide-react';
 import { Button } from '@/shared/components/Button';
 import { SearchInput } from '@/shared/components/SearchInput';
 import { cn } from '@/shared/utils/cn';
@@ -9,9 +9,10 @@ interface SessionsOverviewHeaderProps {
   showSearch: boolean;
   refreshing: boolean;
   onRefresh: () => void;
+  onNewSession: () => void;
 }
 
-export const SessionsOverviewHeader = ({ query, onQueryChange, showSearch, refreshing, onRefresh }: SessionsOverviewHeaderProps) => (
+export const SessionsOverviewHeader = ({ query, onQueryChange, showSearch, refreshing, onRefresh, onNewSession }: SessionsOverviewHeaderProps) => (
   <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
     <div>
       <h1 className="text-[32px] font-extrabold tracking-[-0.045em] text-ink sm:text-[38px]">Sessions</h1>
@@ -24,10 +25,16 @@ export const SessionsOverviewHeader = ({ query, onQueryChange, showSearch, refre
       {showSearch ? (
         <SearchInput value={query} onChange={onQueryChange} placeholder="Search branch, project or agent" className="sm:w-72" />
       ) : null}
-      <Button variant="secondary" size="md" onClick={onRefresh} disabled={refreshing}>
-        <RefreshCw className={cn('size-4', refreshing && 'animate-spin')} />
-        Refresh
-      </Button>
+      <div className="flex gap-2 *:flex-1 sm:*:flex-none">
+        <Button variant="secondary" size="md" onClick={onRefresh} disabled={refreshing}>
+          <RefreshCw className={cn('size-4', refreshing && 'animate-spin')} />
+          Refresh
+        </Button>
+        <Button variant="brand" size="md" onClick={onNewSession}>
+          <Plus className="size-4" />
+          New session
+        </Button>
+      </div>
     </div>
   </div>
 );

@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
-import { MessagesSquare, RefreshCw, Search } from 'lucide-react';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
+import { MessagesSquare, Plus, RefreshCw, Search } from 'lucide-react';
 import { ROUTES } from '@/app/routes';
 import { useProjects } from '@/features/projects/hooks/useProjects';
 import { SessionGroupSection } from '@/features/sessions/components/overview/SessionGroupSection';
 import { SessionsOverviewHeader } from '@/features/sessions/components/overview/SessionsOverviewHeader';
 import { SessionsOverviewStats } from '@/features/sessions/components/overview/SessionsOverviewStats';
+import { StartSessionDialog } from '@/features/sessions/components/overview/StartSessionDialog';
 import { useSessionsSync } from '@/features/sessions/hooks/useSessionsSync';
 import { groupSessionsByProject } from '@/features/sessions/lib/groupSessionsByProject';
 import { matchesSessionQuery } from '@/features/sessions/lib/matchesSessionQuery';
@@ -14,6 +15,7 @@ import { Button } from '@/shared/components/Button';
 import { Card } from '@/shared/components/Card';
 import { EmptyState } from '@/shared/components/EmptyState';
 import { Tabs } from '@/shared/components/Tabs';
+import type { BackLink } from '@/shared/types/BackLink';
 import { buttonStyles } from '@/shared/styles/buttonStyles';
 import { useSessionsStore } from '@/stores/sessionsStore';
 
@@ -40,6 +42,9 @@ export const SessionsPage = () => {
   const { loading, error, reload } = useSessionsSync(undefined);
   const [searchParams, setSearchParams] = useSearchParams();
   const [query, setQuery] = useState('');
+  const [newSessionOpen, setNewSessionOpen] = useState(false);
+  const { search } = useLocation();
+  const backLink: BackLink = useMemo(() => ({ to: `${ROUTES.sessions}${search}`, label: 'Sessions' }), [search]);
   const filter = sessionFilter(searchParams.get(FILTER_PARAM));
 
   const searched = useMemo(() => sessions.filter((session) => matchesSessionQuery(session, query)), [sessions, query]);
@@ -61,7 +66,7 @@ export const SessionsPage = () => {
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-5 pt-7 pb-[calc(1.75rem+var(--safe-bottom))] sm:px-8 lg:px-10 lg:pt-10 lg:pb-10">
       <SessionsOverviewHeader query={query} onQueryChange={setQuery} showSearch={sessions.length > 0}
-        refreshing={loading} onRefresh={reload} />
+        refreshing={loading} onRefresh={reload} onNewSession={() => setNewSessionOpen(true)} />
 
       {error ? (
         <div className="flex flex-col gap-3 rounded-[14px] border border-danger/30 bg-danger-soft px-4 py-3.5 sm:flex-row sm:items-center">
@@ -79,8 +84,9 @@ export const SessionsPage = () => {
 
       {!firstLoad && sessions.length === 0 && !error ? (
         <EmptyState icon={MessagesSquare} title="No live sessions"
-          description="Start a session from a project to have an agent work on it. It shows up here while it runs.">
-          <Link to={ROUTES.projects} className={buttonStyles('brand', 'md')}>Browse projects</Link>
+          description="Start a session to have an agent work on one of your projects. It shows up here while it runs.">
+          <Button variant="brand" onClick={() => setNewSessionOpen(true)}><Plus className="size-4" />New session</Button>
+          <Link to={ROUTES.projects} className={buttonStyles('secondary', 'md')}>Browse projects</Link>
         </EmptyState>
       ) : null}
 
@@ -100,7 +106,7 @@ export const SessionsPage = () => {
 
           {groups.length > 0 ? (
             <div className="flex flex-col gap-8">
-              {groups.map((group) => <SessionGroupSection key={group.projectId} group={group} />)}
+              {groups.map((group) => <SessionGroupSection key={group.projectId} group={group} backLink={backLink} />)}
             </div>
           ) : (
             <EmptyState icon={Search} title="No sessions match" description="Try another search or filter.">
@@ -109,6 +115,9 @@ export const SessionsPage = () => {
           )}
         </>
       ) : null}
+
+      <StartSessionDialog open={newSessionOpen} initialProjectId={sessions[0]?.projectId ?? projects[0]?.id ?? null}
+        backLink={backLink} onClose={() => setNewSessionOpen(false)} />
     </div>
   );
 };

@@ -1,7 +1,8 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown } from 'lucide-react';
 import type { AgentConnection } from '@/features/agents/types/AgentConnection';
+import { useAnchoredPlacement } from '@/shared/hooks/useAnchoredPlacement';
 
 interface AgentAccountSelectProps {
   connections: AgentConnection[];
@@ -15,7 +16,7 @@ export const AgentAccountSelect = ({ connections, value, onChange }: AgentAccoun
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const popup = useRef<HTMLDivElement>(null);
-  const [placement, setPlacement] = useState({ top: 0, left: 0, width: 0, maxHeight: 256 });
+  const placement = useAnchoredPlacement(open, root);
   const options = useRef<Array<HTMLButtonElement | null>>([]);
   const listId = useId();
   const selected = connections.find((account) => account.id === value);
@@ -27,24 +28,6 @@ export const AgentAccountSelect = ({ connections, value, onChange }: AgentAccoun
     };
     document.addEventListener('pointerdown', closeOutside);
     return () => document.removeEventListener('pointerdown', closeOutside);
-  }, [open]);
-
-  useLayoutEffect(() => {
-    if (!open) return;
-    const position = () => {
-      const bounds = root.current?.getBoundingClientRect();
-      if (!bounds) return;
-      const below = window.innerHeight - bounds.bottom - 12;
-      const above = bounds.top - 12;
-      const upward = below < 180 && above > below;
-      const maxHeight = Math.max(64, Math.min(256, upward ? above : below));
-      setPlacement({ top: upward ? bounds.top - maxHeight - 4 : bounds.bottom + 4,
-        left: bounds.left, width: bounds.width, maxHeight });
-    };
-    position();
-    window.addEventListener('resize', position);
-    window.addEventListener('scroll', position, true);
-    return () => { window.removeEventListener('resize', position); window.removeEventListener('scroll', position, true); };
   }, [open]);
 
   const openAt = (index: number) => {

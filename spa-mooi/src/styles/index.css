@@ -11,6 +11,15 @@
   height: var(--app-height, 100dvh);
 }
 
+/* One line clipped at its start, so the tail (a branch's distinctive end) stays visible. Wrap the text in `dir="ltr"`. */
+@utility truncate-start {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+}
+
 :root {
   --canvas: #ffffff;
   --surface: #ffffff;

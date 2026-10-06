@@ -5,16 +5,21 @@ import { SessionStatusBadge } from '@/features/sessions/components/SessionStatus
 import { SessionAccountIdentity } from '@/features/sessions/components/SessionAccountIdentity';
 import { WorkspacePathLabel } from '@/features/sessions/components/WorkspacePathLabel';
 import type { Session } from '@/features/sessions/types/Session';
+import type { BackLink } from '@/shared/types/BackLink';
+import { backLinkState } from '@/shared/utils/backLinkState';
 import { formatDate } from '@/shared/utils/formatDate';
 
 interface SessionListItemProps {
   session: Session;
+  /** Where the session's back button returns; its project by default. */
+  backLink?: BackLink;
 }
 
-export const SessionListItem = ({ session }: SessionListItemProps) => (
+export const SessionListItem = ({ session, backLink }: SessionListItemProps) => (
   <li className="border-b border-line last:border-b-0">
     <Link
       to={sessionPath(session.projectId, session.id)}
+      state={backLink ? backLinkState(backLink) : undefined}
       className="flex items-center gap-3 px-1 py-3.5 transition hover:bg-surface-2 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand sm:gap-4 sm:px-2.5"
     >
       <span className="w-[108px] shrink-0">

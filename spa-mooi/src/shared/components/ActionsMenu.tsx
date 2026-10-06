@@ -9,13 +9,20 @@ interface ActionsMenuProps {
   /** Receives `dismiss` so an item can close the menu before acting. */
   children: (dismiss: () => void) => ReactNode;
   className?: string;
+  /** Attention dot on the trigger, e.g. a failure behind one of the items. */
+  indicator?: boolean;
+  indicatorClassName?: string;
 }
+
+/** Items hidden by a breakpoint (`sm:hidden` wrappers) take no focus. */
+const visibleItems = (menu: HTMLElement): HTMLElement[] =>
+  Array.from(menu.querySelectorAll<HTMLElement>('[role="menuitem"]:not(:disabled)')).filter((item) => item.getClientRects().length > 0);
 
 /**
  * Secondary actions behind one icon: arrow keys move between items, Escape and outside clicks
  * close it, and the panel scrolls within the viewport when it cannot fit.
  */
-export const ActionsMenu = ({ label, children, className }: ActionsMenuProps) => {
+export const ActionsMenu = ({ label, children, className, indicator = false, indicatorClassName }: ActionsMenuProps) => {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const dismiss = useCallback(() => setOpen(false), []);
@@ -26,7 +33,8 @@ export const ActionsMenu = ({ label, children, className }: ActionsMenuProps) =>
     containerRef.current?.querySelector('button')?.focus();
   }, open);
   useEffect(() => {
-    if (open) containerRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+    const menu = containerRef.current?.querySelector<HTMLElement>('[role="menu"]');
+    if (open && menu) visibleItems(menu)[0]?.focus();
   }, [open]);
 
   return (
@@ -39,12 +47,13 @@ export const ActionsMenu = ({ label, children, className }: ActionsMenuProps) =>
         title={label}
         onClick={() => setOpen((value) => !value)}
         className={cn(
-          'flex size-10 items-center justify-center rounded-[10px] transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand',
+          'relative flex size-10 items-center justify-center rounded-[10px] transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand',
           open ? 'bg-surface-2 text-ink' : 'text-ink-muted hover:bg-surface-2 hover:text-ink',
           className,
         )}
       >
         <MoreHorizontal className="size-4.5" />
+        {indicator ? <span aria-hidden className={cn('absolute top-2 right-2 size-1.5 rounded-full bg-danger-dot', indicatorClassName)} /> : null}
       </button>
 
       {open ? (
@@ -52,7 +61,7 @@ export const ActionsMenu = ({ label, children, className }: ActionsMenuProps) =>
           role="menu"
           aria-label={label}
           onKeyDown={(event) => {
-            const items = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('[role="menuitem"]:not(:disabled)'));
+            const items = visibleItems(event.currentTarget);
             const index = items.indexOf(document.activeElement as HTMLElement);
             const next = event.key === 'ArrowDown' ? (index + 1) % items.length
               : event.key === 'ArrowUp' ? (index - 1 + items.length) % items.length : null;

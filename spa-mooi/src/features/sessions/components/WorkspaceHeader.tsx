@@ -1,18 +1,21 @@
 import { Link } from 'react-router-dom';
 import { ChevronLeft, GitBranch } from 'lucide-react';
-import { projectPath } from '@/app/paths';
 import type { Project } from '@/features/projects/types/Project';
 import type { Session } from '@/features/sessions/types/Session';
 import { DeployButton } from '@/features/sessions/components/deploy/DeployButton';
 import { MergeButton } from '@/features/sessions/components/merge/MergeButton';
 import { SessionActionsMenu } from '@/features/sessions/components/SessionActionsMenu';
 import { SessionAccountIdentity } from '@/features/sessions/components/SessionAccountIdentity';
+import { WorkspaceCompactTitle } from '@/features/sessions/components/WorkspaceCompactTitle';
 import { WorkspacePathLabel } from '@/features/sessions/components/WorkspacePathLabel';
+import { useDeployControl } from '@/features/sessions/hooks/useDeployControl';
 import { Tooltip } from '@/shared/components/Tooltip';
+import type { BackLink } from '@/shared/types/BackLink';
 
 interface WorkspaceHeaderProps {
   project: Project;
   session: Session;
+  back: BackLink;
   deployEnabled: boolean;
   onClose: () => void;
   closeBusy: boolean;
@@ -20,44 +23,43 @@ interface WorkspaceHeaderProps {
 
 /**
  * The branch is the session's name, so it gets every pixel the controls do not need: icon-only
- * merge and deploy on phones, secondary actions (close included) folded into one menu, and up to two lines
- * for long branch names before truncating. Phones drop the clone path (copyable from the menu) and
- * show the account on one line.
+ * merge on phones, the deploy button only while a deployment is active (its other actions join the
+ * secondary ones, close included, in one menu), and a one-line title that reveals the details on tap.
  */
-export const WorkspaceHeader = ({
-  project,
-  session,
-  deployEnabled,
-  onClose,
-  closeBusy,
-}: WorkspaceHeaderProps) => (
-  <div className="flex shrink-0 items-center gap-1.5 composing:max-lg:hidden border-b border-line bg-surface py-2 pr-2 pl-1.5 sm:gap-3 sm:px-5 sm:py-2.5">
-    <Link
-      to={projectPath(project.id)}
-      aria-label={`Back to ${project.name}`}
-      title={`Back to ${project.name}`}
-      className="flex size-10 shrink-0 items-center justify-center rounded-[10px] text-ink-muted transition hover:bg-surface-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
-    >
-      <ChevronLeft className="size-4.5" />
-    </Link>
+export const WorkspaceHeader = ({ project, session, back, deployEnabled, onClose, closeBusy }: WorkspaceHeaderProps) => {
+  const deployControl = useDeployControl(session, closeBusy);
+  const deploy = deployEnabled ? deployControl : null;
 
-    <div className="min-w-0 flex-1">
-      <p className="hidden truncate text-[11px] font-bold text-ink-subtle sm:block">{project.name}</p>
-      <Tooltip content={session.branch} className="flex">
-        <h1 className="flex min-w-0 items-start gap-1.5 text-[14px] leading-[1.3] font-extrabold tracking-[-0.01em] text-ink sm:items-center sm:text-[16px]">
-          <GitBranch className="mt-[3px] size-3.5 shrink-0 text-ink-subtle sm:mt-0 sm:size-4" />
-          <span className="line-clamp-2 font-mono break-all sm:line-clamp-1">{session.branch}</span>
-        </h1>
-      </Tooltip>
-      <WorkspacePathLabel path={session.workspacePath} className="mt-0.5 max-sm:hidden" focusable />
-      <span className="mt-0.5 block sm:hidden"><SessionAccountIdentity session={session} compact /></span>
-    </div>
+  return (
+    <div className="flex shrink-0 items-center gap-1.5 composing:max-lg:hidden border-b border-line bg-surface py-2 pr-2 pl-1.5 sm:gap-3 sm:px-5 sm:py-2.5">
+      <Link
+        to={back.to}
+        aria-label={`Back to ${back.label}`}
+        title={`Back to ${back.label}`}
+        className="flex size-10 shrink-0 items-center justify-center rounded-[10px] text-ink-muted transition hover:bg-surface-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+      >
+        <ChevronLeft className="size-4.5" />
+      </Link>
 
-    <div className="flex shrink-0 items-center gap-1 sm:gap-2">
-      <span className="hidden max-w-36 border-r border-line pr-3 sm:block"><SessionAccountIdentity session={session} /></span>
-      <MergeButton key={`merge-${session.id}`} session={session} disabled={closeBusy} />
-      {deployEnabled ? <DeployButton key={session.id} session={session} disabled={closeBusy} /> : null}
-      <SessionActionsMenu session={session} onClose={onClose} closeBusy={closeBusy} />
+      <WorkspaceCompactTitle project={project} session={session} />
+
+      <div className="min-w-0 flex-1 max-sm:hidden">
+        <p className="truncate text-[11px] font-bold text-ink-subtle">{project.name}</p>
+        <Tooltip content={session.branch} className="flex">
+          <h1 className="flex min-w-0 items-center gap-1.5 text-[16px] leading-[1.3] font-extrabold tracking-[-0.01em] text-ink">
+            <GitBranch className="size-4 shrink-0 text-ink-subtle" />
+            <span className="line-clamp-1 font-mono break-all">{session.branch}</span>
+          </h1>
+        </Tooltip>
+        <WorkspacePathLabel path={session.workspacePath} className="mt-0.5" focusable />
+      </div>
+
+      <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
+        <span className="hidden max-w-36 border-r border-line pr-3 sm:block"><SessionAccountIdentity session={session} /></span>
+        <MergeButton key={`merge-${session.id}`} session={session} disabled={closeBusy} />
+        {deploy ? <DeployButton control={deploy} /> : null}
+        <SessionActionsMenu session={session} deploy={deploy} onClose={onClose} closeBusy={closeBusy} />
+      </div>
     </div>
-  </div>
-);
+  );
+};

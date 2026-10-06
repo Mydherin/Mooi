@@ -4,6 +4,7 @@ import type { GithubRepository } from '@/features/github/types/GithubRepository'
 import { ProjectKindStep } from '@/features/projects/components/ProjectKindStep';
 import { RepositoryPicker } from '@/features/projects/components/RepositoryPicker';
 import { useProjects } from '@/features/projects/hooks/useProjects';
+import type { Project } from '@/features/projects/types/Project';
 import { useReachableRepositories } from '@/features/projects/hooks/useReachableRepositories';
 import { Button } from '@/shared/components/Button';
 import { Modal } from '@/shared/components/Modal';
@@ -11,6 +12,8 @@ import { Modal } from '@/shared/components/Modal';
 interface AddProjectDialogProps {
   open: boolean;
   onClose: () => void;
+  /** Called with the new project right before the dialog closes. */
+  onAdded?: (project: Project) => void;
 }
 
 /**
@@ -18,7 +21,7 @@ interface AddProjectDialogProps {
  * reach, then say whether it is a web application. Nothing is persisted until the second step is
  * confirmed, and going back keeps the list and the search.
  */
-export const AddProjectDialog = ({ open, onClose }: AddProjectDialogProps) => {
+export const AddProjectDialog = ({ open, onClose, onAdded }: AddProjectDialogProps) => {
   const { projects, busy, actionError, add, clearActionError } = useProjects();
   const { manageAccess } = useGithubConnection();
   const { repositories, installations, loading, failure, load } = useReachableRepositories(open);
@@ -60,6 +63,7 @@ export const AddProjectDialog = ({ open, onClose }: AddProjectDialogProps) => {
 
     void add(selected.fullName, { webApplication }).then((project) => {
       if (project) {
+        onAdded?.(project);
         onClose();
       }
     });

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { GitBranch } from 'lucide-react';
 import type { AgentConnection } from '@/features/agents/types/AgentConnection';
 import type { Project } from '@/features/projects/types/Project';
@@ -10,7 +10,10 @@ import { Modal } from '@/shared/components/Modal';
 
 interface NewSessionDialogProps {
   open: boolean;
-  project: Project;
+  /** The project the session starts on; null until the picker has one. */
+  project: Project | null;
+  /** Shown first when the project is picked here (the Sessions overview) rather than given. */
+  projectPicker?: ReactNode;
   connections: AgentConnection[];
   busy: boolean;
   actionError: string | null;
@@ -47,6 +50,7 @@ const proposeBranchName = (projectName: string): string => {
 export const NewSessionDialog = ({
   open,
   project,
+  projectPicker,
   connections,
   busy,
   actionError,
@@ -56,22 +60,24 @@ export const NewSessionDialog = ({
   const [branch, setBranch] = useState('');
   const choice = useAgentModelChoice(open, connections);
   const wasOpenRef = useRef(false);
+  const branchEditedRef = useRef(false);
+  const projectName = project?.name ?? null;
 
   /**
-   * Only the closed-to-open transition seeds the branch: a `connections` refresh (e.g. the
-   * account page linking a provider in another tab) must not wipe what the user is typing.
+   * Opening seeds the branch, and so does picking another project until the user edits it. Nothing
+   * else does: a `connections` refresh (e.g. the account page linking a provider in another tab)
+   * must not wipe what the user is typing.
    */
   useEffect(() => {
-    if (open && !wasOpenRef.current) {
-      setBranch(proposeBranchName(project.name));
-    }
+    if (open && !wasOpenRef.current) branchEditedRef.current = false;
+    if (open && !branchEditedRef.current) setBranch(projectName ? proposeBranchName(projectName) : '');
     wasOpenRef.current = open;
-  }, [open, project.name]);
+  }, [open, projectName]);
 
-  const canSubmit = choice.ready && branch.trim().length > 0;
+  const canSubmit = Boolean(project) && choice.ready && branch.trim().length > 0;
 
   const handleSubmit = () => {
-    if (!canSubmit) {
+    if (!project || !canSubmit) {
       return;
     }
 
@@ -94,7 +100,8 @@ export const NewSessionDialog = ({
       open={open}
       onClose={onClose}
       title="New session"
-      description={`Start a live agent session on ${project.fullName}.`}
+      description={project && !projectPicker ? `Start a live agent session on ${project.fullName}.`
+        : 'Pick a project and start a live agent session on it.'}
       footer={
         <>
           <Button variant="ghost" onClick={onClose} disabled={busy}>
@@ -107,6 +114,11 @@ export const NewSessionDialog = ({
       }
     >
       <div className="flex flex-col gap-5">
+        {projectPicker ? <div className="flex flex-col gap-2">
+          <span className="text-xs font-medium text-ink-muted">Project</span>
+          {projectPicker}
+        </div> : null}
+
         <AgentModelFields choice={choice} onLeave={onClose} />
 
         {connections.length > 0 ? <label className="flex flex-col gap-2">
@@ -115,7 +127,10 @@ export const NewSessionDialog = ({
             <GitBranch className="size-4 shrink-0 text-ink-subtle" />
             <input
               value={branch}
-              onChange={(event) => setBranch(event.target.value)}
+              onChange={(event) => {
+                branchEditedRef.current = true;
+                setBranch(event.target.value);
+              }}
               placeholder="feat/my-change"
               autoComplete="off"
               autoCapitalize="none"
@@ -127,7 +142,7 @@ export const NewSessionDialog = ({
             />
           </span>
           <span className="text-xs text-ink-subtle">
-            Created from {project.defaultBranch ?? 'the default branch'}. Reusing this branch replaces its previous live session safely; the remote branch is never deleted.
+            Created from {project?.defaultBranch ?? 'the default branch'}. Reusing this branch replaces its previous live session safely; the remote branch is never deleted.
           </span>
         </label> : null}
       </div>
