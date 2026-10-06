@@ -11,6 +11,7 @@ import { imageFilesFrom } from '@/features/sessions/lib/imageFilesFrom';
 import type { PreparedImage } from '@/features/sessions/types/PreparedImage';
 import { AttachImageButton } from './AttachImageButton';
 import { ComposerImageStrip } from './ComposerImageStrip';
+import { ComposerModelMenu } from './ComposerModelMenu';
 import { ComposerSelect } from './ComposerSelect';
 import { Button } from '@/shared/components/Button';
 import { cn } from '@/shared/utils/cn';
@@ -207,13 +208,22 @@ export const ChatComposer = ({
 
         {activeTurn ? <p className="px-4 pb-2 text-xs text-ink-muted sm:px-5">Model and effort changes apply to your next message.</p> : null}
 
-        {/* One row at every width: the pickers scroll sideways rather than pushing send to a new line. */}
-        <div className="flex items-center gap-1 px-1.5 pb-1.5 sm:gap-2 sm:px-2 sm:pb-2">
+        {/* One row at every width: phones fold the pickers into a chip, wider screens scroll them sideways. */}
+        <div className="relative flex items-center gap-1 px-1.5 pb-1.5 sm:gap-2 sm:px-2 sm:pb-2">
           <ChatUsageIndicators usage={usage} loading={status === 'provisioning' || status === 'compacting'}
             actionsDisabled={busy || deploying || status !== 'ready' || !hasConversation}
             onCompact={onCompact} onClear={onClear} />
           {actions}
-          <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto [scrollbar-width:none] sm:gap-2 [&::-webkit-scrollbar]:hidden">
+          {modelOptions.length > 0 ? (
+            <div className="flex min-w-0 flex-1 sm:hidden">
+              <ComposerModelMenu model={model} effort={effort} effortOptions={effortOptions}
+                modelOptions={modelOptions.map((option) => ({ value: option.id, label: option.label }))}
+                onModelChange={changeModel} onEffortChange={(value) => onConfigurationChange({ model, effort: value || null })}
+                disabled={configurationDisabled} />
+            </div>
+          ) : null}
+          <div className={cn('min-w-0 flex-1 items-center gap-1.5 overflow-x-auto [scrollbar-width:none] sm:flex sm:gap-2 [&::-webkit-scrollbar]:hidden',
+            modelOptions.length > 0 ? 'hidden' : 'flex')}>
           {modelOptions.length > 0 ? (
             <>
               <ComposerSelect value={model} options={modelOptions.map((option) => ({ value: option.id, label: option.label }))}
