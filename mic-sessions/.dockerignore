@@ -4,5 +4,7 @@ __pycache__/
 *.pyc
 .ruff_cache/
 .env
+browser/node_modules/
+browser/.browsers/
 Dockerfile
 .dockerignore

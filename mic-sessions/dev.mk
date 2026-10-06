@@ -20,6 +20,17 @@ SESSIONS_GRACEFUL_SHUTDOWN_SECONDS ?= 5
 define start
 require_tool uv "install uv: https://docs.astral.sh/uv/"
 require_tool git "install Git"
+require_tool node "install Node.js >= 20"
+require_tool npm "install npm with Node.js"
+# Reuse the installed tree when the lockfile has not changed.
+(
+  cd "$$ARTIFACT_DIR/browser"
+  if [ ! -f node_modules/.mooi-installed-lock ] || ! cmp -s package-lock.json node_modules/.mooi-installed-lock; then
+    npm ci --ignore-scripts --no-audit --no-fund
+    cp package-lock.json node_modules/.mooi-installed-lock
+  fi
+  PLAYWRIGHT_BROWSERS_PATH="$$PWD/.browsers" node node_modules/playwright/cli.js install --no-shell chromium
+)
 # The pinned SDK ships a native CLI; fail before starting if it cannot execute.
 (
   cd "$$ARTIFACT_DIR"
@@ -82,5 +93,6 @@ define clean
 # Preserve workspace data, including legacy/unowned repositories. Startup reconciles
 # only marked session directories under the configured WORKSPACE_ROOT.
 rm -rf "$$ARTIFACT_DIR/.venv"
+rm -rf "$$ARTIFACT_DIR/browser/node_modules" "$$ARTIFACT_DIR/browser/.browsers"
 find "$$ARTIFACT_DIR/src" -name __pycache__ -type d -prune -exec rm -rf {} +
 endef

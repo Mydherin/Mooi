@@ -16,6 +16,7 @@ from openai_codex import CodexConfig
 from openai_codex.client import CodexClient
 from openai_codex.models import UnknownNotification
 
+from mic_sessions.shared.browser import playwright_server
 from mic_sessions.shared.mooi import Credential
 
 
@@ -69,6 +70,11 @@ class Client:
         overrides = ['cli_auth_credentials_store="file"', 'model_provider="openai"',
                      'shell_environment_policy.inherit="none"',
                      'shell_environment_policy.set.PATH=' + json.dumps(os.environ.get("PATH", ""))]
+        # Interactive sessions get the same browser as Claude; catalog/login calls do not need it.
+        if handler is not None:
+            server = playwright_server()
+            overrides.append('mcp_servers.playwright={' + ', '.join(
+                f'{key}={json.dumps(value)}' for key, value in server.items()) + '}')
         # The SDK merges env with the host environment. Launch through env -i so host
         # API keys, endpoints, proxy credentials and Mooi secrets cannot reach Codex.
         path_dir = bundled_path_dir()

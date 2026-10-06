@@ -20,6 +20,7 @@ Monorepository. Each artifact lives in its own root-level directory.
 - [uv](https://docs.astral.sh/uv/) (Python package manager for `mic-sessions` and `mic-speech`)
 - `git` CLI >= 2.38 (one independent clone per agent session; `merge-tree --write-tree` backs Merge)
 - Docker Engine + Docker Compose V2 (data layer and session deployments)
+- Node.js >= 20 with npm (`mic-sessions` installs its pinned browser tools)
 
 Maven is **not** required: `mic-mooi` ships the Maven Wrapper (`mvnw`) and the first
 `make dev-start` downloads the pinned distribution into `~/.m2/wrapper`.
@@ -84,6 +85,14 @@ openssl rand -base64 32
 The SPA needs no GitHub variable: it asks the API for ready-made authorize and install URLs.
 
 ### Agent providers
+
+Claude and Codex sessions include the `playwright` MCP by default: headless Chromium,
+an isolated browser context per MCP process and full file access. The runtime image installs
+Playwright, its matching Chromium revision and system libraries at build time. Local
+`make dev-start` installs the locked npm dependencies and Chromium automatically; on Linux,
+install browser system libraries once with
+`cd mic-sessions/browser && node node_modules/playwright/cli.js install-deps chromium`
+(requires administrator privileges). `AGENT_BROWSER_DIRECTORY` overrides the installation path.
 
 Links a player's own Claude or Codex account so `mic-sessions` can run agent sessions on their behalf.
 Credentials are stored by `mic-mooi` and handed to `mic-sessions` server-to-server; the browser

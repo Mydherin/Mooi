@@ -65,6 +65,7 @@ from claude_agent_sdk import (
     UserMessage,
 )
 
+from mic_sessions.shared.browser import playwright_server
 from mic_sessions.shared.env import get_settings
 from mic_sessions.shared.images import Image
 from mic_sessions.shared.mooi import Credential
@@ -890,6 +891,7 @@ class ClaudeAgentRuntime:
             setting_sources=["project", "local"],
             skills="all",
             plugins=plugins,
+            mcp_servers={"playwright": playwright_server()},
             system_prompt={
                 "type": "preset",
                 "preset": "claude_code",

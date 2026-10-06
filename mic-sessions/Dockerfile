@@ -43,6 +43,14 @@ RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
     && ln -s bun /usr/local/bin/bunx
 
+# Install once at image build; agent turns never download packages or browsers.
+COPY browser/package.json browser/package-lock.json /opt/mooi-browser/
+RUN cd /opt/mooi-browser && npm ci --ignore-scripts --no-audit --no-fund \
+    && PLAYWRIGHT_BROWSERS_PATH=/opt/mooi-browser/.browsers \
+       node node_modules/playwright/cli.js install --with-deps --no-shell chromium \
+    && rm -rf /var/lib/apt/lists/* /root/.npm
+COPY browser/mcp.mjs /opt/mooi-browser/mcp.mjs
+
 # Service user. The Docker socket group is added at run time (DOCKER_GID), never baked in.
 RUN groupadd -g 1001 mooi && useradd -u 1001 -g mooi -m -d /home/mooi -s /bin/bash mooi
 
@@ -54,6 +62,7 @@ USER mooi
 
 # The service venv stays off PATH so agents see the system toolchains, never Mooi's own packages.
 ENV JAVA_HOME=/opt/java/openjdk \
+    AGENT_BROWSER_DIRECTORY=/opt/mooi-browser \
     PATH="/opt/java/openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
     PYTHONUNBUFFERED=1 \
     LANG=C.UTF-8 \

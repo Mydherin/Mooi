@@ -3,3 +3,5 @@
 __pycache__/
 *.pyc
 .env
+browser/node_modules/
+browser/.browsers/

@@ -102,6 +102,9 @@ class Settings(BaseSettings):
     preview_upstream: Literal["loopback", "network"] = "loopback"
     preview_network: str = Field(default="mooi-previews", pattern=r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$")
 
+    # Shared browser toolchain; the image installs it outside service/user volumes.
+    agent_browser_directory: Path = Path(__file__).resolve().parents[3] / "browser"
+
     # Agent runtime — namespaced per provider (AGENT_<PROVIDER>_*); read by that adapter alone.
     agent_claude_model: str = "sonnet"
     agent_claude_effort: str = "high"
