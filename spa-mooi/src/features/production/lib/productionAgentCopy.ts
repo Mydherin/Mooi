@@ -16,6 +16,13 @@ export const PRODUCTION_AGENT_COPY: Record<ProductionAgentIntent, PlatformAgentC
     placeholder: 'For example: move to a new host, add a database migration step, check /health instead of /…',
     action: 'Start update',
   },
+  migrate: {
+    title: 'Move production Compose to the repository',
+    description: 'The agent extracts the legacy Compose into docker-compose.yml at the project root, keeps the Platform files and tests the deployment after you approve the commit.',
+    label: 'Anything the agent should know? (optional)',
+    placeholder: 'For example: keep the current volumes and service names…',
+    action: 'Start migration',
+  },
   fix: {
     title: 'Fix the deployment',
     description: 'The agent reads the failed attempt, explains the cause and corrects the configuration with you.',
