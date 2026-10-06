@@ -128,6 +128,7 @@ const withResolvedStep = (
   toolUseId: string,
   status: 'done' | 'failed',
   summary: string,
+  images: ImageAttachment[],
 ): TranscriptEntry[] => {
   for (let i = entries.length - 1; i >= 0; i -= 1) {
     const entry = entries[i];
@@ -149,7 +150,7 @@ const withResolvedStep = (
     }
 
     const nextBlocks = [...entry.blocks];
-    nextBlocks[blockIndex] = { kind: 'step', step: { ...block.step, status, summary } };
+    nextBlocks[blockIndex] = { kind: 'step', step: { ...block.step, status, summary, images } };
 
     const nextEntries = [...entries];
     nextEntries[i] = { ...entry, blocks: nextBlocks };
@@ -231,6 +232,7 @@ export const applySessionEvent = (state: SessionTranscriptState, event: SessionE
         input: (data.input as Record<string, unknown> | undefined) ?? {},
         status: 'running',
         summary: null,
+        images: [],
       });
       break;
     }
@@ -240,6 +242,7 @@ export const applySessionEvent = (state: SessionTranscriptState, event: SessionE
         String(data.toolUseId),
         data.isError ? 'failed' : 'done',
         String(data.summary ?? ''),
+        Array.isArray(data.images) ? data.images as ImageAttachment[] : [],
       );
       changesStatus = 'loading';
       changesError = null;

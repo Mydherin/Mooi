@@ -12,7 +12,10 @@ Adding a provider:
    when the vendor SDK is stateless: `send(text, images)` must work N times on a live runtime.
 3. Emit the required domain events (`session.status`, `message.user`, `assistant.message`,
    `tool.use`, `tool.result`, `turn.result`, `error`) and only the optional ones the adapter's
-   `AgentCapabilities` declares. Absence of an optional event is compliance, not a bug.
+   `AgentCapabilities` declares. Absence of an optional event is compliance, not a bug. Images the
+   agent produces (generated, captured or returned by a tool) are stored with `images.save*` and
+   travel only as metadata on `tool.result.images`; a native image generator reports itself as the
+   `ImageGeneration` tool, so it renders as a generation card from `tool.use` to `tool.result`.
 4. `interrupt()` may be a no-op when the `interrupt` capability is `False`.
 5. A broken transport costs at most the running turn: `recover()` reconnects keeping the
    conversation, and a long-lived stream recovers itself before it reports `failed`.
@@ -67,6 +70,7 @@ from claude_agent_sdk import (
 
 from mic_sessions.shared.browser import playwright_server
 from mic_sessions.shared.env import get_settings
+from mic_sessions.shared import images as session_images
 from mic_sessions.shared.images import Image
 from mic_sessions.shared.mooi import Credential
 from mic_sessions.shared.web import ApiException
@@ -86,6 +90,8 @@ _COMPACT_SUMMARY_LIMIT = 16_000
 _TITLE_LIMIT = 120
 _FILE_TOOLS = {"Read", "Edit", "Write", "MultiEdit", "NotebookEdit"}
 _QUESTION_TOOL = "AskUserQuestion"
+IMAGE_GENERATION_TOOL = "ImageGeneration"
+VIEW_IMAGE_TOOL = "ViewImage"
 _DENIED_MESSAGE = "The user declined this action"
 _KIND_PERMISSION = "permission"
 _KIND_QUESTION = "question"
@@ -132,11 +138,11 @@ def tool_use(tool_use_id: str, name: str, title: str, input_data: dict[str, Any]
     }
 
 
-def tool_result(tool_use_id: str, is_error: bool, summary: str) -> AgentEvent:
-    return {
-        "type": "tool.result",
-        "data": {"toolUseId": tool_use_id, "isError": is_error, "summary": summary},
-    }
+def tool_result(tool_use_id: str, is_error: bool, summary: str, images: Sequence[Image] = ()) -> AgentEvent:
+    data: dict[str, Any] = {"toolUseId": tool_use_id, "isError": is_error, "summary": summary}
+    if images:
+        data["images"] = [image.payload() for image in images]
+    return {"type": "tool.result", "data": data}
 
 
 def permission_request(request_id: str, tool_name: str, title: str, input_data: dict[str, Any]) -> AgentEvent:
@@ -859,7 +865,10 @@ class ClaudeAgentRuntime:
             "Prefer the dedicated Read tool for reading files and Edit, MultiEdit, "
             "Write or NotebookEdit for changing files when applicable, so the session "
             "can display file operations and their results clearly. Use shell tools "
-            "for commands that require them."
+            "for commands that require them.\n\n"
+            "The session shows the user every image a tool returns. To deliver an image "
+            "(created, rendered, converted or captured), save it as a PNG, JPEG, WebP or GIF "
+            "file and open it with the Read tool."
         )
         if self._instructions:
             system_append += "\n\n" + self._instructions
@@ -1154,9 +1163,22 @@ class ClaudeAgentRuntime:
             return
         for block in content:
             if isinstance(block, ToolResultBlock):
+                images = await self._result_images(block.content)
                 await self._publish(
-                    tool_result(block.tool_use_id, bool(block.is_error), _result_summary(block.content))
+                    tool_result(block.tool_use_id, bool(block.is_error), _result_summary(block.content), images)
                 )
+
+    async def _result_images(self, content: Any) -> list[Image]:
+        """Images a tool returned (a read image file, an MCP screenshot) are kept for the player;
+        their base64 never reaches the event log."""
+        sources = [block["source"] for block in content if isinstance(block, dict) and block.get("type") == "image"
+                   and isinstance(block.get("source"), dict) and block["source"].get("type") == "base64"
+                   and isinstance(block["source"].get("data"), str)] if isinstance(content, list) else []
+        if not sources:
+            return []
+        stored = await asyncio.to_thread(lambda: [
+            session_images.save_encoded(self._workspace, source["data"]) for source in sources])
+        return [image for image in stored if image is not None]
 
     async def _on_result_message(self, message: Any) -> None:
         """Only `terminalReason` is required by the contract; every other field is best effort, so
@@ -1269,7 +1291,7 @@ class CodexAgentRuntime:
         self._loop = asyncio.get_running_loop()
         self._interrupted = False
         self._closing = False
-        self._file_steps: set[str] = set()
+        self._open_steps: set[str] = set()
 
     async def _publish(self, event):
         await self._emit(event["type"], event["data"])
@@ -1523,6 +1545,8 @@ class CodexAgentRuntime:
                 await self._publish(thinking_message(identity, "\n".join(item.get("summary") or item.get("content") or [])))
             elif kind == "fileChange":
                 await self._file_change(item, done)
+            elif kind in ("imageGeneration", "imageView"):
+                await self._image_item(item, done)
             elif kind not in ("agentMessage", "reasoning", "userMessage", "contextCompaction"):
                 name = {"commandExecution": "Bash", "webSearch": "WebSearch"}.get(kind, kind or "Tool")
                 if not done:
@@ -1534,17 +1558,56 @@ class CodexAgentRuntime:
         elif method == "error" and not payload.get("willRetry"):
             await self._publish(agent_error("Codex reported an error. Retry or reconnect your account."))
 
+    async def _image_item(self, item, done):
+        """A native generation renders as `ImageGeneration` and a viewed file as `ViewImage`. The
+        item carries the generated image as base64: only its stored metadata reaches the event log.
+        A step first seen on completion still gets its `tool.use` before its result."""
+        identity = item.get("id") or uuid4().hex
+        generation = item.get("type") == "imageGeneration"
+        prompt = item.get("revisedPrompt") or ""
+        name, input_data = ((IMAGE_GENERATION_TOOL, {"prompt": prompt} if prompt else {}) if generation
+                            else (VIEW_IMAGE_TOOL, {"path": str(item.get("path") or "")}))
+        if identity not in self._open_steps:
+            self._open_steps.add(identity)
+            title = (prompt or "Generating image") if generation else _tool_title(name, input_data)
+            await self._publish(tool_use(identity, name, title[:_TITLE_LIMIT], input_data))
+        if not done:
+            return
+        self._open_steps.discard(identity)
+        failure = item.get("failure") or {}
+        failed = bool(failure) or item.get("status") in ("failed", "declined")
+        saved = item.get("savedPath") if generation else input_data["path"]
+        source = Path(saved) if isinstance(saved, str) and saved else None
+
+        def store() -> Image | None:
+            image = session_images.save_encoded(self._workspace, item.get("result") or "") if generation else None
+            if image is None and source is not None and source.is_absolute():
+                image = session_images.save_file(self._workspace, source)
+            return image
+
+        image = None if failed else await asyncio.to_thread(store)
+        if image is not None:
+            summary = prompt or (source.name if source else "")
+        elif failure.get("type") == "usageLimitExceeded":
+            summary = "The image generation limit was reached. Try again later."
+        elif generation:
+            summary = "Codex could not generate the image."
+        else:
+            summary = "The image could not be displayed."
+        await self._publish(tool_result(identity, failed or (generation and image is None), summary,
+                                        [image] if image else []))
+
     async def _file_change(self, item, done):
         """One step per changed file. The file list may only be complete once the patch applied, so a
         file first seen on completion still gets its `tool.use` before its result."""
         steps = _codex_file_steps(item)
         failed = item.get("status") in ("failed", "declined")
         for identity, name, input_data in steps:
-            if identity not in self._file_steps:
-                self._file_steps.add(identity)
+            if identity not in self._open_steps:
+                self._open_steps.add(identity)
                 await self._publish(tool_use(identity, name, _tool_title(name, input_data), input_data))
             if done:
-                self._file_steps.discard(identity)
+                self._open_steps.discard(identity)
                 await self._publish(tool_result(identity, failed, _result_summary(input_data["diff"] or item.get("status") or "")))
         if not steps and done:
             identity = item.get("id") or uuid4().hex

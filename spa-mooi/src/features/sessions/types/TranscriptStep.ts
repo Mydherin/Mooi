@@ -1,3 +1,5 @@
+import type { ImageAttachment } from '@/features/sessions/types/ImageAttachment';
+
 export interface TranscriptStep {
   toolUseId: string;
   name: string;
@@ -5,4 +7,6 @@ export interface TranscriptStep {
   input: Record<string, unknown>;
   status: 'running' | 'done' | 'failed';
   summary: string | null;
+  /** Images the tool returned or generated, stored with the session. */
+  images: ImageAttachment[];
 }

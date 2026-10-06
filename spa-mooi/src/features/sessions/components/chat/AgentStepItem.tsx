@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { MessageImageGrid } from './MessageImageGrid';
 import { Check, ChevronDown, CircleAlert, LoaderCircle } from 'lucide-react';
 import { summarizeCommand } from '@/features/sessions/lib/summarizeCommand';
 import { toolCategory, toolFilePath, toolIcon } from '@/features/sessions/lib/toolIcon';
@@ -6,6 +7,7 @@ import type { TranscriptStep } from '@/features/sessions/types/TranscriptStep';
 import { cn } from '@/shared/utils/cn';
 
 interface AgentStepItemProps {
+  sessionId: string;
   step: TranscriptStep;
 }
 
@@ -14,7 +16,7 @@ interface AgentStepItemProps {
  * server-side, so it is safe to render in full — but it stays folded until asked for, because a
  * turn can carry a dozen steps and the transcript is the reading surface, not the log.
  */
-export const AgentStepItem = ({ step }: AgentStepItemProps) => {
+export const AgentStepItem = ({ sessionId, step }: AgentStepItemProps) => {
   const [open, setOpen] = useState(false);
   const Icon = toolIcon(step.name);
   const command = step.name === 'Bash' ? summarizeCommand(step.input.command) : null;
@@ -62,6 +64,13 @@ export const AgentStepItem = ({ step }: AgentStepItemProps) => {
         >
           {`Input\n${JSON.stringify(step.input, null, 2)}${summary ? `\n\nOutput\n${summary}` : ''}`}
         </pre>
+      ) : null}
+
+      {/* Returned images stay visible while the step is folded: they are output, not log. */}
+      {step.images.length > 0 ? (
+        <div className="border-t border-line p-2">
+          <MessageImageGrid sessionId={sessionId} images={step.images} align="start" />
+        </div>
       ) : null}
     </div>
   );

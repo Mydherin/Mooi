@@ -5,6 +5,8 @@ import {
   FilePlus,
   FolderTree,
   Globe,
+  Image,
+  ImagePlus,
   ListTodo,
   Search,
   Sparkles,
@@ -33,6 +35,8 @@ const icons: Record<string, LucideIcon> = {
   TodoWrite: ListTodo,
   Task: Bot,
   Skill: Sparkles,
+  ImageGeneration: ImagePlus,
+  ViewImage: Image,
 };
 
 export const toolIcon = (name: string): LucideIcon => icons[name] ?? Wrench;
@@ -54,5 +58,7 @@ export const toolCategory = (name: string, status: TranscriptStep['status']) => 
   if (name === 'Bash') return 'Run command';
   if (name === 'WebSearch') return 'Tool WebSearch';
   if (name === 'Skill') return 'Skill';
+  if (name === 'ImageGeneration') return status === 'running' ? 'Generating image' : 'Image';
+  if (name === 'ViewImage') return 'View image';
   return 'Tool';
 };

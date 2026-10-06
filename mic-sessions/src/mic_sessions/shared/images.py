@@ -1,9 +1,10 @@
-"""Transversal aspect: image attachments.
+"""Transversal aspect: session images.
 
-Player images are validated by their own bytes, stored privately beside the session checkout (never
-inside it, so they are not committed) and removed with the session directory. Events carry only
-`Image.payload()` metadata: bytes are read from disk by the provider adapters and by the download
-endpoint, so the replayed event log stays small.
+Player images and the images an agent produces (generated, captured or returned by a tool) are
+validated by their own bytes, stored privately beside the session checkout (never inside it, so they
+are not committed) and removed with the session directory. Events carry only `Image.payload()`
+metadata: bytes are read from disk by the provider adapters and by the download endpoint, so the
+replayed event log stays small.
 """
 
 from __future__ import annotations
@@ -11,7 +12,11 @@ from __future__ import annotations
 import asyncio
 import base64
 import binascii
+import hashlib
+import logging
+import os
 import re
+import struct
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -24,8 +29,13 @@ MAX_IMAGES = 8
 # Decoded bytes per image: its base64 form stays within the 5 MB per-image provider limit.
 MAX_BYTES = 3_750_000
 MAX_ENCODED = 4 * -(-MAX_BYTES // 3)
+# Agent output is not bound by the provider input limit, only by these per-image and per-session caps.
+MAX_OUTPUT_BYTES = 25_000_000
+MAX_OUTPUT_ENCODED = 4 * -(-MAX_OUTPUT_BYTES // 3)
+MAX_DIRECTORY_BYTES = 512 * 1024 * 1024
 _ID = re.compile(r"^[0-9a-f]{32}$")
 _DIRECTORY = "images"
+LOG = logging.getLogger("sessions")
 
 
 @dataclass(frozen=True)
@@ -114,6 +124,81 @@ async def store(workspace: Path, uploads: list[Upload]) -> list[Image]:
         return images
 
     return await asyncio.to_thread(write) if decoded else []
+
+
+def _measure(data: bytes, media_type: str) -> tuple[int | None, int | None]:
+    """Header dimensions as layout hints; formats without a fixed header offset stay unknown."""
+    try:
+        if media_type == "image/png" and len(data) >= 24:
+            width, height = struct.unpack(">II", data[16:24])
+            return _dimension(width), _dimension(height)
+        if media_type == "image/gif" and len(data) >= 10:
+            width, height = struct.unpack("<HH", data[6:10])
+            return _dimension(width), _dimension(height)
+        if media_type == "image/jpeg":
+            index = 2
+            while index + 9 < len(data) and data[index] == 0xFF:
+                marker = data[index + 1]
+                length = struct.unpack(">H", data[index + 2:index + 4])[0]
+                if marker in (0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF):
+                    height, width = struct.unpack(">HH", data[index + 5:index + 9])
+                    return _dimension(width), _dimension(height)
+                index += 2 + length
+    except struct.error:
+        pass
+    return None, None
+
+
+def _used_bytes(directory: Path) -> int:
+    with os.scandir(directory) as entries:
+        return sum(entry.stat(follow_symlinks=False).st_size for entry in entries if entry.is_file(follow_symlinks=False))
+
+
+def save(workspace: Path, data: bytes, name: str | None = None) -> Image | None:
+    """Store one image an agent produced. Blocking: call it off the event loop.
+
+    Content-addressed, so an image read or returned again is stored once. Returns `None` when the
+    bytes are not a supported image or exceed a cap: the transcript then keeps only its text.
+    """
+    media_type = _sniff(data)
+    if media_type is None or len(data) > MAX_OUTPUT_BYTES:
+        return None
+    directory = _directory(workspace)
+    directory.mkdir(mode=0o700, exist_ok=True)
+    image_id = hashlib.sha256(data).hexdigest()[:32]
+    path = directory / f"{image_id}{MEDIA_TYPES[media_type]}"
+    if not path.is_file():
+        if _used_bytes(directory) + len(data) > MAX_DIRECTORY_BYTES:
+            LOG.warning("The session image storage is full; an agent image was not kept")
+            return None
+        # Written aside then renamed, so a concurrent reader never serves a partial file.
+        partial = directory / f".{image_id}.{os.getpid()}.partial"
+        partial.write_bytes(data)
+        partial.chmod(0o600)
+        partial.replace(path)
+    width, height = _measure(data, media_type)
+    label = Path((name or "").strip()).name[:200] or f"image{MEDIA_TYPES[media_type]}"
+    return Image(image_id, media_type, label, len(data), width, height, path)
+
+
+def save_encoded(workspace: Path, encoded: str, name: str | None = None) -> Image | None:
+    """`save` for base64 output; oversized text is rejected before it is decoded."""
+    if not encoded or len(encoded) > MAX_OUTPUT_ENCODED:
+        return None
+    try:
+        return save(workspace, base64.b64decode(encoded, validate=False), name)
+    except (binascii.Error, ValueError):
+        return None
+
+
+def save_file(workspace: Path, source: Path, name: str | None = None) -> Image | None:
+    """`save` for an image file the agent wrote or viewed; its size is checked before it is read."""
+    try:
+        if not source.is_file() or source.stat().st_size > MAX_OUTPUT_BYTES:
+            return None
+        return save(workspace, source.read_bytes(), name or source.name)
+    except OSError:
+        return None
 
 
 def locate(workspace: Path, image_id: str) -> tuple[Path, str]:

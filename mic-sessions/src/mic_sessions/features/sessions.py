@@ -1508,7 +1508,8 @@ async def recover_session(session_id: UUID, caller: Annotated[Caller, Depends(cu
 async def session_image(
     session_id: UUID, image_id: str, caller: Annotated[Caller, Depends(current_caller)]
 ) -> FileResponse:
-    """One image the player attached to this session; ids are random, so the bytes never change."""
+    """One image the player attached or the agent produced; ids are random or content hashes, so the
+    bytes never change."""
     session = get_registry().get_for(caller, session_id)
     if session.workspace == _UNSET_PATH:
         raise ApiException.not_found("Unknown image")
