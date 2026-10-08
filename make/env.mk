@@ -13,4 +13,10 @@ DEV_SERVICE_TIMEOUT := $(call env-get,$(ENV_FILE),DEV_SERVICE_TIMEOUT,120)
 DEV_POLL_INTERVAL := $(call env-get,$(ENV_FILE),DEV_POLL_INTERVAL,1)
 DEV_LOG_LINES := $(call env-get,$(ENV_FILE),DEV_LOG_LINES,50)
 
+# Data layer credentials, shared by the compose postgres and the native
+# artifacts (same defaults as mic-mooi), so both always agree.
+export POSTGRES_DB := $(call env-get,$(ENV_FILE),POSTGRES_DB,mooi)
+export POSTGRES_USER := $(call env-get,$(ENV_FILE),POSTGRES_USER,mooi)
+export POSTGRES_PASSWORD := $(call env-get,$(ENV_FILE),POSTGRES_PASSWORD,change-me)
+
 export DEV_HEALTH_TIMEOUT DEV_STOP_TIMEOUT DEV_SERVICE_TIMEOUT DEV_POLL_INTERVAL DEV_LOG_LINES

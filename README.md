@@ -8,8 +8,7 @@ Monorepository. Each artifact lives in its own root-level directory.
 | `mic-mooi` | Spring Boot microservice (API) |
 | `mic-sessions` | FastAPI microservice (real-time agent sessions) |
 | `mic-speech` | FastAPI microservice (local push-to-talk dictation, loopback only) |
-| `compose.yml` | Mooi session preview stack only (Deploy button of a Mooi session) |
-| `deploy/development/` | Postgres + pgAdmin data layer (`make dev-*`, project `mooi`) |
+| `compose.yml` | Mooi session stack: Deploy button preview and `make dev-*` data layer (`postgres`) |
 | `deploy/production/` | Production stack (`compose.prod.yml`, project `mooi-prod`) |
 
 ## Requirements
@@ -324,15 +323,20 @@ every 60 seconds. Hidden previews and automatic health checks do not prevent exp
 Sessions run server-side, independent of any client: closing or suspending the browser never stops
 them, and any device reconnects to the live stream (replayed from the last seen event; a silent
 stream reconnects after `VITE_STREAM_STALE_SECONDS` or as soon as the app is visible again).
-Agent commands of plain sessions run Compose as `COMPOSE_PROJECT_NAME=mooi-session-<id>`, so a
-repository's own stack never recreates a host stack sharing its project name; agents are told to leave
-every other Docker resource alone.
+Agent commands of plain sessions run Compose as `COMPOSE_PROJECT_NAME=mooi-session-<installation>-<id>`,
+so a repository's own stack never recreates a host stack sharing its project name; agents are told to leave
+every other Docker resource alone and let the engine pick host ports. Deleting a session removes its
+Deploy preview and its own Compose project (containers, volumes, networks and built images); at boot,
+`mic-sessions` sweeps both kinds of leftovers of its own installation, never another one's.
 
 ### Previewing Mooi itself
 
 The root `compose.yml` is the preview stack of this repository (Postgres, `mic-mooi`, `mic-sessions`,
 `spa-mooi` under `MOOI_PREVIEW_BASE_PATH`), disjoint from production: own database, volumes, secrets,
 same-origin API routes and `mooi-preview` browser storage. No dictation and no nested deployments.
+`make dev-*` reuses the same file but starts only `postgres`, published on a loopback port
+the engine assigns and exported to the artifacts as `POSTGRES_PORT`, so sessions never collide; the
+artifacts run natively.
 
 | Development variable | Use |
 | --- | --- |
@@ -374,7 +378,7 @@ directory), served behind the host's Traefik (external `proxy` network, `cloudfl
 | --- | --- |
 | `https://<DOMAIN>` | `spa-mooi` nginx: SPA, `/api/mooi` → `mic-mooi`, `/api/sessions` → `mic-sessions`, `/api/stt` → `mic-speech`, `/preview` → `mic-sessions` preview proxy |
 
-- Project, containers and networks are `mooi-prod*`, disjoint from the dev stack (`deploy/development/compose.yml`, project `mooi`) and from session previews (root `compose.yml`).
+- Project, containers and networks are `mooi-prod*`, disjoint from the root `compose.yml` (session previews and `make dev-*` data layer).
 - `mic-speech` stays loopback-only: it shares the `spa-mooi` network namespace, nginx is its only client.
 - `mic-sessions` mounts the host Docker socket (`DOCKER_GID`), runs with `PREVIEW_UPSTREAM=network` on the
   external `mooi-previews` network and ships Git, Docker CLI + Compose/Buildx, Node, Bun, Python + uv,
@@ -417,7 +421,7 @@ docker compose -p mooi-prod ps
 ## Dev entrypoint
 
 The whole application in dev is driven only through the root `Makefile`. It starts, stops, inspects
-and cleans every artifact and every artifact dependency (Postgres, pgAdmin), in the right order,
+and cleans every artifact and every artifact dependency (Postgres), in the right order,
 with health checks, logs and a status table. Never run a package manager, a build tool, docker or
 docker compose directly for these operations — use the targets below.
 
@@ -454,7 +458,8 @@ Current artifacts: `spa-mooi`, `mic-mooi`, `mic-sessions` (e.g. `make dev-start-
 
 `make` pins every dev service to a fixed, uncommon port, hardcoded in `make/ports.mk` and
 exported so Vite, the microservice and docker compose all use it regardless of their `.env`
-values. The `.env` files carry the same numbers as a fallback for non-`make` usage.
+values. The `.env` files carry the same numbers as a fallback for non-`make` usage. Compose
+services get an engine-assigned loopback port, exported to the artifacts as `<SERVICE>_PORT`.
 
 | Service | Port | URL |
 | --- | --- | --- |
@@ -462,8 +467,7 @@ values. The `.env` files carry the same numbers as a fallback for non-`make` usa
 | `mic-mooi` | `39615` | `http://localhost:39615` |
 | `mic-sessions` | `44913` | `http://localhost:44913` |
 | `mic-speech` | `59100` | `http://127.0.0.1:59100` |
-| `postgres` | `54983` | `localhost:54983` |
-| `pgadmin` | `51247` | `http://localhost:51247` |
+| `postgres` | engine-assigned | `make dev-status` |
 
 Change a port in `make/ports.mk`; the cross-artifact wiring (`VITE_API_BASE_URL`, `CORS_ORIGIN`,
 `GITHUB_REDIRECT_URI`) follows automatically.
@@ -507,9 +511,6 @@ Both are dev-only, git ignored, and fully removed by `make dev-clean`.
 | `POSTGRES_SCHEMA` | Database schema |
 | `POSTGRES_HOST` | Host reaching the engine |
 | `POSTGRES_PORT` | Engine port on the host |
-| `PGADMIN_EMAIL` | Console login email |
-| `PGADMIN_PASSWORD` | Console login password |
-| `PGADMIN_PORT` | Console port on the host |
 
 ### Dev entrypoint (root `.env`)
 
@@ -520,10 +521,6 @@ Both are dev-only, git ignored, and fully removed by `make dev-clean`.
 | `DEV_SERVICE_TIMEOUT` | Seconds waiting for a compose service |
 | `DEV_POLL_INTERVAL` | Seconds between polls |
 | `DEV_LOG_LINES` | Lines shown by `dev-logs` |
-
-Open the pgAdmin console at `http://localhost:${PGADMIN_PORT}` and log in with `PGADMIN_EMAIL` /
-`PGADMIN_PASSWORD`. Register the server once with host `postgres`, port `5432`, and the
-`POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` values.
 
 ### spa-mooi (`spa-mooi/.env`)
 

@@ -1,13 +1,20 @@
 # Single responsibility: infrastructure dependencies (docker compose).
-# Only the dev data layer is driven here: the root compose.yml belongs to Mooi
-# session previews and deploy/production/ to production. When the file is
+# Drives the root compose.yml (shared with Mooi's Deploy button), never
+# deploy/production/. Only the services artifacts declare in ARTIFACT_SERVICES
+# are touched; the app services stay for the Deploy preview. When the file is
 # missing the whole layer is skipped silently and the global commands keep
 # working with artifacts only.
 
-COMPOSE_FILES := $(wildcard deploy/development/compose.yml)
+COMPOSE_FILES := $(wildcard compose.yml)
 COMPOSE_ARGS := $(foreach file,$(COMPOSE_FILES),-f $(file))
 COMPOSE_ENV_ARG := $(if $(wildcard $(ENV_FILE)),--env-file $(ENV_FILE))
-COMPOSE := docker compose $(COMPOSE_ENV_ARG) $(COMPOSE_ARGS)
+
+# Compose interpolates the whole file, so the preview-only required variables
+# (`${NAME:?...}`) get an inert placeholder when unset. Scoped to the compose
+# command: artifacts never see them.
+COMPOSE_REQUIRED_VARS := $(sort $(if $(COMPOSE_FILES),$(shell grep -oh '\$${[A-Za-z0-9_]*:?' $(COMPOSE_FILES) | sed -e 's/^\$${//' -e 's/:?$$//')))
+COMPOSE_PLACEHOLDERS := $(foreach v,$(COMPOSE_REQUIRED_VARS),$(if $($(v)),,$(v)=unused-by-make-dev))
+COMPOSE := $(if $(COMPOSE_PLACEHOLDERS),env $(COMPOSE_PLACEHOLDERS) )docker compose $(COMPOSE_ENV_ARG) $(COMPOSE_ARGS)
 
 export COMPOSE_FILES_COUNT := $(words $(COMPOSE_FILES))
 export COMPOSE_CMD := $(COMPOSE)
@@ -15,13 +22,6 @@ export COMPOSE_CMD := $(COMPOSE)
 define COMPOSE_LIB
 compose_enabled() {
   [ "$${COMPOSE_FILES_COUNT:-0}" -gt 0 ]
-}
-
-# compose_services: every service declared across all detected compose
-# files, sorted, one per line. Does not require the docker daemon.
-compose_services() {
-  compose_enabled || return 0
-  $$COMPOSE_CMD config --services 2>/dev/null | sort -u
 }
 
 compose_cid() {
@@ -81,6 +81,28 @@ compose_health() {
   docker inspect -f "{{.State.Health.Status}}" "$$__ch2_cid" 2>/dev/null
 }
 
+# compose_reach_host <port>: address reaching a published port from here:
+# loopback on a workstation, the default gateway when make runs inside a
+# container (a Mooi session). Fails when none answers yet.
+compose_reach_host() {
+  __crh_gateway=""
+  if [ -r /proc/net/route ]; then
+    __crh_hex="$$(while read -r __crh_if __crh_dst __crh_gw __crh_rest; do
+      if [ "$$__crh_dst" = "00000000" ]; then printf '%s' "$$__crh_gw"; break; fi
+    done < /proc/net/route)"
+    if [ "$${#__crh_hex}" -eq 8 ]; then
+      __crh_gateway="$$(printf '%d.%d.%d.%d' "0x$${__crh_hex:6:2}" "0x$${__crh_hex:4:2}" "0x$${__crh_hex:2:2}" "0x$${__crh_hex:0:2}")"
+    fi
+  fi
+  for __crh_host in 127.0.0.1 $$__crh_gateway; do
+    if timeout 2 bash -c "exec 3<>/dev/tcp/$$__crh_host/$$1" 2>/dev/null; then
+      printf '%s' "$$__crh_host"
+      return 0
+    fi
+  done
+  return 1
+}
+
 # compose_up <services...>: starts only the given services, waiting until
 # each is really ready (healthcheck wait, or a port poll as fallback).
 compose_up() {
@@ -104,8 +126,7 @@ compose_up() {
         __cu_waited=0
         __cu_ready=0
         while [ "$$__cu_waited" -lt "$$DEV_SERVICE_TIMEOUT" ]; do
-          if (exec 3<>"/dev/tcp/127.0.0.1/$$__cu_port") 2>/dev/null; then
-            exec 3>&- 3<&-
+          if compose_reach_host "$$__cu_port" >/dev/null; then
             __cu_ready=1
             break
           fi
@@ -119,6 +140,14 @@ compose_up() {
           exit 1
         fi
       fi
+    fi
+    # Host ports are engine-assigned (never fixed, sessions run side by side):
+    # hand each one to the artifacts started next as <SERVICE>_HOST/_PORT.
+    __cu_host_port="$$(compose_port "$$__cu_svc")"
+    if [ "$$__cu_host_port" != "-" ]; then
+      __cu_prefix="$$(printf '%s' "$$__cu_svc" | tr 'a-z-' 'A-Z_')"
+      export "$${__cu_prefix}_HOST=$$(compose_reach_host "$$__cu_host_port" || printf '127.0.0.1')"
+      export "$${__cu_prefix}_PORT=$$__cu_host_port"
     fi
   done
   ui_done "dependencies" "started $$*" "$$__cu_start"

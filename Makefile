@@ -108,7 +108,7 @@ YES ?= 0
 
 dev-status: ## Show the state of the whole application
 	@$(SHELL_LIB)
-	__svcs="$$(compose_services)"
+	__svcs="$(call artifact-services,$(ARTIFACTS))"
 	__w=8
 	for __n in $$__svcs $(ARTIFACTS); do
 	  if [ $${#__n} -gt $$__w ]; then __w=$${#__n}; fi
