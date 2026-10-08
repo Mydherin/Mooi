@@ -17,7 +17,6 @@ import {
   deleteProductionConfiguration, deleteProductionDeployment, fetchProductionFileDiff, productionPath, saveProductionDraft,
   startProductionDeployment, updateProductionEnvironment,
 } from '@/features/production/api/productionApi';
-import { ProductionComposeMigrationNotice } from '@/features/production/components/ProductionComposeMigrationNotice';
 import { ProductionConsolePanel } from '@/features/production/components/ProductionConsolePanel';
 import { ProductionDeploymentDetailDialog } from '@/features/production/components/ProductionDeploymentDetailDialog';
 import { ProductionOverviewPanel } from '@/features/production/components/ProductionOverviewPanel';
@@ -163,9 +162,6 @@ export const ProjectDeploymentPage = () => {
         tabs={tabs} tab={tab} onTabChange={openTab} onDeploy={requestDeploy} onReconfigure={() => openAgent('update')}
         onEnvironment={() => setEnvironmentOpen(true)} onCheckStatus={health.check} onDelete={() => setDeleteOpen(true)} />
 
-      {overview?.needsComposeMigration ? <ProductionComposeMigrationNotice disabled={stage === 'deploying' || starting}
-        onMigrate={() => openAgent('migrate')} /> : null}
-
       <div className="relative min-h-0 flex-1 bg-canvas">
         {tab === 'overview' ? <ProductionOverviewPanel project={project} overview={overview} error={overviewError ?? actionError}
           onRetry={reload} stage={stage} hasChat={Boolean(chat)} missingVariables={missing} releaseTag={latest?.releaseTag ?? null}
@@ -197,7 +193,7 @@ export const ProjectDeploymentPage = () => {
       </div>
 
       {agentIntent ? <PlatformAgentDialog key={agentIntent} copy={PRODUCTION_AGENT_COPY[agentIntent]} projectName={project.name}
-        connections={connections} busy={starting} error={chatError} optionalPrompt={agentIntent === 'fix' || agentIntent === 'migrate'}
+        connections={connections} busy={starting} error={chatError} optionalPrompt={agentIntent === 'fix'}
         suggestions={agentIntent === 'setup' ? PRODUCTION_AGENT_SUGGESTIONS : []}
         replaceNotice={chat ? 'This starts a new deployment chat and closes the current one. The saved configuration is kept.' : null}
         buildMessage={(prompt) => productionAgentMessage(agentIntent, prompt, failedRelease)}

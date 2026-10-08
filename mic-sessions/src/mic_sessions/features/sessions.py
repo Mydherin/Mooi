@@ -317,8 +317,6 @@ class ProductionOverview(BaseModel):
     chatSessionId: UUID | None
     # The live chat's configuration succeeded in a real deployment since its last draft: it may be closed.
     chatTested: bool = False
-    # Temporary compatibility hint, derived from existing documents; no persisted migration state.
-    needsComposeMigration: bool = False
 
 
 class ProductionEnvironmentUpdate(BaseModel):
@@ -2041,21 +2039,6 @@ def _production_process_environment(environment: dict[str, str], snapshot: Produ
     return process_environment
 
 
-def _production_needs_compose_migration(files: ProductionStoredFiles | None) -> bool:
-    """Legacy scripts generate Compose instead of reading the versioned release file.
-
-    Keep this compatibility heuristic separate from deployment execution: existing releases
-    remain deployable, and removing the migration UI later needs no database migration.
-    """
-    if files is None:
-        return False
-    script = files.script
-    compose = re.search(r"(?:docker[ -]compose|compose[\w.-]*\.ya?ml)", script, re.IGNORECASE)
-    embedded = re.search(r"^\s*services\s*:", script, re.MULTILINE)
-    generated = re.search(r"(?:>|\btee\s+)[^\n]*compose[\w.-]*\.ya?ml", script, re.IGNORECASE)
-    return bool(compose and (embedded or generated))
-
-
 def _production_prompt(session: Session, request: str) -> str:
     """The production chat's brief around the user's request, sent visibly as the conversation's first
     message (and again after it is cleared or compacted)."""
@@ -2078,15 +2061,12 @@ When production uses Docker Compose, its definition MUST be a tracked `docker-co
 Read an existing root Compose first. Preserve the session preview and application behaviour; if it differs from production, use a separate root `docker-compose.yml` for production and explicit `-f` paths in deployment commands. deploy.sh must consume the Compose from the selected release checkout (and transfer that same file when deploying remotely), with environment values supplied securely to the target process. Never depend on the chat workspace or a newer branch version. status.sh must still work from an empty directory, checking the live deployment without embedding Compose.
 Every configurable Compose value must use environment interpolation. Every sensitive value must come from `MOOI_PRODUCTION_` or inherited `MOOI_DEVELOPMENT_` variables, without literal secrets or secret defaults in tracked files. Persist production values through the existing environment endpoint, never in the repository. Explicitly reference each required Compose variable in deploy.sh (for example `${{MOOI_PRODUCTION_NAME:?required}}`) so the platform detects missing values before deploying, including variables forwarded over SSH.
 
-## Legacy Compose transition
-Read active and draft documents before editing. Older deployments may generate Compose inline in deploy.sh. When setting up, updating, fixing or migrating such a deployment, extract its definition to the root `docker-compose.yml`, replace literal configuration with environment references, and preserve services, volumes, networks, deployment identity and persistent data. Reuse stored values; save existing inline sensitive values through the environment endpoint before removing them, without printing them. Adjust deploy.sh to consume the committed file and update DEPLOYMENT.md. Keep status.sh and the remaining Platform files. Preserve the active configuration until the new draft succeeds in a real deployment; never remove production resources or data as part of migration. Explain and resolve repository conflicts before publishing.
-
 ## Environment
 Scripts read configuration only from variables named `MOOI_PRODUCTION_<NAME>` and the project's development variables `MOOI_DEVELOPMENT_<NAME>`, which they inherit from the project's sessions: reuse a development value (an API key, a service URL...) when production needs exactly the same one, and give production its own `MOOI_PRODUCTION_` variable when it must differ. The platform provides `MOOI_PRODUCTION_RELEASE_TAG`, `MOOI_PRODUCTION_RELEASE_SHA` and `MOOI_PRODUCTION_RELEASE_URL`. Every other `MOOI_PRODUCTION_` or `MOOI_DEVELOPMENT_` variable the scripts mention without a shell default (`${{NAME:-default}}`) is required. Ask the user for each missing value (hosts, users, keys, tokens, domains...) and never invent credentials. Save the `MOOI_PRODUCTION_` values the user gives you with the environment endpoint; the user can also set them in the Environment section of the deployment overview. Development values belong to the project's sessions: ask the user to set a missing one from any session. Read the stored values with the environment endpoint whenever you need them, and tell the user a value only when they ask for it.
 
 ## Repository changes
 A production Compose definition always belongs in the repository. Other deployment files (for example a Dockerfile or a CI workflow) belong there when needed. Create or edit them in the working directory: the user sees them in the Changes tab. Never change application behaviour for it.
-Before committing, ask the user whether to commit and push them to `{branch}`, listing every changed file (use your question tool when available, otherwise ask and wait for the reply). Only after an explicit yes, publish them with the commit endpoint; never run `git commit` or `git push` yourself. If the user declines, revert those files and leave the migration pending; never fall back to embedding Compose in Platform files.
+Before committing, ask the user whether to commit and push them to `{branch}`, listing every changed file (use your question tool when available, otherwise ask and wait for the reply). Only after an explicit yes, publish them with the commit endpoint; never run `git commit` or `git push` yourself. If the user declines, revert those files; never fall back to embedding Compose in Platform files.
 
 ## Platform API
 Use Python urllib with an inline JSON body, never a temporary file, and send the header `X-Production-Edit-Token: {session.agent_token}`:
@@ -2201,7 +2181,6 @@ async def production_overview(project_id: UUID, caller: Annotated[Caller, Depend
                      for name in sorted(required | stored)],
         snapshot=run.snapshot, chatSessionId=chat.id if chat else None,
         chatTested=bool(chat and chat.platform_tested),
-        needsComposeMigration=_production_needs_compose_migration(documents.active or documents.draft),
     )
 
 
