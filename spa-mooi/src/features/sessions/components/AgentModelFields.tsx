@@ -16,7 +16,7 @@ export const AgentModelFields = ({ choice, onLeave }: AgentModelFieldsProps) => 
 
   if (connections.length === 0) {
     return (
-      <div className="rounded-[10px] border border-warning/30 bg-warning-soft px-4 py-3.5 text-sm leading-relaxed text-ink">
+      <div className="rounded-control border border-warning/30 bg-warning-soft px-4 py-3.5 text-sm leading-relaxed text-ink">
         <p>
           <span className="font-medium">Add an agent account first.</span>{' '}
           <span className="text-ink-muted">A session needs one to run.</span>

@@ -152,7 +152,7 @@ export const ChatComposer = ({
   };
 
   return (
-    <div className="mx-auto w-full max-w-[60rem] shrink-0 bg-surface px-2.5 pt-2 pb-[max(0.625rem,var(--safe-bottom))] sm:px-8 sm:pt-3 sm:pb-6">
+    <div className="mx-auto w-full max-w-[60rem] shrink-0 px-2.5 pt-2 pb-[max(0.625rem,var(--safe-bottom))] sm:px-8 sm:pt-3 sm:pb-6">
       <div
         onDragEnter={onDragOver}
         onDragOver={onDragOver}
@@ -165,7 +165,7 @@ export const ChatComposer = ({
           setDragging(false);
           attach(imageFilesFrom(event.dataTransfer));
         }}
-        className={cn('relative rounded-2xl border bg-surface-2 transition focus-within:border-ink',
+        className={cn('relative rounded-[20px] border bg-surface shadow-raised transition-[border-color,box-shadow] duration-200 focus-within:border-brand/50 focus-within:ring-4 focus-within:ring-brand/10',
           dragging ? 'border-brand' : 'border-line')}
       >
         {dragging ? (
@@ -252,7 +252,7 @@ export const ChatComposer = ({
           </div>
 
           <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-1.5">
-            {!activeTurn && !blocked ? <span className="mr-1 hidden text-xs text-ink-subtle lg:flex">Enter to send · Shift+Enter for a new line</span> : null}
+            {!activeTurn && !blocked ? <span className="mr-1 hidden items-center gap-1 text-[11px] text-ink-subtle lg:flex"><kbd className="rounded border border-line bg-surface-2 px-1 font-mono text-[10px]">Enter</kbd> to send · <kbd className="rounded border border-line bg-surface-2 px-1 font-mono text-[10px]">Shift</kbd>+<kbd className="rounded border border-line bg-surface-2 px-1 font-mono text-[10px]">Enter</kbd> new line</span> : null}
 
             {acceptsImages && !blocked ? (
               <AttachImageButton onPick={attach} disabled={!canAttach} reason={imagesReason} className="max-sm:size-10" />

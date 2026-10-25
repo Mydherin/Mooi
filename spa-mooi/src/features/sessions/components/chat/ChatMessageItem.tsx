@@ -28,7 +28,7 @@ interface ChatMessageItemProps {
 export const ChatMessageItem = memo(function ChatMessageItem({ sessionId, entry, providerLabel, capabilities, working }: ChatMessageItemProps) {
   if (entry.kind === 'error') {
     return (
-      <li className="flex items-start gap-2.5 rounded-xl border border-danger/40 bg-danger-soft px-3.5 py-2.5 text-sm leading-relaxed text-danger">
+      <li className="flex animate-fade-up items-start gap-2.5 rounded-xl border border-danger/30 bg-danger-soft px-3.5 py-2.5 text-sm leading-relaxed text-danger">
         <CircleAlert className="mt-0.5 size-4 shrink-0" />
         <span className="min-w-0 flex-1 break-words">{entry.text}</span>
       </li>
@@ -41,26 +41,26 @@ export const ChatMessageItem = memo(function ChatMessageItem({ sessionId, entry,
 
   if (entry.kind === 'user') {
     return (
-      <li className="flex flex-col items-end gap-1.5">
+      <li className="flex animate-fade-up flex-col items-end gap-1.5">
         {entry.images.length > 0 ? <MessageImageGrid sessionId={sessionId} images={entry.images} /> : null}
         {entry.text ? (
-          <p className="max-w-[95%] sm:max-w-[85%] break-words rounded-2xl rounded-br-md bg-surface-2 px-5 py-3.5 text-[15px] leading-relaxed whitespace-pre-wrap text-ink">
+          <p className="max-w-[95%] break-words rounded-[18px] rounded-br-[6px] border border-brand/15 bg-brand-soft px-4 py-3 text-[15px] leading-relaxed whitespace-pre-wrap text-ink sm:max-w-[85%] sm:px-5 sm:py-3.5">
             {entry.text}
           </p>
         ) : null}
-        <span className="text-xs text-ink-subtle">{formatTime(entry.at)}</span>
+        <span className="font-mono text-[10.5px] text-ink-subtle">{formatTime(entry.at)}</span>
       </li>
     );
   }
 
   return (
-    <li className="flex gap-2 sm:gap-4">
-      <LogoMark className="hidden size-8 shrink-0 sm:block rounded-lg" />
+    <li className="flex animate-fade-up gap-2 sm:gap-4">
+      <LogoMark className="hidden size-7 shrink-0 drop-shadow-[0_2px_6px_rgb(39_110_241/0.25)] sm:block" />
 
       <div className="min-w-0 flex-1">
         <p className="flex items-center gap-2">
-          <span className="text-[13px] font-extrabold text-ink">{providerLabel}</span>
-          <span className="text-xs text-ink-subtle">{formatTime(entry.at)}</span>
+          <span className="text-[13px] font-semibold text-ink">{providerLabel}</span>
+          <span className="font-mono text-[10.5px] text-ink-subtle">{formatTime(entry.at)}</span>
         </p>
 
         <div className="mt-1.5 flex flex-col gap-2">

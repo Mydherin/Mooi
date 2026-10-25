@@ -21,7 +21,7 @@ export const AgentConnectionsCard = () => {
   return <Card className="p-5 sm:p-6">
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div>
-        <h2 className="text-sm font-extrabold tracking-[-0.02em] text-ink">Agent accounts</h2>
+        <h2 className="text-sm font-semibold tracking-[-0.015em] text-ink">Agent accounts</h2>
         <p className="mt-1 text-xs text-ink-subtle">Set the account preselected for new agent sessions.</p>
       </div>
       <Button variant="secondary" size="sm" disabled={busy || providers.length === 0}
@@ -92,7 +92,7 @@ export const AgentConnectionsCard = () => {
       </>}>
       <label className="flex flex-col gap-2 text-xs font-semibold text-ink-muted">Account title
         <input value={name} onChange={(event) => setName(event.target.value)} maxLength={100} required autoFocus
-          className="h-12 rounded-[10px] border border-line bg-surface-2 px-3 text-sm text-ink outline-none focus:border-brand" />
+          className="h-12 rounded-control border border-line bg-surface-2 px-3 text-sm text-ink outline-none focus:border-brand" />
       </label>
       {editing && actionError && <p role="alert" className="mt-3 text-sm text-danger">{actionError}</p>}
     </Modal>

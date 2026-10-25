@@ -34,7 +34,7 @@ export const ChangedFileRow = ({ file, selected, onSelect }: ChangedFileRowProps
         onClick={() => onSelect(file.path)}
         aria-pressed={selected}
         className={cn(
-          'flex w-full items-center gap-2.5 rounded-[8px] px-2.5 py-2 text-left transition focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand',
+          'flex w-full items-center gap-2.5 rounded-chip px-2.5 py-2 text-left transition focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand',
           selected ? 'bg-surface-3 text-ink' : 'hover:bg-surface-2',
         )}
       >

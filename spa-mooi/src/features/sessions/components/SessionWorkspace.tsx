@@ -76,10 +76,10 @@ export const SessionWorkspace = ({ sessionId, deployEnabled, children }: Session
   const keepPreview = visiblePane === 'preview' || (running && visitedOperation === operationId);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-surface">
-      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-line px-3 composing:max-lg:hidden sm:px-5">
+    <div className="flex min-h-0 flex-1 flex-col bg-canvas">
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-line bg-surface px-2 composing:max-lg:hidden sm:px-4">
         <Tabs items={items} value={visiblePane} onChange={selectPane} ariaLabel="Session view" />
-        {visiblePane === 'conversation' ? <span className="hidden text-[11px] text-ink-subtle sm:block">Live</span> : null}
+        {visiblePane === 'conversation' ? <span className="hidden items-center gap-1.5 rounded-full border border-line px-2 py-0.5 font-mono text-[10px] tracking-[0.08em] text-ink-subtle uppercase sm:flex"><span aria-hidden className="size-1.5 rounded-full bg-success-dot shadow-[0_0_6px_var(--success-dot)]" />Live</span> : null}
       </div>
       <div className="grid min-h-0 flex-1 grid-cols-1 grid-rows-1">
         <section role="tabpanel" aria-label="Conversation" hidden={visiblePane !== 'conversation'}

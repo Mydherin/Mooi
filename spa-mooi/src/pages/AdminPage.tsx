@@ -34,14 +34,15 @@ export const AdminPage = () => {
 
   return (
     <div className="mx-auto w-full max-w-6xl px-5 pt-7 pb-[calc(1.75rem+var(--safe-bottom))] sm:px-8 lg:px-10 lg:pt-10 lg:pb-10">
-      <h1 className="text-[32px] font-extrabold tracking-[-0.045em] text-ink sm:text-[38px]">Admin</h1>
+      <p className="mb-2 font-mono text-[10.5px] font-medium tracking-[0.12em] text-ink-subtle uppercase">Platform</p>
+      <h1 className="text-[30px] leading-[1.1] font-semibold tracking-[-0.04em] text-ink sm:text-[34px]">Admin</h1>
       <p className="mt-1.5 text-sm text-ink-muted">
         Manage and check access to your workspace.
       </p>
 
       <Card className="mt-6 p-5 sm:p-6">
         <div className="flex items-center gap-3">
-          <span className="flex size-11 shrink-0 items-center justify-center rounded-[10px] bg-surface-2 text-ink-muted">
+          <span className="flex size-11 shrink-0 items-center justify-center rounded-control bg-surface-2 text-ink-muted">
             <ShieldCheck className="size-5" />
           </span>
           <p className="font-mono text-xs text-ink-subtle">Workspace access</p>
@@ -49,7 +50,7 @@ export const AdminPage = () => {
 
         <p
           data-state={state}
-          className="mt-3 inline-flex items-center gap-2 rounded-[10px] border px-3 py-2 text-sm font-bold data-[state=error]:border-danger/30 data-[state=error]:bg-danger-soft data-[state=error]:text-danger data-[state=loading]:border-line data-[state=loading]:bg-surface-2 data-[state=loading]:text-ink-subtle data-[state=ok]:border-success/30 data-[state=ok]:bg-success-soft data-[state=ok]:text-success"
+          className="mt-3 inline-flex items-center gap-2 rounded-control border px-3 py-2 text-sm font-bold data-[state=error]:border-danger/30 data-[state=error]:bg-danger-soft data-[state=error]:text-danger data-[state=loading]:border-line data-[state=loading]:bg-surface-2 data-[state=loading]:text-ink-subtle data-[state=ok]:border-success/30 data-[state=ok]:bg-success-soft data-[state=ok]:text-success"
         >
           {state === 'loading' && (
             <>
