@@ -357,6 +357,8 @@ directory), served behind the host's Traefik (external `proxy` network, `cloudfl
 | `https://<DOMAIN>` | `spa-mooi` nginx: SPA, `/api/mooi` → `mic-mooi`, `/api/sessions` → `mic-sessions`, `/api/stt` → `mic-speech`, `/preview` → `mic-sessions` preview proxy |
 
 - Project, containers and networks are `mooi-prod*`, disjoint from the root `compose.yml` (development session previews).
+  Container and internal network names follow the Compose project; `MOOI_TRAEFIK_ENABLE` (default `true`),
+  `MOOI_PROXY_NETWORK` (`proxy`) and `MOOI_PREVIEWS_NETWORK` (`mooi-previews`) let a disjoint verification stack run the same file.
 - `mic-speech` stays loopback-only: it shares the `spa-mooi` network namespace, nginx is its only client.
 - `mic-sessions` mounts the host Docker socket (`DOCKER_GID`), runs with `PREVIEW_UPSTREAM=network` on the
   external `mooi-previews` network and ships Git, Docker CLI + Compose/Buildx, Node, Bun, Python + uv,
