@@ -27,7 +27,7 @@ export const SessionListItem = ({ session, backLink }: SessionListItemProps) => 
       </span>
 
       <div className="min-w-0 flex-1">
-        <p className="flex min-w-0 items-center gap-1.5 text-sm font-extrabold text-ink">
+        <p className="flex min-w-0 items-center gap-1.5 text-sm font-semibold text-ink">
           <GitBranch className="size-3.5 shrink-0 text-ink-subtle" />
           <span className="truncate font-mono">{session.branch}</span>
         </p>

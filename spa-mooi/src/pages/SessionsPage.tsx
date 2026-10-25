@@ -68,7 +68,7 @@ export const SessionsPage = () => {
         refreshing={loading} onRefresh={reload} onNewSession={() => setNewSessionOpen(true)} />
 
       {error ? (
-        <div className="flex flex-col gap-3 rounded-[14px] border border-danger/30 bg-danger-soft px-4 py-3.5 sm:flex-row sm:items-center">
+        <div className="flex flex-col gap-3 rounded-card border border-danger/30 bg-danger-soft px-4 py-3.5 sm:flex-row sm:items-center">
           <p className="min-w-0 flex-1 text-sm text-danger">{error}</p>
           <span className="shrink-0">
             <Button variant="secondary" size="sm" onClick={reload}>

@@ -27,19 +27,20 @@ export const AppSidebar = ({ className, onNavigate }: AppSidebarProps) => {
   const sidebarProjects = projects.slice(0, SIDEBAR_PROJECTS);
 
   return (
-    <aside className={cn('flex flex-col bg-canvas', className)}>
-      <div className="flex h-16 shrink-0 items-center justify-between gap-2 pr-2 pl-4">
+    <aside className={cn('flex flex-col', className)}>
+      <div className="flex h-16 shrink-0 items-center justify-between gap-2 pr-2 pl-5">
         <Link
           to={ROUTES.projects}
           onClick={onNavigate}
-          className="rounded-[10px] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand"
+          className="rounded-control transition-opacity hover:opacity-85 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand"
         >
           <Logo />
         </Link>
         {onNavigate ? <IconButton icon={X} label="Close navigation" onClick={onNavigate} /> : null}
       </div>
 
-      <nav className="flex flex-col gap-0.5 px-3 pt-2">
+      <nav aria-label="Main" className="flex flex-col gap-0.5 px-3 pt-2">
+        <Eyebrow className="px-2.5 pb-2">Workspace</Eyebrow>
         {links.map((link) => (
           <AppNavItem key={link.id} link={link} onNavigate={onNavigate} />
         ))}
@@ -48,15 +49,15 @@ export const AppSidebar = ({ className, onNavigate }: AppSidebarProps) => {
       {/* Only rendered once there is a workspace: an empty heading would promise a list that the
           player has not created yet. */}
       {sidebarProjects.length > 0 ? (
-        <div className="min-h-0 flex-1 overflow-y-auto px-3 pt-8 pb-3">
-          <Eyebrow className="px-3">Recent</Eyebrow>
+        <div className="min-h-0 flex-1 overflow-y-auto px-3 pt-7 pb-3">
+          <Eyebrow className="px-2.5">Recent projects</Eyebrow>
           <div className="mt-2 flex flex-col gap-0.5">
             {sidebarProjects.map((project) => (
               <Link
                 key={project.id}
                 to={projectPath(project.id)}
                 onClick={onNavigate}
-                className="flex min-h-11 items-center gap-2.5 rounded-[10px] px-3 text-[13px] font-bold text-ink-muted transition hover:bg-surface-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+                className="group/project flex h-9 items-center gap-2.5 rounded-control px-2.5 text-[13px] font-medium text-ink-muted transition-colors duration-150 hover:bg-surface/60 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand max-lg:h-11"
               >
                 <Initials value={project.name} size="sm" />
                 <span className="truncate">{project.name}</span>

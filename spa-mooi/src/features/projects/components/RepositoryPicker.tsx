@@ -73,7 +73,7 @@ export const RepositoryPicker = ({
       {/* Zero installations is the difference between "you own nothing else" and "Mooi was never
           let in" — without saying so, a list missing every private repository looks like a bug. */}
       {!loading && !failure && publicOnly ? (
-        <div className="mb-4 flex flex-col gap-3 rounded-[10px] border border-warning/25 bg-warning-soft px-4 py-3 sm:flex-row sm:items-center">
+        <div className="mb-4 flex flex-col gap-3 rounded-control border border-warning/25 bg-warning-soft px-4 py-3 sm:flex-row sm:items-center">
           <p className="min-w-0 flex-1 text-sm leading-relaxed text-ink">
             <span className="font-medium">Only public repositories are listed.</span>
             <span className="text-ink-muted">

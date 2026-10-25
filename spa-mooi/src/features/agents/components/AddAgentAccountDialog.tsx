@@ -52,7 +52,7 @@ export const AddAgentAccountDialog = ({ providers, busy, actionError, onClose, o
         <span className="text-xs font-semibold text-ink-muted">Account title <span className="text-danger">*</span></span>
         <input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={100}
           disabled={pairing} required autoFocus placeholder="e.g. Claude Ana or Codex Joserra"
-          className="h-12 rounded-[10px] border border-line bg-surface-2 px-3 text-sm text-ink outline-none transition focus:border-brand disabled:opacity-60" />
+          className="h-12 rounded-control border border-line bg-surface-2 px-3 text-sm text-ink outline-none transition focus:border-brand disabled:opacity-60" />
       </label>
       <div>
         <span className="text-xs font-semibold text-ink-muted">Provider <span className="text-danger">*</span></span>
@@ -67,7 +67,7 @@ export const AddAgentAccountDialog = ({ providers, busy, actionError, onClose, o
       </div>
       {provider && !isCodex && !provider.oauthEnabled && <label className="flex flex-col gap-2">
         <span className="text-xs font-semibold text-ink-muted">{provider.label} setup token</span>
-        <span className="flex h-12 items-center gap-2 rounded-[10px] border border-line bg-surface-2 px-3 focus-within:border-brand">
+        <span className="flex h-12 items-center gap-2 rounded-control border border-line bg-surface-2 px-3 focus-within:border-brand">
           <KeyRound className="size-4 shrink-0 text-ink-subtle" />
           <input type="password" value={token} onChange={(event) => setToken(event.target.value)}
             placeholder="sk-ant-oat01-…" autoComplete="off"
@@ -76,7 +76,7 @@ export const AddAgentAccountDialog = ({ providers, busy, actionError, onClose, o
         <span className="text-xs text-ink-subtle">Create it with <code>claude setup-token</code> on your machine.</span>
       </label>}
       {pairing && isCodex && <CodexPairing name={title.trim()} onConnected={() => { onConnected(); onClose(); }} />}
-      {actionError && <p role="alert" className="rounded-[10px] border border-danger/30 bg-danger-soft px-4 py-2.5 text-sm text-danger">{actionError}</p>}
+      {actionError && <p role="alert" className="rounded-control border border-danger/30 bg-danger-soft px-4 py-2.5 text-sm text-danger">{actionError}</p>}
     </div>
   </Modal>;
 };

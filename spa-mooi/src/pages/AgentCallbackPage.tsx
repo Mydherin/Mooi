@@ -76,7 +76,7 @@ export const AgentCallbackPage = () => {
     return (
       <div className="mx-auto w-full max-w-7xl px-4 py-16 lg:px-6">
         <Card className="mx-auto w-full max-w-md p-8 text-center">
-          <span className="mx-auto flex size-12 items-center justify-center rounded-[14px] bg-danger-soft text-danger">
+          <span className="mx-auto flex size-12 items-center justify-center rounded-card bg-danger-soft text-danger">
             <TriangleAlert className="size-5" />
           </span>
 
