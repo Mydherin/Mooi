@@ -146,6 +146,17 @@ public class Github {
                     "GitHub could not create this repository. Check its name and try again");
         }
 
+        /**
+         * GitHub does not recognise this instance's app credentials, so no authorization could ever
+         * complete. Said before the player is sent away, rather than after GitHub shows them a 404.
+         */
+        public static GithubException notConfigured() {
+            LOG.warn("GitHub rejected the configured client credentials: set a real GitHub App client id and "
+                    + "secret, or link the account another way (MOOI_DEVELOPMENT_GITHUB_TOKEN on local stacks)");
+            return new GithubException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "GitHub linking is not set up on this Mooi instance yet");
+        }
+
         /** GitHub is unreachable, slow or broken. Distinct from a refusal: retrying may work. */
         public static GithubException unavailable(String detail) {
             LOG.warn("GitHub is unavailable: {}", detail);
@@ -385,6 +396,9 @@ public class Github {
         private static final String FORM = "application/x-www-form-urlencoded";
         private static final String API_VERSION_HEADER = "X-GitHub-Api-Version";
         private static final String API_VERSION = "2022-11-28";
+        private static final String TOKEN_ENDPOINT = "the GitHub token endpoint";
+        private static final String CREDENTIALS_PROBE_CODE = "mooi-credentials-probe";
+        private static final String INCORRECT_CLIENT_CREDENTIALS = "incorrect_client_credentials";
         private static final int MAX_LOGIN_LENGTH = 128;
         private static final int MAX_NAME_LENGTH = 255;
         private static final int MAX_URL_LENGTH = 512;
@@ -400,6 +414,7 @@ public class Github {
         private final Clock clock;
         private final HttpClient httpClient;
         private final ObjectMapper objectMapper = JsonMapper.shared();
+        private volatile boolean credentialsAccepted;
 
         OAuthClient(Settings settings, Clock clock) {
             this.settings = settings;
@@ -443,6 +458,35 @@ public class Github {
             }
             return "https://github.com/apps/" + encode(settings.getAppSlug())
                     + "/installations/new?state=" + encode(state);
+        }
+
+        /**
+         * Proves GitHub knows the configured app before anyone is sent to it.
+         *
+         * <p>A code that can never be valid is redeemed on purpose. GitHub answers an unknown client
+         * id with a 404 and a wrong secret with {@code incorrect_client_credentials}, while a known
+         * app gets {@code bad_verification_code}, so the probe tells them apart without a grant. The
+         * credentials are fixed for the life of the process, so one success is remembered; a failure
+         * is not, so the next click checks again.
+         */
+        public void ensureCredentialsAccepted() {
+            if (credentialsAccepted) {
+                return;
+            }
+            HttpResponse<String> response = exchange(formRequest(Map.of(
+                    "client_id", settings.getClientId(),
+                    "client_secret", settings.getClientSecret(),
+                    "code", CREDENTIALS_PROBE_CODE)), TOKEN_ENDPOINT);
+            if (response.statusCode() == HttpStatus.NOT_FOUND.value()) {
+                throw GithubException.notConfigured();
+            }
+            if (response.statusCode() / 100 != 2) {
+                throw GithubException.unavailable(TOKEN_ENDPOINT + " answered " + response.statusCode());
+            }
+            if (INCORRECT_CLIENT_CREDENTIALS.equals(text(readJson(response.body()), "error", MAX_ERROR_LENGTH))) {
+                throw GithubException.notConfigured();
+            }
+            credentialsAccepted = true;
         }
 
         public Tokens exchangeCode(String code) {
@@ -732,16 +776,19 @@ public class Github {
         }
 
         private String postForm(Map<String, String> form) {
+            return send(formRequest(form), TOKEN_ENDPOINT);
+        }
+
+        private HttpRequest formRequest(Map<String, String> form) {
             String body = form.entrySet().stream()
                     .map(entry -> encode(entry.getKey()) + "=" + encode(entry.getValue()))
                     .collect(Collectors.joining("&"));
-            HttpRequest request = HttpRequest.newBuilder(URI.create(settings.getTokenUri()))
+            return HttpRequest.newBuilder(URI.create(settings.getTokenUri()))
                     .timeout(settings.getRequestTimeout())
                     .header(HttpHeaders.CONTENT_TYPE, FORM)
                     .header(ACCEPT_HEADER, JSON)
                     .POST(HttpRequest.BodyPublishers.ofString(body))
                     .build();
-            return send(request, "the GitHub token endpoint");
         }
 
         /**
@@ -784,12 +831,17 @@ public class Github {
         }
 
         private String send(HttpRequest request, String description) {
+            HttpResponse<String> response = exchange(request, description);
+            if (response.statusCode() / 100 != 2) {
+                throw GithubException.unavailable(description + " answered " + response.statusCode());
+            }
+            return response.body();
+        }
+
+        /** The raw round trip, for the rare caller that reads a status code as an answer rather than a failure. */
+        private HttpResponse<String> exchange(HttpRequest request, String description) {
             try {
-                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-                if (response.statusCode() / 100 != 2) {
-                    throw GithubException.unavailable(description + " answered " + response.statusCode());
-                }
-                return response.body();
+                return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             } catch (IOException exception) {
                 throw GithubException.unavailable(description + " failed: " + exception.getMessage());
             } catch (InterruptedException exception) {
