@@ -459,6 +459,19 @@ def _validate_agent_workspace(workspace_path: Path, expected_branch: str) -> Pat
     return workspace
 
 
+def _claude_model_label(entry: dict[str, Any], model_id: str) -> str:
+    """Versioned name for a Claude Code alias, e.g. "Opus 5.5" for `opus`.
+
+    Aliases stay the stable ids (they follow upgrades), but the CLI only names the family in
+    `displayName`; its `description` leads with the current version ("Opus 5.5 · ..."). Any other
+    shape falls back to the family name, so a CLI wording change never breaks the catalog.
+    """
+    name = entry.get("displayName") or model_id
+    description = entry.get("description")
+    headline = description.split("·", 1)[0].strip() if isinstance(description, str) else ""
+    return headline if headline.lower().startswith(f"{name.lower()} ") and len(headline) <= 40 else name
+
+
 class ClaudeAgentRuntime:
     """Adapter for Claude Code through `claude_agent_sdk`, the only module here that imports it.
 
@@ -507,7 +520,7 @@ class ClaudeAgentRuntime:
             if not isinstance(model_id, str) or not model_id or model_id.lower() == "default":
                 continue
             efforts = entry.get("supportedEffortLevels") or []
-            models.append({"id": model_id, "label": entry.get("displayName") or model_id,
+            models.append({"id": model_id, "label": _claude_model_label(entry, model_id),
                            "contextWindow": entry.get("contextWindow"),
                            "efforts": efforts if isinstance(efforts, list) else [],
                            # Every Claude Code model is multimodal; the CLI does not list modalities.

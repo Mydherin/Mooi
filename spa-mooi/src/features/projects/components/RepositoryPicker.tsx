@@ -64,11 +64,15 @@ export const RepositoryPicker = ({
     );
   }, [query, repositories]);
 
+  // A token that reaches private repositories on its own (classic OAuth or personal access token)
+  // needs no installation: only a public-only list means Mooi was never let in.
+  const publicOnly = installations === 0 && !repositories.some((repository) => repository.isPrivate);
+
   return (
     <>
       {/* Zero installations is the difference between "you own nothing else" and "Mooi was never
           let in" — without saying so, a list missing every private repository looks like a bug. */}
-      {!loading && !failure && installations === 0 ? (
+      {!loading && !failure && publicOnly ? (
         <div className="mb-4 flex flex-col gap-3 rounded-[10px] border border-warning/25 bg-warning-soft px-4 py-3 sm:flex-row sm:items-center">
           <p className="min-w-0 flex-1 text-sm leading-relaxed text-ink">
             <span className="font-medium">Only public repositories are listed.</span>
