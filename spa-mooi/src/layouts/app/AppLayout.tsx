@@ -2,6 +2,7 @@ import { useRef } from 'react';
 import { Outlet } from 'react-router-dom';
 import { useAgentConnectionsSync } from '@/features/agents/hooks/useAgentConnectionsSync';
 import { useGithubConnectionSync } from '@/features/github/hooks/useGithubConnectionSync';
+import { useLiveChannelSync } from '@/features/live/hooks/useLiveChannelSync';
 import { useProjectsSync } from '@/features/projects/hooks/useProjectsSync';
 import { useRecipeMarketplacesSync } from '@/features/recipes/hooks/useRecipeMarketplacesSync';
 import { AppMobileDrawer } from '@/layouts/app/AppMobileDrawer';
@@ -19,6 +20,7 @@ export const AppLayout = () => {
   useProjectsSync();
   useAgentConnectionsSync();
   useRecipeMarketplacesSync();
+  useLiveChannelSync();
   const main = useRef<HTMLElement>(null);
   useScrollTopOnNavigate(main);
   usePageTransition(main);

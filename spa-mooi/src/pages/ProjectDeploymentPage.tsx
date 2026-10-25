@@ -12,9 +12,9 @@ import { PlatformEnvironmentDialog } from '@/features/platform/components/Platfo
 import { PlatformFilesPanel } from '@/features/platform/components/PlatformFilesPanel';
 import { usePlatformChat } from '@/features/platform/hooks/usePlatformChat';
 import { usePlatformFiles } from '@/features/platform/hooks/usePlatformFiles';
-import { usePlatformStream } from '@/features/platform/hooks/usePlatformStream';
+import { usePlatformOperation } from '@/features/platform/hooks/usePlatformOperation';
 import {
-  deleteProductionConfiguration, deleteProductionDeployment, fetchProductionFileDiff, productionPath, saveProductionDraft,
+  deleteProductionConfiguration, deleteProductionDeployment, fetchProductionFileDiff, saveProductionDraft,
   startProductionDeployment, updateProductionEnvironment,
 } from '@/features/production/api/productionApi';
 import { ProductionConsolePanel } from '@/features/production/components/ProductionConsolePanel';
@@ -36,7 +36,6 @@ import type { ProductionSnapshot } from '@/features/production/types/ProductionS
 import type { ProductionTab } from '@/features/production/types/ProductionTab';
 import type { ReleaseChoice } from '@/features/production/types/ReleaseChoice';
 import { closeSession } from '@/features/sessions/api/sessionsApi';
-import { useSessionsSync } from '@/features/sessions/hooks/useSessionsSync';
 import { Button } from '@/shared/components/Button';
 import { Card } from '@/shared/components/Card';
 import { EmptyState } from '@/shared/components/EmptyState';
@@ -58,9 +57,8 @@ export const ProjectDeploymentPage = () => {
   const { projects, status } = useProjects();
   const project = findProject(projects, projectId);
   const { connections } = useAgentConnections();
-  useSessionsSync(project?.id, Boolean(project));
 
-  const stream = usePlatformStream<ProductionSnapshot>(project ? `${productionPath(project.id)}/events` : undefined, 'production');
+  const stream = usePlatformOperation<ProductionSnapshot>(project?.id, 'production');
   const refreshKey = `${stream.configurationRevision}:${stream.snapshot?.operationId ?? ''}:${stream.snapshot?.state ?? ''}`;
   const { overview, error: overviewError, reload } = useProductionOverview(project?.id, refreshKey);
   const history = useProjectProductionHistory(project?.id, refreshKey);

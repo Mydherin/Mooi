@@ -4,7 +4,7 @@ import { Compass, FileCode2, GitCompareArrows, LayoutDashboard, MessagesSquare, 
 import { ROUTES } from '@/app/routes';
 import { useAgentConnections } from '@/features/agents/hooks/useAgentConnections';
 import {
-  backupsPath, createBackup, deleteBackupConfiguration, deleteBackupData, fetchBackupFileDiff, forgetBackup, restoreBackup,
+  createBackup, deleteBackupConfiguration, deleteBackupData, fetchBackupFileDiff, forgetBackup, restoreBackup,
   saveBackupDraft, updateBackupEnvironment,
 } from '@/features/backups/api/backupsApi';
 import { BackupConsolePanel } from '@/features/backups/components/BackupConsolePanel';
@@ -32,11 +32,10 @@ import { PlatformEnvironmentDialog } from '@/features/platform/components/Platfo
 import { PlatformFilesPanel } from '@/features/platform/components/PlatformFilesPanel';
 import { usePlatformChat } from '@/features/platform/hooks/usePlatformChat';
 import { usePlatformFiles } from '@/features/platform/hooks/usePlatformFiles';
-import { usePlatformStream } from '@/features/platform/hooks/usePlatformStream';
+import { usePlatformOperation } from '@/features/platform/hooks/usePlatformOperation';
 import { useProjects } from '@/features/projects/hooks/useProjects';
 import { findProject } from '@/features/projects/lib/findProject';
 import { closeSession } from '@/features/sessions/api/sessionsApi';
-import { useSessionsSync } from '@/features/sessions/hooks/useSessionsSync';
 import { Button } from '@/shared/components/Button';
 import { Card } from '@/shared/components/Card';
 import { EmptyState } from '@/shared/components/EmptyState';
@@ -57,9 +56,8 @@ export const ProjectBackupPage = () => {
   const { projects, status } = useProjects();
   const project = findProject(projects, projectId);
   const { connections } = useAgentConnections();
-  useSessionsSync(project?.id, Boolean(project));
 
-  const stream = usePlatformStream<BackupSnapshot>(project ? `${backupsPath(project.id)}/events` : undefined, 'backup');
+  const stream = usePlatformOperation<BackupSnapshot>(project?.id, 'backup');
   const refreshKey = `${stream.configurationRevision}:${stream.snapshot?.operationId ?? ''}:${stream.snapshot?.state ?? ''}`;
   const { overview, error: overviewError, reload } = useBackupOverview(project?.id, refreshKey);
   const list = useProjectBackups(project?.id, refreshKey);

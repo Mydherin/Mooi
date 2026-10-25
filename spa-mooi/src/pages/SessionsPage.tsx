@@ -2,12 +2,12 @@ import { useMemo, useState } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { MessagesSquare, RefreshCw, Search } from 'lucide-react';
 import { ROUTES } from '@/app/routes';
+import { useLiveStatus } from '@/features/live/hooks/useLiveStatus';
 import { useProjects } from '@/features/projects/hooks/useProjects';
 import { SessionGroupSection } from '@/features/sessions/components/overview/SessionGroupSection';
 import { SessionsOverviewHeader } from '@/features/sessions/components/overview/SessionsOverviewHeader';
 import { SessionsOverviewStats } from '@/features/sessions/components/overview/SessionsOverviewStats';
 import { StartSessionDialog } from '@/features/sessions/components/overview/StartSessionDialog';
-import { useSessionsSync } from '@/features/sessions/hooks/useSessionsSync';
 import { groupSessionsByProject } from '@/features/sessions/lib/groupSessionsByProject';
 import { matchesSessionQuery } from '@/features/sessions/lib/matchesSessionQuery';
 import { SESSION_FILTERS, sessionFilter } from '@/features/sessions/lib/sessionFilters';
@@ -31,14 +31,14 @@ const Skeleton = () => (
 
 /**
  * Every live session of the player in one place, grouped by project, so checking on agents does
- * not mean opening each project. The list stays live through `useSessionsSync`; the active filter
+ * not mean opening each project. The list stays live through the player's channel; the active filter
  * lives in `?filter=` so a reload lands back on the same view.
  */
 export const SessionsPage = () => {
   const { projects } = useProjects();
   const allSessions = useSessionsStore((state) => state.sessions);
   const sessions = useMemo(() => allSessions.filter((session) => session.kind === 'session'), [allSessions]);
-  const { loading, error, reload } = useSessionsSync(undefined);
+  const { loading, error, reconnect: reload } = useLiveStatus();
   const [searchParams, setSearchParams] = useSearchParams();
   const [query, setQuery] = useState('');
   const [newSessionOpen, setNewSessionOpen] = useState(false);

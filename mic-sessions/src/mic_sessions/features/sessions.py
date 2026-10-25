@@ -32,7 +32,7 @@ import secrets
 import signal
 import tempfile
 import time
-from collections.abc import AsyncIterator, Callable, Coroutine, Iterable
+from collections.abc import Coroutine, Iterable
 from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -56,7 +56,6 @@ from pydantic import (
 
 from mic_sessions.shared import images, mooi, previews, workspaces
 from mic_sessions.shared.agents import (
-    PROVIDERS,
     RECOVERABLE_DETAIL,
     STATUS_COMPACTING,
     STATUS_FAILED,
@@ -89,7 +88,7 @@ from mic_sessions.shared.docker import (
     root_compose_file,
 )
 from mic_sessions.shared.env import backup_environment, development_environment, get_settings, production_environment
-from mic_sessions.shared.events import Event, EventLog, sse_frame, sse_heartbeat
+from mic_sessions.shared.events import Channels, Event, EventLog, event_stream, new_event
 from mic_sessions.shared.scripts import run_script
 from mic_sessions.shared.web import ApiException
 
@@ -98,6 +97,7 @@ LOG = logging.getLogger("sessions")
 _BRANCH_PATTERN = r"^[A-Za-z0-9._\-/]{1,120}$"
 _UNSET_PATH = Path()
 _LAST_EVENT_ID_HEADER = "Last-Event-ID"
+_USAGE_REFRESH_SECONDS = 60.0
 
 PENDING_KIND_PERMISSION = "permission"
 PENDING_KIND_QUESTION = "question"
@@ -689,6 +689,8 @@ class Session:
     deployment_monitor: asyncio.Task[None] | None = None
     last_human_activity: datetime = field(default_factory=lambda: datetime.now(UTC))
     activity_heartbeat_at: float | None = None
+    # Monotonic time before which a watched session does not refresh its account limits again.
+    usage_refresh_at: float = 0.0
 
     def to_payload(self) -> SessionPayload:
         descriptor = describe(self.provider)
@@ -808,6 +810,7 @@ class SessionRegistry:
             if owned >= settings.max_sessions_per_player:
                 raise ApiException.conflict("You have reached your session limit")
             self._sessions[session.id] = session
+        _announce(session)
 
     def get_for(self, caller: Caller, session_id: UUID) -> Session:
         """404 whether the session is missing or owned by another player — the same answer for
@@ -828,7 +831,10 @@ class SessionRegistry:
 
     async def remove(self, session_id: UUID) -> Session | None:
         async with self._lock:
-            return self._sessions.pop(session_id, None)
+            session = self._sessions.pop(session_id, None)
+        if session is not None:
+            _announce_removed(session)
+        return session
 
     def count(self) -> int:
         return len(self._sessions)
@@ -856,6 +862,7 @@ def record(session: Session, type_: str, data: dict[str, Any]) -> Event:
     derived here from the very events the SPA receives, so server and client can never disagree.
     Nothing else in this feature assigns `session.status` or `session.pending`.
 
+    Every change a session list shows is announced on the player's live channel as well.
     Deployment updates share sequence/replay with chat but never acquire a turnId, mutate chat
     state or renew idle activity. Their payloads are validated before appending to the log.
     Other events bump display `updated_at`; expiry uses the separate human activity clock.
@@ -868,6 +875,7 @@ def record(session: Session, type_: str, data: dict[str, Any]) -> Event:
         session.deployment = snapshot
         if snapshot.state != "running":
             previews.withdraw(session.id)  # The preview path dies with the running state.
+        _announce(session)
         return event
     if type_ == EVENT_DEPLOYMENT_LOG:
         return session.log.append(type_, DeploymentLog.model_validate(data).model_dump(mode="json"))
@@ -929,6 +937,8 @@ def record(session: Session, type_: str, data: dict[str, Any]) -> Event:
         )
 
     _observe_changes(session, type_, data)
+    if type_ in _SUMMARY_EVENTS:
+        _announce(session)
     return event
 
 
@@ -1172,6 +1182,11 @@ async def create_session(
     body: CreateSessionRequest, caller: Annotated[Caller, Depends(current_caller)]
 ) -> SessionPayload:
     """Reserve a session immediately; provision it in a tracked background task."""
+    return (await _open_session(body, caller)).to_payload()
+
+
+async def _open_session(body: CreateSessionRequest, caller: Caller) -> Session:
+    """Opens any chat, from the UI or handed over by another chat's agent: the same path either way."""
     descriptor = describe(body.provider)
     registry = get_registry()
     await descriptor.prepare(caller, str(body.connectionId))
@@ -1210,7 +1225,7 @@ async def create_session(
     await registry.add(session)
     _record_status(session, STATUS_PROVISIONING, "Preparing the workspace")
     _spawn(session, _provision(session, caller, project, body.initialMessage))
-    return session.to_payload()
+    return session
 
 
 async def _provision(session: Session, caller: Caller, project: mooi.Project,
@@ -1345,83 +1360,101 @@ async def stream_session_events(
     caller: Annotated[Caller, Depends(current_caller)],
     after: int = 0,
 ) -> StreamingResponse:
-    """Live tail of the session's event log.
-
-    Subscribes *before* replaying: `EventLog.subscribe` registers its queue synchronously, so any
-    event appended between that call and `replay()` lands in the queue instead of being lost, and
-    is simply skipped as a duplicate once the live loop reaches it — its `seq` is not greater than
-    the last replayed one. `Last-Event-ID` is accepted as a fallback for `after`.
-    """
+    """Live tail of the session's event log: the events after `after` (or `Last-Event-ID`), a
+    `session.sync` snapshot that also carries what replay may have lost (the current deployment, the
+    pending interactions), then live events. An expired cursor first gets an explicit `history.reset`."""
     session = get_registry().get_for(caller, session_id)
     last_event_id = request.headers.get(_LAST_EVENT_ID_HEADER)
     if last_event_id is not None:
         with suppress(ValueError):
             after = int(last_event_id)
-
-    settings = get_settings()
     queue = session.log.subscribe()
+    opening: list[Event] = []
+    if after < session.log.first_seq - 1 or after > session.log.last_seq:
+        after = session.log.first_seq - 1
+        opening.append(new_event(after, "history.reset", {
+            "message": "Earlier trace events are no longer retained in memory. Showing available history."}))
+    opening.extend(session.log.replay(after))
+    opening.append(new_event(session.log.last_seq, "session.sync", {
+        "session": session.to_payload().model_dump(mode="json"),
+        "pending": list(session.interactions.values()),
+    }))
+    return event_stream(request, queue, opening, after=after, authorize=current_caller,
+                        close=lambda: session.log.unsubscribe(queue), tick=lambda: _refresh_visible_usage(session))
 
-    async def frames() -> AsyncIterator[str]:
+
+def _refresh_visible_usage(session: Session) -> None:
+    """Account limits move with other sessions and devices: while someone watches a live session,
+    refresh them at most once a minute per session, however many viewers it has."""
+    now = time.monotonic()
+    if (session.runtime is None or now < session.usage_refresh_at
+            or session.status not in (STATUS_READY, STATUS_WORKING, STATUS_WAITING)):
+        return
+    session.usage_refresh_at = now + _USAGE_REFRESH_SECONDS
+    runtime = session.runtime
+
+    async def refresh() -> None:
         try:
-            last_seq = after
-            replay = session.log.replay(after)
-            # Includes the current deployment even when its update has fallen out of replay.
-            sync = Event(session.log.last_seq, datetime.now(UTC), "session.sync", {
-                "session": session.to_payload().model_dump(mode="json"),
-                "pending": list(session.interactions.values()),
-            })
-            if after < session.log.first_seq - 1 or after > session.log.last_seq:
-                last_seq = session.log.first_seq - 1
-                replay = session.log.replay(last_seq)
-                yield sse_frame(Event(last_seq, datetime.now(UTC), "history.reset", {
-                    "message": "Earlier trace events are no longer retained in memory. Showing available history."
-                }))
-            for event in replay:
-                yield sse_frame(event)
-                last_seq = event.seq
-            yield sse_frame(sync)
-            last_seq = sync.seq
-            next_usage_check = 0.0
-            next_auth_check = time.monotonic()
-            while True:
-                if time.monotonic() >= next_auth_check:
-                    try:
-                        await current_caller(request)
-                    except Exception:
-                        LOG.debug("Background operation encountered an exception", exc_info=True)
-                        return
-                    next_auth_check = time.monotonic() + settings.introspection_cache_seconds
-                if await request.is_disconnected():
-                    return
-                if time.monotonic() >= next_usage_check:
-                    next_usage_check = time.monotonic() + 60
-                    if session.runtime is not None and session.status in (STATUS_READY, STATUS_WORKING, STATUS_WAITING):
-                        try:
-                            await session.runtime.refresh_usage()
-                        except Exception:
-                            LOG.debug("Visible session usage refresh unavailable")
-                try:
-                    event = await asyncio.wait_for(queue.get(), settings.sse_heartbeat_seconds)
-                except TimeoutError:
-                    yield sse_heartbeat()
-                    continue
-                if event is None:
-                    return
-                if event.seq > last_seq:
-                    yield sse_frame(event)
-                    last_seq = event.seq
-        finally:
-            session.log.unsubscribe(queue)
+            await runtime.refresh_usage()
+        except Exception:
+            LOG.debug("Visible session usage refresh unavailable", exc_info=True)
 
-    return StreamingResponse(
-        frames(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-            "Connection": "keep-alive",
-        },
-    )
+    _spawn(session, refresh())
+
+
+# --- the player's live channel -------------------------------------------------------------------
+#
+# Everything live outside a session transcript reaches the browser through one stream per player:
+# session summaries for every list, production and backup operations with their console output, and
+# configuration and environment changes made from any side (buttons, another device or an agent).
+# Publishers never check whether anyone listens: an unwatched channel costs nothing.
+
+_channels = Channels()
+_announced: set[UUID] = set()
+
+EVENT_SESSION_UPDATED = "session.updated"
+EVENT_SESSION_REMOVED = "session.removed"
+EVENT_DEVELOPMENT_ENVIRONMENT = "development.environment"
+# Session events that change what a session list shows; anything else stays in the transcript.
+_SUMMARY_EVENTS = frozenset({
+    EVENT_SESSION_STATUS, EVENT_PERMISSION_REQUEST, EVENT_QUESTION_REQUEST, EVENT_PERMISSION_RESOLVED,
+    EVENT_QUESTION_RESOLVED, EVENT_TURN_RESULT, EVENT_SESSION_CONFIGURATION, EVENT_SESSION_CLEARED,
+    EVENT_DEPLOYMENT_UPDATED, "deployment.setup", "deployment.configured", "merge.completed",
+})
+
+
+def _announce(session: Session) -> None:
+    """Publishes the session's summary once per event-loop iteration, however many events changed it."""
+    if session.id in _announced:
+        return
+    _announced.add(session.id)
+
+    def flush() -> None:
+        _announced.discard(session.id)
+        if get_registry().get(session.id) is session:
+            _channels.publish(session.player_id, EVENT_SESSION_UPDATED, session.to_payload().model_dump(mode="json"))
+
+    asyncio.get_running_loop().call_soon(flush)
+
+
+def _announce_removed(session: Session) -> None:
+    _channels.publish(session.player_id, EVENT_SESSION_REMOVED,
+                      {"sessionId": str(session.id), "projectId": str(session.project_id)})
+
+
+@router.get("/events")
+async def stream_player_events(request: Request, caller: Annotated[Caller, Depends(current_caller)]) -> StreamingResponse:
+    """The player's live channel: a `sync` snapshot of every session, production and backup operation
+    they own in this process, then live events. Reconnecting simply starts from a fresh `sync`."""
+    player_id = caller.player_id
+    queue = _channels.subscribe(player_id)
+    sync = _channels.snapshot("sync", {
+        "sessions": [session.to_payload().model_dump(mode="json") for session in get_registry().list_for(player_id, None)],
+        "production": [_operation_payload(run) for run in _production_runs.values() if run.player_id == player_id],
+        "backups": [_operation_payload(run) for run in _backup_runs.values() if run.player_id == player_id],
+    })
+    return event_stream(request, queue, [sync], after=0, authorize=current_caller,
+                        close=lambda: _channels.unsubscribe(player_id, queue))
 
 
 @router.post("/sessions/{session_id}/messages", status_code=status.HTTP_202_ACCEPTED)
@@ -1880,14 +1913,24 @@ def _session_instructions(session: Session) -> str:
     carry their own brief instead."""
     if session.kind != "session":
         return ""
-    base = f"http://127.0.0.1:{get_settings().sessions_port}/sessions/{session.id}/development/agent/environment"
-    return f"""## Project development environment
+    root = f"http://127.0.0.1:{get_settings().sessions_port}/sessions/{session.id}"
+    base = f"{root}/development/agent/environment"
+    return f"""## Mooi platform API
+Every Mooi endpoint below lives inside this pod. Use Python urllib with an inline JSON body, never a temporary file, and send the header `X-Mooi-Agent-Token: {session.agent_token}`.
+
+## Development deployment (the Deploy button)
+Mooi previews this session through its development deployment, the root Docker Compose file its Deploy button runs. Whenever the user asks in this chat to set up, change, repair or test the development deployment or the preview, first read the setup brief with `GET {root}/deployment/agent/brief` and follow it exactly: it is the very brief the Deploy button sends, including how to test the deployment. When a message already contains that brief, follow it directly.
+
+## Production deployments and backups
+Production deployments and backups of this project are prepared in their own Mooi chats, each with its own brief, from the Deployments and Backups pages. When the user asks in this chat to set up, change or repair the production deployment or the backups, hand the request over: `POST {root}/platform/agent/production` (or `/platform/agent/backup`) with JSON `{{"request": "<the user's complete request>"}}`. Mooi opens that chat exactly as the page's button does, and the user follows it there (`location` in the answer). Never write production or backup scripts in this session.
+
+## Project development environment
 This project keeps development environment variables named `MOOI_DEVELOPMENT_<NAME>` encrypted in the Mooi platform. Every session of the project shares them: a value saved here is available in every other session, in the Deploy preview and, inherited, in production deployments and backups.
 - Use them for configuration the project needs to run (API keys, tokens, service URLs...). Save a value when the user gives you one or asks you to set, change or remove it. When a value you need is missing, ask the user; never invent credentials.
 - Read them again whenever you need them: the user and other sessions can change them at any time. Tell the user a value only when they ask for it.
 - Never write their values to the repository. The Deploy preview's root Compose file reads them through interpolation, for example `OPENAI_API_KEY: ${{MOOI_DEVELOPMENT_OPENAI_API_KEY}}`; when you run the project yourself, pass the values a command needs through its environment.
 
-Use Python urllib with an inline JSON body, never a temporary file, and send the header `X-Environment-Token: {session.agent_token}`:
+Use the Mooi platform API:
 - `GET {base}`: `values` (the project's variables) and `serverProvided` (names of server-wide defaults whose values you cannot read).
 - `PUT {base}` with JSON `{{"values": {{"MOOI_DEVELOPMENT_NAME": "value"}}}}` (null removes a variable): saves them and returns the stored names.
 
@@ -1965,23 +2008,38 @@ async def development_environment_overview(project_id: UUID,
 @router.put("/development/projects/{project_id}/environment")
 async def update_development_environment(project_id: UUID, body: ProductionEnvironmentUpdate,
                                          caller: Annotated[Caller, Depends(current_caller)]) -> DevelopmentEnvironment:
-    return _development_overview(await mooi.write_development_environment(caller, project_id, body.values))
+    return await _save_development_environment(caller, project_id, body)
 
 
-def _agent_environment_access(session_id: UUID, request: Request) -> tuple[Session, Caller]:
+async def _save_development_environment(caller: Caller, project_id: UUID,
+                                        body: ProductionEnvironmentUpdate) -> DevelopmentEnvironment:
+    """Saves values for every session of the project and announces the new names live, whichever side
+    (the user or an agent) changed them."""
+    overview = _development_overview(await mooi.write_development_environment(caller, project_id, body.values))
+    _channels.publish(caller.player_id, EVENT_DEVELOPMENT_ENVIRONMENT,
+                      {"projectId": str(project_id), **overview.model_dump(mode="json")})
+    return overview
+
+
+_AGENT_TOKEN_HEADER = "X-Mooi-Agent-Token"
+
+
+def _agent_access(session_id: UUID, request: Request, kind: SessionKind) -> tuple[Session, Caller]:
+    """The one guard of every agent endpoint: only a live chat of `kind`'s own agent, from inside the
+    pod, with its chat's token, acting for the chat's latest caller. Anything else is a plain 404."""
     session = get_registry().get(session_id)
-    token = request.headers.get("X-Environment-Token", "")
+    token = request.headers.get(_AGENT_TOKEN_HEADER, "")
     if (request.client is None or request.client.host not in ("127.0.0.1", "::1")
-            or session is None or session.kind != "session" or session.closing
+            or session is None or session.kind != kind or session.closing
             or not hmac.compare_digest(token, session.agent_token)
             or session.agent_caller is None):
-        raise ApiException.not_found("Development environment not found")
+        raise ApiException.not_found("Not found")
     return session, session.agent_caller
 
 
 @router.get("/sessions/{session_id}/development/agent/environment")
 async def agent_development_environment(session_id: UUID, request: Request) -> AgentEnvironment:
-    session, caller = _agent_environment_access(session_id, request)
+    session, caller = _agent_access(session_id, request, "session")
     return _agent_environment(await mooi.fetch_development_environment(caller, session.project_id),
                               development_environment())
 
@@ -1989,8 +2047,32 @@ async def agent_development_environment(session_id: UUID, request: Request) -> A
 @router.put("/sessions/{session_id}/development/agent/environment")
 async def agent_save_development_environment(session_id: UUID, request: Request,
                                              body: ProductionEnvironmentUpdate) -> DevelopmentEnvironment:
-    session, caller = _agent_environment_access(session_id, request)
-    return _development_overview(await mooi.write_development_environment(caller, session.project_id, body.values))
+    session, caller = _agent_access(session_id, request, "session")
+    return await _save_development_environment(caller, session.project_id, body)
+
+
+class PlatformHandoffRequest(BaseModel):
+    request: str = Field(min_length=1, max_length=20_000)
+
+
+_PLATFORM_LOCATIONS = {"production": "/deployments/{project}?tab=chat", "backup": "/backups/{project}?tab=chat"}
+
+
+@router.post("/sessions/{session_id}/platform/agent/{kind}", status_code=status.HTTP_201_CREATED)
+async def agent_platform_handoff(session_id: UUID, kind: Literal["production", "backup"], request: Request,
+                                 body: PlatformHandoffRequest) -> dict:
+    """A production or backup request made in a session chat opens that platform chat exactly like the
+    page's button: same account, model and effort as this session, the request as its first message
+    wrapped in the platform brief. A busy platform chat is never replaced from here."""
+    session, caller = _agent_access(session_id, request, "session")
+    current = next((chat for chat in get_registry().list_for(caller.player_id, session.project_id)
+                    if chat.kind == kind and not chat.closing), None)
+    if current is not None and current.status in (STATUS_PROVISIONING, STATUS_WORKING, STATUS_WAITING, STATUS_COMPACTING):
+        raise ApiException.conflict(f"The project's {kind} chat is busy: ask the user to continue there")
+    chat = await _open_session(CreateSessionRequest(
+        projectId=session.project_id, provider=session.provider, connectionId=session.connection_id,
+        model=session.config.model, effort=session.config.effort, kind=kind, initialMessage=body.request), caller)
+    return {"sessionId": str(chat.id), "location": _PLATFORM_LOCATIONS[kind].format(project=session.project_id)}
 
 
 # --- production: project-scoped configuration, deployments and GitHub releases -----------------
@@ -2018,7 +2100,6 @@ class ProductionRun:
     player_id: UUID
     snapshot: ProductionSnapshot = field(default_factory=ProductionSnapshot)
     logs: list[str] = field(default_factory=list)
-    log: EventLog = field(default_factory=lambda: EventLog(limit=256))
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     task: asyncio.Task[None] | None = None
 
@@ -2048,22 +2129,30 @@ def _production_chat(player_id: UUID, project_id: UUID) -> Session | None:
                  if session.kind == "production" and not session.closing), None)
 
 
+def _operation_payload(run: ProductionRun | BackupRun) -> dict[str, Any]:
+    """A project operation as the live channel carries it: snapshot plus retained console output."""
+    return {"projectId": str(run.project_id), "snapshot": run.snapshot.model_dump(mode="json"), "logs": run.logs}
+
+
 def _publish_production(run: ProductionRun, snapshot: ProductionSnapshot) -> None:
     run.snapshot = snapshot
-    run.log.append(EVENT_PRODUCTION_UPDATED, snapshot.model_dump(mode="json"))
+    _channels.publish(run.player_id, EVENT_PRODUCTION_UPDATED,
+                      {"projectId": str(run.project_id), "snapshot": snapshot.model_dump(mode="json")})
 
 
 def _publish_production_sync(run: ProductionRun) -> None:
-    run.log.append(EVENT_PRODUCTION_SYNC, {"snapshot": run.snapshot.model_dump(mode="json"), "logs": run.logs})
+    _channels.publish(run.player_id, EVENT_PRODUCTION_SYNC, _operation_payload(run))
 
 
 def _publish_production_output(run: ProductionRun, operation_id: UUID, lines: list[str]) -> None:
     run.logs = [*run.logs, *lines][-_PRODUCTION_LOG_LIMIT:]
-    run.log.append(EVENT_PRODUCTION_LOG, {"operationId": str(operation_id), "lines": lines})
+    _channels.publish(run.player_id, EVENT_PRODUCTION_LOG,
+                      {"projectId": str(run.project_id), "operationId": str(operation_id), "lines": lines})
 
 
 def _notify_production_configuration(run: ProductionRun, documents: ProductionDocuments) -> None:
-    run.log.append(EVENT_PRODUCTION_CONFIGURATION, {"revision": documents.revision})
+    _channels.publish(run.player_id, EVENT_PRODUCTION_CONFIGURATION,
+                      {"projectId": str(run.project_id), "revision": documents.revision})
 
 
 async def _production_environment(caller: Caller, project_id: UUID) -> dict[str, str]:
@@ -2126,7 +2215,7 @@ A production Compose definition always belongs in the repository. Other producti
 Before committing, ask the user whether to commit and push them to `{branch}`, listing every changed file (use your question tool when available, otherwise ask and wait for the reply). Only after an explicit yes, publish them with the commit endpoint; never run `git commit` or `git push` yourself. If the user declines, revert those files; never fall back to embedding Compose in Platform files.
 
 ## Platform API
-Use Python urllib with an inline JSON body, never a temporary file, and send the header `X-Production-Edit-Token: {session.agent_token}`:
+Use Python urllib with an inline JSON body, never a temporary file, and send the header `X-Mooi-Agent-Token: {session.agent_token}`:
 - `GET {base}/documents`: active and draft documents plus the names of stored environment variables.
 - `PATCH {base}/documents` with any of the JSON keys `manifest`, `script`, `statusScript`: saves those documents into the draft and keeps the others.
 - `GET {base}/environment`: `values` (the project's stored `MOOI_PRODUCTION_` and inherited `MOOI_DEVELOPMENT_` values the scripts receive) and `serverProvided` (names of server-wide values whose values you cannot read).
@@ -2239,48 +2328,6 @@ async def production_overview(project_id: UUID, caller: Annotated[Caller, Depend
         snapshot=run.snapshot, chatSessionId=chat.id if chat else None,
         chatTested=bool(chat and chat.platform_tested),
     )
-
-
-@router.get("/production/projects/{project_id}/events")
-async def stream_production_events(project_id: UUID, request: Request,
-                                   caller: Annotated[Caller, Depends(current_caller)]) -> StreamingResponse:
-    """Live production state: a `production.sync` snapshot with the retained output, then updates,
-    output batches and configuration changes. Reconnecting simply starts from a fresh sync."""
-    _, run = await _owned_production(caller, project_id)
-    settings = get_settings()
-    queue = run.log.subscribe()
-
-    async def frames() -> AsyncIterator[str]:
-        try:
-            last_seq = run.log.last_seq
-            yield sse_frame(Event(last_seq, datetime.now(UTC), EVENT_PRODUCTION_SYNC,
-                                  {"snapshot": run.snapshot.model_dump(mode="json"), "logs": run.logs}))
-            next_auth_check = time.monotonic() + settings.introspection_cache_seconds
-            while True:
-                if time.monotonic() >= next_auth_check:
-                    try:
-                        await current_caller(request)
-                    except Exception:
-                        LOG.debug("Production stream authentication ended", exc_info=True)
-                        return
-                    next_auth_check = time.monotonic() + settings.introspection_cache_seconds
-                if await request.is_disconnected():
-                    return
-                try:
-                    event = await asyncio.wait_for(queue.get(), settings.sse_heartbeat_seconds)
-                except TimeoutError:
-                    yield sse_heartbeat()
-                    continue
-                if event is None:
-                    return
-                if event.seq > last_seq:
-                    yield sse_frame(event)
-                    last_seq = event.seq
-        finally:
-            run.log.unsubscribe(queue)
-
-    return StreamingResponse(frames(), media_type="text/event-stream",
-                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"})
 
 
 @router.get("/production/projects/{project_id}/documents")
@@ -2523,20 +2570,9 @@ async def delete_production_deployment(project_id: UUID, operation_id: UUID,
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-def _agent_recipe_access(session_id: UUID, request: Request) -> tuple[Session, Caller]:
-    session = get_registry().get(session_id)
-    token = request.headers.get("X-Production-Edit-Token", "")
-    if (request.client is None or request.client.host not in ("127.0.0.1", "::1")
-            or session is None or session.kind != "production" or session.closing
-            or not hmac.compare_digest(token, session.agent_token)
-            or session.agent_caller is None):
-        raise ApiException.not_found("Deployment configuration not found")
-    return session, session.agent_caller
-
-
 @router.get("/sessions/{session_id}/production/agent/documents")
 async def agent_production_documents(session_id: UUID, request: Request) -> ProductionDocuments:
-    session, caller = _agent_recipe_access(session_id, request)
+    session, caller = _agent_access(session_id, request, "production")
     return await _production_documents(caller, session.project_id)
 
 
@@ -2545,7 +2581,7 @@ async def agent_production_documents(session_id: UUID, request: Request) -> Prod
 async def agent_save_production_documents(session_id: UUID, request: Request,
                                           body: ProductionFilesPatch) -> ProductionDocuments:
     """Saves some or all documents into the draft; a full PUT behaves exactly like a PATCH of all three."""
-    session, caller = _agent_recipe_access(session_id, request)
+    session, caller = _agent_access(session_id, request, "production")
     return await _save_production_draft(caller, session.project_id, body)
 
 
@@ -2553,7 +2589,7 @@ async def agent_save_production_documents(session_id: UUID, request: Request,
 async def agent_commit_repository(session_id: UUID, request: Request, body: MergeRequest) -> MergePayload:
     """Publishes the chat's repository changes, which the agent only calls after the user approved
     them: one commit onto the default branch, pushed as a fast-forward and never forced."""
-    session, caller = _agent_recipe_access(session_id, request)
+    session, caller = _agent_access(session_id, request, "production")
     payload = await _commit_platform_repository(session, caller, body)
     if payload.commit is not None:
         session.production_release_pending = True
@@ -2582,7 +2618,7 @@ async def _commit_platform_repository(session: Session, caller: Caller, body: Me
 
 @router.get("/sessions/{session_id}/production/agent/environment")
 async def agent_production_environment(session_id: UUID, request: Request) -> AgentEnvironment:
-    session, caller = _agent_recipe_access(session_id, request)
+    session, caller = _agent_access(session_id, request, "production")
     development, stored = await asyncio.gather(mooi.fetch_development_environment(caller, session.project_id),
                                                mooi.fetch_production_environment(caller, session.project_id))
     return _agent_environment({**development, **stored}, {**development_environment(), **production_environment()})
@@ -2591,20 +2627,20 @@ async def agent_production_environment(session_id: UUID, request: Request) -> Ag
 @router.put("/sessions/{session_id}/production/agent/environment")
 async def agent_save_production_environment(session_id: UUID, request: Request,
                                             body: ProductionEnvironmentUpdate) -> ProductionDocuments:
-    session, caller = _agent_recipe_access(session_id, request)
+    session, caller = _agent_access(session_id, request, "production")
     return await _save_production_environment(caller, session.project_id, body)
 
 
 @router.get("/sessions/{session_id}/production/agent/deployments/{operation_id}")
 async def agent_production_deployment_detail(session_id: UUID, operation_id: UUID, request: Request) -> dict:
-    session, caller = _agent_recipe_access(session_id, request)
+    session, caller = _agent_access(session_id, request, "production")
     return await mooi.fetch_production_deployment_detail(caller, session.project_id, operation_id)
 
 
 @router.post("/sessions/{session_id}/production/agent/deployments", status_code=status.HTTP_202_ACCEPTED)
 async def agent_test_production(session_id: UUID, request: Request) -> ProductionSnapshot:
     """A real deployment of the current configuration with the release `_test_release` picks."""
-    session, caller = _agent_recipe_access(session_id, request)
+    session, caller = _agent_access(session_id, request, "production")
     project = await mooi.fetch_project(caller, session.project_id)
     run = _production_run(caller, session.project_id)
     release = await _test_release(caller, project, session.production_release_pending)
@@ -2617,7 +2653,7 @@ async def agent_test_production(session_id: UUID, request: Request) -> Productio
 @router.get("/sessions/{session_id}/production/agent/deployment")
 async def agent_production_deployment(session_id: UUID, request: Request, wait: int = 0) -> dict:
     """The live deployment snapshot and its latest output, optionally waiting while it runs."""
-    session, caller = _agent_recipe_access(session_id, request)
+    session, caller = _agent_access(session_id, request, "production")
     run = _production_run(caller, session.project_id)
     task = run.task
     if wait > 0 and run.snapshot.state == "running" and task is not None and not task.done():
@@ -2631,8 +2667,6 @@ async def close_productions() -> None:
     for task in tasks:
         task.cancel()
     await asyncio.gather(*tasks, return_exceptions=True)
-    for run in _production_runs.values():
-        run.log.close()
 
 
 # --- backups: project-scoped configuration, backups and restores -------------------------------
@@ -2768,7 +2802,6 @@ class BackupRun:
     player_id: UUID
     snapshot: BackupSnapshot = field(default_factory=BackupSnapshot)
     logs: list[str] = field(default_factory=list)
-    log: EventLog = field(default_factory=lambda: EventLog(limit=256))
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     task: asyncio.Task[None] | None = None
     # Backups the chat's agent made, with the (revision, draft) of the documents that made them: a
@@ -2805,20 +2838,22 @@ async def _backup_documents(caller: Caller, project_id: UUID) -> BackupDocuments
 
 def _publish_backup(run: BackupRun, snapshot: BackupSnapshot) -> None:
     run.snapshot = snapshot
-    run.log.append(EVENT_BACKUP_UPDATED, snapshot.model_dump(mode="json"))
+    _channels.publish(run.player_id, EVENT_BACKUP_UPDATED,
+                      {"projectId": str(run.project_id), "snapshot": snapshot.model_dump(mode="json")})
 
 
 def _publish_backup_sync(run: BackupRun) -> None:
-    run.log.append(EVENT_BACKUP_SYNC, {"snapshot": run.snapshot.model_dump(mode="json"), "logs": run.logs})
+    _channels.publish(run.player_id, EVENT_BACKUP_SYNC, _operation_payload(run))
 
 
 def _publish_backup_output(run: BackupRun, operation_id: UUID, lines: list[str]) -> None:
     run.logs = [*run.logs, *lines][-_PRODUCTION_LOG_LIMIT:]
-    run.log.append(EVENT_BACKUP_LOG, {"operationId": str(operation_id), "lines": lines})
+    _channels.publish(run.player_id, EVENT_BACKUP_LOG,
+                      {"projectId": str(run.project_id), "operationId": str(operation_id), "lines": lines})
 
 
 def _notify_backup_configuration(run: BackupRun, revision: int) -> None:
-    run.log.append(EVENT_BACKUP_CONFIGURATION, {"revision": revision})
+    _channels.publish(run.player_id, EVENT_BACKUP_CONFIGURATION, {"projectId": str(run.project_id), "revision": revision})
 
 
 def _backup_key(backup_id: UUID, started_at: datetime, release_tag: str) -> str:
@@ -3082,7 +3117,7 @@ The platform provides `MOOI_BACKUP_ID` (date, time and release of the backup plu
 Backups should almost never need repository changes. Only when they truly do, edit files in the working directory (the user sees them in the Changes tab), ask the user whether to commit and push them to `{branch}` listing every changed file, and only after an explicit yes publish them with the commit endpoint; never run `git commit` or `git push` yourself. Backups run from the release deployed in production, so committed changes only apply once the user deploys a new release from Deployments: tell them.
 
 ## Platform API
-Use Python urllib with an inline JSON body, never a temporary file, and send the header `X-Backup-Edit-Token: {session.agent_token}`:
+Use Python urllib with an inline JSON body, never a temporary file, and send the header `X-Mooi-Agent-Token: {session.agent_token}`:
 - `GET {base}/documents`: active and draft documents plus the names of stored backup environment variables.
 - `PATCH {base}/documents` with any of the JSON keys `manifest`, `backupScript`, `restoreScript`, `deleteScript`: saves those documents into the draft and keeps the others.
 - `GET {base}/environment`: `values` (the project's stored `MOOI_BACKUP_` values plus the inherited `MOOI_PRODUCTION_` and `MOOI_DEVELOPMENT_` ones the scripts receive) and `serverProvided` (names of server-wide values whose values you cannot read).
@@ -3125,48 +3160,6 @@ async def backup_overview(project_id: UUID, caller: Annotated[Caller, Depends(cu
         snapshot=run.snapshot, chatSessionId=chat.id if chat else None,
         chatTested=bool(chat and chat.platform_tested), deployedRelease=deployed,
     )
-
-
-@router.get("/backups/projects/{project_id}/events")
-async def stream_backup_events(project_id: UUID, request: Request,
-                               caller: Annotated[Caller, Depends(current_caller)]) -> StreamingResponse:
-    """Live backup state: a `backup.sync` snapshot with the retained output, then updates, output
-    batches and configuration changes. Reconnecting simply starts from a fresh sync."""
-    _, run = await _owned_backups(caller, project_id)
-    settings = get_settings()
-    queue = run.log.subscribe()
-
-    async def frames() -> AsyncIterator[str]:
-        try:
-            last_seq = run.log.last_seq
-            yield sse_frame(Event(last_seq, datetime.now(UTC), EVENT_BACKUP_SYNC,
-                                  {"snapshot": run.snapshot.model_dump(mode="json"), "logs": run.logs}))
-            next_auth_check = time.monotonic() + settings.introspection_cache_seconds
-            while True:
-                if time.monotonic() >= next_auth_check:
-                    try:
-                        await current_caller(request)
-                    except Exception:
-                        LOG.debug("Backup stream authentication ended", exc_info=True)
-                        return
-                    next_auth_check = time.monotonic() + settings.introspection_cache_seconds
-                if await request.is_disconnected():
-                    return
-                try:
-                    event = await asyncio.wait_for(queue.get(), settings.sse_heartbeat_seconds)
-                except TimeoutError:
-                    yield sse_heartbeat()
-                    continue
-                if event is None:
-                    return
-                if event.seq > last_seq:
-                    yield sse_frame(event)
-                    last_seq = event.seq
-        finally:
-            run.log.unsubscribe(queue)
-
-    return StreamingResponse(frames(), media_type="text/event-stream",
-                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"})
 
 
 @router.get("/backups/projects/{project_id}/documents")
@@ -3254,33 +3247,22 @@ async def forget_backup(project_id: UUID, backup_id: UUID, caller: Annotated[Cal
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-def _agent_backup_access(session_id: UUID, request: Request) -> tuple[Session, Caller]:
-    session = get_registry().get(session_id)
-    token = request.headers.get("X-Backup-Edit-Token", "")
-    if (request.client is None or request.client.host not in ("127.0.0.1", "::1")
-            or session is None or session.kind != "backup" or session.closing
-            or not hmac.compare_digest(token, session.agent_token)
-            or session.agent_caller is None):
-        raise ApiException.not_found("Backup configuration not found")
-    return session, session.agent_caller
-
-
 @router.get("/sessions/{session_id}/backup/agent/documents")
 async def agent_backup_documents(session_id: UUID, request: Request) -> BackupDocuments:
-    session, caller = _agent_backup_access(session_id, request)
+    session, caller = _agent_access(session_id, request, "backup")
     return await _backup_documents(caller, session.project_id)
 
 
 @router.put("/sessions/{session_id}/backup/agent/documents")
 @router.patch("/sessions/{session_id}/backup/agent/documents")
 async def agent_save_backup_documents(session_id: UUID, request: Request, body: BackupFilesPatch) -> BackupDocuments:
-    session, caller = _agent_backup_access(session_id, request)
+    session, caller = _agent_access(session_id, request, "backup")
     return await _save_backup_draft(caller, session.project_id, body)
 
 
 @router.get("/sessions/{session_id}/backup/agent/environment")
 async def agent_backup_environment(session_id: UUID, request: Request) -> AgentEnvironment:
-    session, caller = _agent_backup_access(session_id, request)
+    session, caller = _agent_access(session_id, request, "backup")
     development, production, stored = await asyncio.gather(
         mooi.fetch_development_environment(caller, session.project_id),
         mooi.fetch_production_environment(caller, session.project_id),
@@ -3292,13 +3274,13 @@ async def agent_backup_environment(session_id: UUID, request: Request) -> AgentE
 @router.put("/sessions/{session_id}/backup/agent/environment")
 async def agent_save_backup_environment(session_id: UUID, request: Request,
                                         body: ProductionEnvironmentUpdate) -> BackupDocuments:
-    session, caller = _agent_backup_access(session_id, request)
+    session, caller = _agent_access(session_id, request, "backup")
     return await _save_backup_environment(caller, session.project_id, body)
 
 
 @router.get("/sessions/{session_id}/backup/agent/production")
 async def agent_backup_production(session_id: UUID, request: Request) -> dict:
-    session, caller = _agent_backup_access(session_id, request)
+    session, caller = _agent_access(session_id, request, "backup")
     documents, deployed = await asyncio.gather(_production_documents(caller, session.project_id),
                                                _current_release(caller, session.project_id))
     return {"active": documents.active.model_dump() if documents.active else None,
@@ -3307,25 +3289,25 @@ async def agent_backup_production(session_id: UUID, request: Request) -> dict:
 
 @router.post("/sessions/{session_id}/backup/agent/repository/commit")
 async def agent_commit_backup_repository(session_id: UUID, request: Request, body: MergeRequest) -> MergePayload:
-    session, caller = _agent_backup_access(session_id, request)
+    session, caller = _agent_access(session_id, request, "backup")
     return await _commit_platform_repository(session, caller, body)
 
 
 @router.get("/sessions/{session_id}/backup/agent/backups")
 async def agent_backups(session_id: UUID, request: Request) -> dict:
-    session, caller = _agent_backup_access(session_id, request)
+    session, caller = _agent_access(session_id, request, "backup")
     return await mooi.fetch_backups(caller, session.project_id)
 
 
 @router.get("/sessions/{session_id}/backup/agent/backups/{backup_id}")
 async def agent_backup_detail(session_id: UUID, backup_id: UUID, request: Request) -> dict:
-    session, caller = _agent_backup_access(session_id, request)
+    session, caller = _agent_access(session_id, request, "backup")
     return await mooi.fetch_backup_detail(caller, session.project_id, backup_id)
 
 
 @router.post("/sessions/{session_id}/backup/agent/backups", status_code=status.HTTP_202_ACCEPTED)
 async def agent_test_backup(session_id: UUID, request: Request) -> BackupSnapshot:
-    session, caller = _agent_backup_access(session_id, request)
+    session, caller = _agent_access(session_id, request, "backup")
     project = await mooi.fetch_project(caller, session.project_id)
     return await _admit_backup_operation(_backup_run(caller, project.id), caller, project, "backup", chat=session)
 
@@ -3333,7 +3315,7 @@ async def agent_test_backup(session_id: UUID, request: Request) -> BackupSnapsho
 @router.post("/sessions/{session_id}/backup/agent/restores", status_code=status.HTTP_202_ACCEPTED)
 async def agent_test_restore(session_id: UUID, request: Request, body: AgentRestoreRequest) -> BackupSnapshot:
     """Always the disposable verification instance: the agent can never restore into production."""
-    session, caller = _agent_backup_access(session_id, request)
+    session, caller = _agent_access(session_id, request, "backup")
     project = await mooi.fetch_project(caller, session.project_id)
     backup = await _find_backup(caller, project.id, body.backupId)
     return await _admit_backup_operation(_backup_run(caller, project.id), caller, project, "restore",
@@ -3343,7 +3325,7 @@ async def agent_test_restore(session_id: UUID, request: Request, body: AgentRest
 @router.get("/sessions/{session_id}/backup/agent/operation")
 async def agent_backup_operation(session_id: UUID, request: Request, wait: int = 0) -> dict:
     """The live operation snapshot and its latest output, optionally waiting while it runs."""
-    session, caller = _agent_backup_access(session_id, request)
+    session, caller = _agent_access(session_id, request, "backup")
     run = _backup_run(caller, session.project_id)
     task = run.task
     if wait > 0 and run.snapshot.state == "running" and task is not None and not task.done():
@@ -3357,8 +3339,6 @@ async def close_backups() -> None:
     for task in tasks:
         task.cancel()
     await asyncio.gather(*tasks, return_exceptions=True)
-    for run in _backup_runs.values():
-        run.log.close()
 
 
 # --- deployment: the agent sets it up and tests it in the chat, then Compose runs it directly ----
@@ -3367,7 +3347,9 @@ async def close_backups() -> None:
 # message, like merge conflicts: the agent prepares the root Docker Compose and ends with a test
 # through the token-guarded agent endpoints, which run the very same deterministic deployment. Once a
 # start succeeds, or when a root Compose file exists before any start, Deploy runs directly until one
-# fails again. Changing the setup sends the same brief with the user's request.
+# fails again. Changing the setup sends the same brief with the user's request. Asking for it in the
+# chat converges on the same path: the session's standing instructions make the agent read that very
+# brief from `deployment/agent/brief`, which shows the same "preparing" state.
 
 
 _WEB_DEPENDENCIES = ("vite", "react", "vue", "@angular/core", "next")
@@ -3495,7 +3477,7 @@ The working directory is this session's branch `{session.branch}`. This conversa
 8. Never run `docker` or `docker compose` yourself and do not commit or push: the test endpoint runs the deployment.
 
 ## Mooi deployment API
-Use Python urllib with an inline JSON body, never a temporary file, and send the header `X-Deployment-Token: {session.agent_token}`:
+Use Python urllib with an inline JSON body, never a temporary file, and send the header `X-Mooi-Agent-Token: {session.agent_token}`:
 - `POST {base}/start` with an empty JSON body `{{}}`: runs Mooi's deployment of the working tree exactly as the Deploy button does, replacing the running preview if any, and returns its snapshot. The user follows its output in the deployment console.
 - `GET {base}?wait=120`: waits up to 120 seconds while the deployment starts, then returns its snapshot (`state` starting, running or failed; `phase`; `result.reason` on failure) and the latest redacted output. Repeat it while the state is starting.
 
@@ -3841,22 +3823,26 @@ async def _admit_deployment_setup(session: Session, caller: Caller, instructions
         return session.deployment
 
 
-def _agent_deployment_access(session_id: UUID, request: Request) -> Session:
-    """Only the agent of a live setup conversation, from inside the pod, with the chat's token."""
-    session = get_registry().get(session_id)
-    token = request.headers.get("X-Deployment-Token", "")
-    if (request.client is None or request.client.host not in ("127.0.0.1", "::1")
-            or session is None or session.kind != "session" or session.closing
-            or session.deployment_setup is None
-            or not hmac.compare_digest(token, session.agent_token)):
-        raise ApiException.not_found("Deployment setup not found")
-    return session
+@router.get("/sessions/{session_id}/deployment/agent/brief")
+async def agent_deployment_brief(session_id: UUID, request: Request) -> dict:
+    """The development deployment brief for a setup asked in the chat: the same text the Deploy button
+    sends, and the same visible setup state."""
+    session, caller = _agent_access(session_id, request, "session")
+    project = await mooi.fetch_project(caller, session.project_id)
+    if not project.web_application:
+        raise ApiException.conflict("Deploy and preview are only available for web applications")
+    if session.deployment_setup != "preparing":
+        record(session, EVENT_DEPLOYMENT_SETUP, {"state": "preparing"})
+    return {"brief": _deployment_prompt(session)}
 
 
 @router.post("/sessions/{session_id}/deployment/agent/start", status_code=status.HTTP_202_ACCEPTED)
 async def agent_start_deployment(session_id: UUID, request: Request) -> DeploymentSnapshot:
     """The setup's test: the same deployment Deploy runs, replacing a running or leftover one first."""
-    session = _agent_deployment_access(session_id, request)
+    session, caller = _agent_access(session_id, request, "session")
+    project = await mooi.fetch_project(caller, session.project_id)
+    if not project.web_application:
+        raise ApiException.conflict("Deploy and preview are only available for web applications")
     async with session.operation_lock:
         if session.closing:
             raise ApiException.conflict("The session is closing")
@@ -3872,7 +3858,7 @@ async def agent_start_deployment(session_id: UUID, request: Request) -> Deployme
 @router.get("/sessions/{session_id}/deployment/agent")
 async def agent_deployment(session_id: UUID, request: Request, wait: int = 0) -> dict:
     """The deployment snapshot and its latest output, optionally waiting while it starts."""
-    session = _agent_deployment_access(session_id, request)
+    session, _ = _agent_access(session_id, request, "session")
     task = session.deployment_task
     if wait > 0 and session.deployment.state == "starting" and task is not None and not task.done():
         await asyncio.wait({task}, timeout=min(wait, 120))
@@ -4020,3 +4006,4 @@ async def close_all() -> None:
         await close_session(session.id)
     await close_productions()
     await close_backups()
+    _channels.close()

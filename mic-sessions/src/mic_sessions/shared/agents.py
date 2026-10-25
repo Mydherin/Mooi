@@ -1258,7 +1258,14 @@ def _codex_file_steps(item: dict[str, Any]) -> list[tuple[str, str, dict[str, An
 
 
 class CodexAgentRuntime:
-    """Codex conversation adapter; vendor objects never cross the event contract."""
+    """Codex conversation adapter; vendor objects never cross the event contract.
+
+    Like the Codex app, one session keeps one `codex app-server` and its loaded thread across turns,
+    so a message starts its turn at once. The connection is replaced only when it broke or when another
+    connection of the same account rotated the shared credential since it connected. It is per session,
+    never per account: the SDK answers a pending question on its single reader thread, which must
+    only ever block the conversation that asked.
+    """
 
     capabilities: ClassVar[AgentCapabilities] = CODEX_CAPABILITIES
     _catalog: ClassVar[ContextVar[dict[str, Any] | None]] = ContextVar('codex_catalog', default=None)
@@ -1297,6 +1304,10 @@ class CodexAgentRuntime:
         self._environment = dict(environment or {})
         self._account = None
         self._client = None
+        # The credential the connection was opened with, and whether it has loaded the thread.
+        self._client_token = None
+        self._thread_loaded = False
+        self._connect_lock = asyncio.Lock()
         self._thread_id = None
         self._turn_id = None
         self._task = None
@@ -1331,28 +1342,61 @@ class CodexAgentRuntime:
                 "percent": 0, "usedTokens": 0, "limitTokens": window, "updatedAt": time.time(),
             }})
         try:
-            async with asyncio.timeout(15):
-                async with codex.connected(self._account, self._workspace) as client:
-                    snapshot = await codex.quota(self._account, client)
-                    await self._emit("session.usage", {"quota": snapshot})
+            # The connection the first turn will reuse, opened while the session provisions.
+            async with asyncio.timeout(30):
+                client = await self._connection()
+                snapshot = await codex.quota(self._account, client)
+            await self._emit("session.usage", {"quota": snapshot})
         except Exception:
             LOG.debug("Initial Codex account usage is unavailable")
             await self._emit("session.usage", {"quota": {}})
 
-    async def refresh_usage(self):
+    async def _connection(self):
+        """The session's app-server, opened on first use and replaced when broken or stale."""
         from mic_sessions.shared import codex
-        account = self._account
+        async with self._connect_lock:
+            if self._closing or self._account is None:
+                raise ApiException.conflict("Codex session is closed")
+            if self._client is not None and not (self._client.alive and self._account.current(self._client_token)):
+                await self._disconnect()
+            if self._client is None:
+                self._client, self._client_token = await codex.open_client(self._account, self._workspace, self._answer)
+                self._thread_loaded = False
+            return self._client
+
+    async def _disconnect(self):
+        from mic_sessions.shared import codex
+        client, self._client, self._thread_loaded = self._client, None, False
+        if client is not None and self._account is not None:
+            try:
+                await codex.close_client(self._account, client)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                LOG.debug("The Codex app-server did not close cleanly", exc_info=True)
+
+    async def _load_thread(self, client):
+        params = self._thread_params()
+        if self._thread_id is None:
+            self._thread_id = (await client.call("thread_start", params)).thread.id
+        elif not self._thread_loaded:
+            await client.call("thread_resume", self._thread_id, params)
+        self._thread_loaded = True
+
+    async def refresh_usage(self):
+        """Reads the account limits on the live connection; never starts an app-server just for them."""
+        from mic_sessions.shared import codex
+        account, client = self._account, self._client
         if self._closing or account is None:
             return
-        if account.lock.locked() or time.monotonic() - account.quota_checked_at < 60:
+        if client is None or not client.alive:
             if account.quota_snapshot:
                 await self._emit("session.usage", {"quota": account.quota_snapshot})
             return
         async with asyncio.timeout(15):
-            async with codex.connected(account, self._workspace) as client:
-                snapshot = await codex.quota(account, client)
-                if snapshot:
-                    await self._emit("session.usage", {"quota": snapshot})
+            snapshot = await codex.quota(account, client)
+        if snapshot:
+            await self._emit("session.usage", {"quota": snapshot})
 
     async def send(self, text, images=()):
         if self._closing or self._account is None:
@@ -1451,34 +1495,40 @@ class CodexAgentRuntime:
             raise ApiException.conflict("There is no conversation to compact yet")
         if self._task and not self._task.done():
             raise ApiException.conflict("A Codex turn is still running")
-        async with codex.connected(self._account, self._workspace, self._answer) as client:
-            self._client = client
-            try:
-                await client.call("thread_resume", self._thread_id, self._thread_params())
-                tokens = await client.compact(self._thread_id)
-                last = (tokens or {}).get("last") or {}
-                window = (tokens or {}).get("modelContextWindow")
-                used = last.get("totalTokens")
-                await self._emit("session.usage", {"context": {
-                    "percent": used / window * 100 if used is not None and window else None,
-                    "usedTokens": used, "limitTokens": window, "updatedAt": time.time(),
-                }})
-                try:
-                    await self._emit("session.usage", {"quota": await codex.quota(self._account, client, refresh=True)})
-                except Exception:
-                    LOG.debug("Codex quota is unavailable after compaction")
-            finally:
-                self._client = None
+        client = await self._connection()
+        try:
+            await self._load_thread(client)
+            tokens = await client.compact(self._thread_id)
+        except asyncio.CancelledError:
+            await self._disconnect()
+            raise
+        except Exception:
+            if not client.alive:
+                await self._disconnect()
+            raise
+        last = (tokens or {}).get("last") or {}
+        window = (tokens or {}).get("modelContextWindow")
+        used = last.get("totalTokens")
+        await self._emit("session.usage", {"context": {
+            "percent": used / window * 100 if used is not None and window else None,
+            "usedTokens": used, "limitTokens": window, "updatedAt": time.time(),
+        }})
+        try:
+            await self._emit("session.usage", {"quota": await codex.quota(self._account, client, refresh=True)})
+        except Exception:
+            LOG.debug("Codex quota is unavailable after compaction")
 
     async def recover(self):
-        """Each turn opens its own connection, so a broken one already ended its turn: only the
-        workspace and the account need to be in place again."""
+        """A broken connection already ended its turn: drop it so the next turn reconnects and resumes
+        the thread, with the workspace and the account in place again."""
         from mic_sessions.shared import codex
         if self._closing:
             raise ApiException.conflict("Codex session is closed")
         await asyncio.to_thread(_validate_agent_workspace, self._workspace, self._branch)
         if self._account is None:
             self._account = codex.acquire(self._credential)
+        async with self._connect_lock:
+            await self._disconnect()
 
     async def close(self):
         from mic_sessions.shared import codex
@@ -1487,6 +1537,8 @@ class CodexAgentRuntime:
         if self._task and not self._task.done():
             self._task.cancel()
             await asyncio.gather(self._task, return_exceptions=True)
+        async with self._connect_lock:
+            await self._disconnect()
         if self._account:
             codex.release(self._account)
             self._account = None
@@ -1497,50 +1549,68 @@ class CodexAgentRuntime:
         started = time.monotonic()
         usage = None
         try:
-            async with codex.connected(self._account, self._workspace, self._answer) as client:
-                self._client = client
-                params = self._thread_params()
-                thread = (await client.call("thread_resume", self._thread_id, params) if self._thread_id
-                          else await client.call("thread_start", params))
-                self._thread_id = thread.thread.id
-                turn = await client.call("turn_start", self._thread_id, items,
-                                         {"model": self._config.model, "effort": self._config.effort})
-                self._turn_id = turn.turn.id
-                if self._interrupted:
-                    await client.call("turn_interrupt", self._thread_id, self._turn_id)
-                async for method, payload in client.notifications(self._turn_id):
-                    if method == "turn/completed":
-                        status = payload["turn"]["status"]
-                        terminal = "completed" if status == "completed" else "interrupted" if status == "interrupted" else "error"
-                        if terminal == "error":
-                            await self._publish(agent_error("Codex could not complete the turn. Check your account and selected model."))
-                    elif method == "thread/tokenUsage/updated":
-                        tokens = payload.get("tokenUsage") or {}
-                        usage = tokens.get("last")
-                        window = tokens.get("modelContextWindow")
-                        used = (usage or {}).get("totalTokens")
-                        await self._emit("session.usage", {"context": {
-                            "percent": used / window * 100 if used is not None and window else None,
-                            "usedTokens": used, "limitTokens": window, "updatedAt": time.time(),
-                        }})
-                    else:
-                        await self._event(method, payload)
-                # Best effort, once per turn; shared account cache bounds short-turn traffic.
-                try:
-                    quota = await codex.quota(self._account, client)
-                    await self._emit("session.usage", {"quota": quota})
-                except Exception:
-                    LOG.debug("Codex quota is unavailable")
+            client = await self._start_turn(items)
+            if self._interrupted:
+                await client.call("turn_interrupt", self._thread_id, self._turn_id)
+            async for method, payload in client.notifications(self._turn_id):
+                if method == "turn/completed":
+                    status = payload["turn"]["status"]
+                    terminal = "completed" if status == "completed" else "interrupted" if status == "interrupted" else "error"
+                    if terminal == "error":
+                        await self._publish(agent_error("Codex could not complete the turn. Check your account and selected model."))
+                elif method == "thread/tokenUsage/updated":
+                    tokens = payload.get("tokenUsage") or {}
+                    usage = tokens.get("last")
+                    window = tokens.get("modelContextWindow")
+                    used = (usage or {}).get("totalTokens")
+                    await self._emit("session.usage", {"context": {
+                        "percent": used / window * 100 if used is not None and window else None,
+                        "usedTokens": used, "limitTokens": window, "updatedAt": time.time(),
+                    }})
+                else:
+                    await self._event(method, payload)
+            # Best effort, once per turn; shared account cache bounds short-turn traffic.
+            try:
+                quota = await codex.quota(self._account, client)
+                await self._emit("session.usage", {"quota": quota})
+            except Exception:
+                LOG.debug("Codex quota is unavailable")
+            await codex.persist(self._account)
         except asyncio.CancelledError:
             terminal = "interrupted"
+            # Its reader may still be blocked on this turn: never reuse the connection.
+            await self._disconnect()
         except Exception:
+            if self._client is not None and not self._client.alive:
+                await self._disconnect()
             await self._publish(agent_error("Codex could not complete the turn. Check your account connection and try again."))
         finally:
-            self._client = self._turn_id = None
+            self._turn_id = None
             await self._deny_pending()
             if not self._closing:
                 await self._publish(turn_result("interrupted" if self._interrupted else terminal,
                                                duration_ms=int((time.monotonic() - started) * 1000), usage=usage))
+
+    async def _start_turn(self, items):
+        """Starts the turn on the session's connection. A reused connection that fails before the turn
+        starts is replaced once: a dead app-server never costs the user's message."""
+        for attempt in range(2):
+            reused = self._client is not None
+            client = await self._connection()
+            try:
+                await self._load_thread(client)
+                turn = await client.call("turn_start", self._thread_id, items,
+                                         {"model": self._config.model, "effort": self._config.effort})
+            except Exception:
+                async with self._connect_lock:
+                    await self._disconnect()
+                if not reused or attempt:
+                    raise
+                LOG.info("Codex connection was unusable; reconnecting for this turn")
+                continue
+            self._turn_id = turn.turn.id
+            return client
+        raise RuntimeError("unreachable")
 
     async def _event(self, method, payload):
         item_id = payload.get("itemId", "")
