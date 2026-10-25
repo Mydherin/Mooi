@@ -1,8 +1,11 @@
 # Context
 
-Full product vision of Mooi. Apply it to **every** request: design, name and structure each change for the
-whole platform described here, including parts not implemented yet. Never build something that blocks or
+Full product vision of Mooi: what it is and is going to be. Apply it to **every** request: design, name and
+structure each change for the whole platform described here. Never build something that blocks or
 contradicts a capability below.
+
+The vision runs ahead of the code: many capabilities are not implemented yet, and existing ones may differ
+from it. Where they differ, this context wins over the current implementation (see *Source of truth*).
 
 ## What Mooi is
 
@@ -108,6 +111,13 @@ contradicts a capability below.
 - **Dictation**: local push-to-talk speech-to-text in every agent chat composer.
 
 # Guidelines
+
+## Source of truth
+
+- Priority: **1.** the user's new request → **2.** *Context* → **3.** current implementation.
+- When a request conflicts with *Context*, follow the request and update *Context* in the same change, so it
+  always states the latest vision.
+- When the implementation conflicts with *Context*, align new work with *Context*, never the other way round.
 
 ## Deployment channels
 
