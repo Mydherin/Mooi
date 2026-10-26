@@ -666,9 +666,12 @@ class Session:
     production_release_pending: bool = False
     # A chat's own deployment setup conversation, if any (see `DeploymentSetup`).
     deployment_setup: DeploymentSetup | None = None
-    # Outcome of the latest start; None before any, when a root Compose file proves an earlier setup.
+    # Outcome of the latest start; None before any. A failed one hands the setup back to the agent.
     deployment_verified: bool | None = None
-    # The workspace holds a root Compose file, refreshed with its changes: the setup can be changed.
+    # The project's development deployment setup passed its test (here or in another of its sessions).
+    deployment_ready: bool = False
+    # Ready and the workspace holds a root Compose file, refreshed with its changes: Deploy runs it
+    # directly and the setup can be changed. A Compose file alone never proves a setup.
     deployment_configured: bool = False
     # Redacted output tail of the latest start, read by the agent that sets the deployment up.
     deployment_output: list[str] = field(default_factory=list)
@@ -1000,10 +1003,11 @@ def _observe_changes(session: Session, type_: str, data: dict[str, Any]) -> None
 
 
 def _sync_deployment_configured(session: Session) -> bool:
-    """Publishes whether the workspace holds a root Compose file whenever that changes."""
+    """Publishes whether the project's tested setup applies to the workspace's root Compose file
+    whenever that changes. The file system is only read once the project is ready."""
     if session.kind != "session" or session.workspace == _UNSET_PATH:
         return False
-    configured = root_compose_file(session.workspace) is not None
+    configured = session.deployment_ready and root_compose_file(session.workspace) is not None
     if configured != session.deployment_configured:
         record(session, EVENT_DEPLOYMENT_CONFIGURED, {"configured": configured})
     return configured
@@ -1218,6 +1222,7 @@ async def _open_session(body: CreateSessionRequest, caller: Caller) -> Session:
     project = await mooi.fetch_project(caller, body.projectId)
     session.project_full_name = project.full_name
     session.base_branch = project.default_branch
+    session.deployment_ready = project.development_deployment_ready
     if session.kind in _PLATFORM_KINDS:
         session.branch = project.default_branch
         session.platform_baseline = (await _production_documents(caller, body.projectId)).active \
@@ -3395,9 +3400,9 @@ async def close_backups() -> None:
 #
 # Deploy on a session without a verified setup clears the chat and sends the setup brief as a visible
 # message, like merge conflicts: the agent prepares the root Docker Compose and ends with a test
-# through the token-guarded agent endpoints, which run the very same deterministic deployment. Once a
-# start succeeds, or when a root Compose file exists before any start, Deploy runs directly until one
-# fails again. Changing the setup sends the same brief with the user's request. Asking for it in the
+# through the token-guarded agent endpoints, which run the very same deterministic deployment. Once
+# that test passes, the project records it (`mic-mooi`) and every one of its sessions holding a root
+# Compose file runs Deploy directly until a start fails again; a Compose file alone never does. Changing the setup sends the same brief with the user's request. Asking for it in the
 # chat converges on the same path: the session's standing instructions make the agent read that very
 # brief from `deployment/agent/brief`, which shows the same "preparing" state.
 
@@ -3680,6 +3685,7 @@ def _deployment_finish(session: Session, operation_id: UUID, action: DeploymentA
         session.deployment_verified = reason is None
         if reason is None and session.deployment_setup == "preparing":
             record(session, EVENT_DEPLOYMENT_SETUP, {"state": "tested"})
+            _mark_deployment_ready(session)
 
 
 def _deployment_storage() -> DockerManifests:
@@ -3823,6 +3829,8 @@ async def start_deployment(session_id: UUID, caller: Annotated[Caller, Depends(c
     project = await mooi.fetch_project(caller, session.project_id)
     if not project.web_application:
         raise ApiException.conflict("Deploy and preview are only available for web applications")
+    # Another pod's session may have completed the setup since this one started.
+    session.deployment_ready = session.deployment_ready or project.development_deployment_ready
     if _deployment_configured(session):
         return await _admit_deployment_start(session)
     return await _admit_deployment_setup(session, caller)
@@ -3843,10 +3851,26 @@ async def change_deployment_setup(session_id: UUID, body: DeploymentSetupRequest
 
 
 def _deployment_configured(session: Session) -> bool:
-    """A successful start proves the setup and a failed one hands it back to the agent; with neither,
-    a root Compose file means it was set up before (another session, a merge, a restart)."""
-    present = _sync_deployment_configured(session)
-    return session.deployment_verified if session.deployment_verified is not None else present
+    """Deploy runs directly only once the project's setup passed its test and the workspace holds a
+    root Compose file; a failed start hands the setup back to the agent."""
+    return _sync_deployment_configured(session) and session.deployment_verified is not False
+
+
+def _mark_deployment_ready(session: Session) -> None:
+    """The setup passed its test: every live session of the project deploys directly from now on,
+    and the project remembers it across sessions and restarts. No await: called from the finish."""
+    for peer in get_registry().list_for(session.player_id, session.project_id):
+        if peer.kind == "session" and not peer.deployment_ready:
+            peer.deployment_ready = True
+            _sync_deployment_configured(peer)
+    _spawn(session, _persist_deployment_ready(session.project_id))
+
+
+async def _persist_deployment_ready(project_id: UUID) -> None:
+    try:
+        await mooi.mark_development_deployment_ready(project_id)
+    except Exception:
+        LOG.warning("Project %s could not record its development deployment setup", project_id, exc_info=True)
 
 
 async def _admit_deployment_setup(session: Session, caller: Caller, instructions: str | None = None) -> DeploymentSnapshot:

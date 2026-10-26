@@ -59,3 +59,5 @@ databaseChangeLog:
       file: db/changelog/changes/029-agent-engine-defaults.yaml
   - include:
       file: db/changelog/changes/030-unfinished-operation-indexes.yaml
+  - include:
+      file: db/changelog/changes/031-project-development-deployment.yaml

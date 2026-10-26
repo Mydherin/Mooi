@@ -73,7 +73,8 @@ from it. Where they differ, this context wins over the current implementation (s
   still be iterated without previews.
 - Exposed only through Mooi's secure reverse proxy; no other access path.
 - **First deploy**: a dedicated setup prompt goes to the chat to prepare the project. Resulting setup must be
-  compatible with Mooi dev sessions, local runs without Mooi and production deployments.
+  compatible with Mooi dev sessions, local runs without Mooi and production deployments. Deploy runs
+  directly only once that setup passed its test; a Compose file already in the repository is not enough.
 - Deploy, stop, configure through buttons or chat; the chat knows the deployment prompt, so setup from chat
   equals setup from the Deploy button. Build/run logs and progress stream live.
 

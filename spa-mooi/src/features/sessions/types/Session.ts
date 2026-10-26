@@ -28,7 +28,7 @@ export interface Session {
   capabilities: AgentCapabilities;
   deployment: DeploymentSnapshot;
   deploymentSetup?: DeploymentSetup | null;
-  /** The workspace holds a root Compose file, so its deployment setup can be changed. */
+  /** The project's setup passed its test and the workspace holds a root Compose file: Deploy runs it directly. */
   deploymentConfigured?: boolean;
   /** The session's own clone on the sessions pod; null until provisioning has cloned it. */
   workspacePath: string | null;

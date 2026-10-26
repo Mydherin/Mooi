@@ -34,6 +34,8 @@ class Project:
     html_url: str
     # Player-declared in `mic-mooi`; only web applications may be deployed and previewed.
     web_application: bool
+    # Platform-owned: a development deployment setup passed its test, so sessions deploy directly.
+    development_deployment_ready: bool = False
 
 
 @dataclass(frozen=True)
@@ -105,6 +107,7 @@ async def fetch_project(caller: Caller, project_id: UUID) -> Project:
                 is_private=project["isPrivate"],
                 html_url=project["htmlUrl"],
                 web_application=bool(project.get("webApplication", False)),
+                development_deployment_ready=bool(project.get("developmentDeploymentReady", False)),
             )
     raise ApiException.not_found("Project not found")
 
@@ -240,6 +243,11 @@ async def _send(method: str, path: str, caller: Caller | None, not_found_message
 
 
 # --- development: the environment every session of a project shares ---------------------------
+
+
+async def mark_development_deployment_ready(project_id: UUID) -> None:
+    """Service-only and idempotent: the setup's test may finish after the player's access token expired."""
+    await _send("PUT", f"/internal/projects/{project_id}/development/deployment/ready", None, "Project not found")
 
 
 async def fetch_development_environment(caller: Caller, project_id: UUID) -> dict[str, str]:
