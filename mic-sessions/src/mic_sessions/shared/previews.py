@@ -14,7 +14,8 @@ redirects and cookie paths inside it.
 
 `PreviewGateway` wraps the API application and diverts requests by path before any API middleware.
 HTTP is streamed both ways untouched (no decompression, no buffering, SSE and uploads included);
-WebSockets are relayed frame by frame. The proxy owns only the embedding policy: framing headers are
+WebSockets are relayed frame by frame, and a refused upgrade reaches the browser with the
+application's own status (or 404/502 from the proxy) instead of a bare close. The proxy owns only the embedding policy: framing headers are
 rewritten so Mooi can frame the preview, and the capability path is kept out of Referer headers.
 """
 
@@ -31,7 +32,7 @@ from uuid import UUID
 
 import httpx
 from websockets.asyncio.client import ClientConnection, connect
-from websockets.exceptions import ConnectionClosed, WebSocketException
+from websockets.exceptions import ConnectionClosed, InvalidStatus, WebSocketException
 
 from mic_sessions.shared.env import get_settings
 
@@ -55,6 +56,8 @@ _WEBSOCKET_HANDSHAKE = frozenset({
     "host", "sec-websocket-key", "sec-websocket-version", "sec-websocket-extensions",
     "sec-websocket-protocol", "sec-websocket-accept",
 })
+# Written by the server itself on the 101 it sends the browser.
+_WEBSOCKET_UPGRADE_OWNED = _WEBSOCKET_HANDSHAKE | {"content-length", "date", "server"}
 # Close codes that only describe a local condition and can never travel in a close frame.
 _RESERVED_CLOSE_CODES = {1005: 1000, 1006: 1011, 1015: 1011}
 
@@ -184,11 +187,11 @@ def _location(text: str, upstream: str, prefix: str) -> str:
     return text
 
 
-def _response_headers(response: httpx.Response, upstream: str, prefix: str) -> list[tuple[bytes, bytes]]:
+def _response_headers(raw: list[tuple[bytes, bytes]], upstream: str, prefix: str,
+                      drop: frozenset[str] = frozenset()) -> list[tuple[bytes, bytes]]:
     """Upstream headers as sent (multiple Set-Cookie included), with only the embedding policy owned
     by Mooi: framing restricted to Mooi itself, redirects and cookie paths kept inside the prefix."""
-    raw = response.headers.raw
-    excluded = _HOP_BY_HOP | _connection_tokens(raw) | {"x-frame-options"}
+    excluded = _HOP_BY_HOP | _connection_tokens(raw) | {"x-frame-options"} | drop
     ancestors = f"frame-ancestors 'self' {get_settings().cors_origin}"
     headers: list[tuple[bytes, bytes]] = []
     for key, value in raw:
@@ -205,7 +208,7 @@ def _response_headers(response: httpx.Response, upstream: str, prefix: str) -> l
             value = _COOKIE_PATH.sub(lambda match: f"{match.group(1)}{prefix}/{match.group(2)}",
                                      value.decode("latin-1")).encode("latin-1")
         headers.append((key, value))
-    if "referrer-policy" not in response.headers:
+    if not any(key.lower() == b"referrer-policy" for key, _ in raw):
         # The path is the capability: never leak it to third parties through Referer.
         headers.append((b"referrer-policy", b"same-origin"))
     return headers
@@ -234,17 +237,17 @@ async def _until_disconnect(receive: Receive) -> None:
         pass
 
 
-async def _page(send: Send, status: int, title: str, detail: str) -> None:
+async def _page(send: Send, status: int, title: str, detail: str, kind: str = "http.response") -> None:
     body = (f"<!doctype html><html lang=\"en\"><meta charset=\"utf-8\"><meta name=\"viewport\" "
             f"content=\"width=device-width,initial-scale=1\"><title>{title}</title><body style=\"margin:0;"
             f"display:grid;place-items:center;min-height:100vh;font:15px system-ui,sans-serif;color:#555;"
             f"text-align:center\"><div><h1 style=\"font-size:18px;color:#222\">{title}</h1><p>{detail}</p>"
             f"</div></body></html>").encode()
-    await send({"type": "http.response.start", "status": status, "headers": [
+    await send({"type": f"{kind}.start", "status": status, "headers": [
         (b"content-type", b"text/html; charset=utf-8"), (b"content-length", str(len(body)).encode()),
         (b"cache-control", b"no-store"), (b"referrer-policy", b"no-referrer"),
     ]})
-    await send({"type": "http.response.body", "body": body})
+    await send({"type": f"{kind}.body", "body": body})
 
 
 async def _proxy_http(scope: Scope, receive: Receive, send: Send, upstream: str, prefix: str, path: bytes) -> None:
@@ -266,7 +269,7 @@ async def _proxy_http(scope: Scope, receive: Receive, send: Send, upstream: str,
         return
     try:
         await send({"type": "http.response.start", "status": response.status_code,
-                    "headers": _response_headers(response, upstream, prefix)})
+                    "headers": _response_headers(response.headers.raw, upstream, prefix)})
 
         async def stream() -> None:
             async for chunk in response.aiter_raw():
@@ -297,9 +300,39 @@ def _close_code(code: int | None) -> int:
     return _RESERVED_CLOSE_CODES.get(code or 1005, code or 1000)
 
 
-async def _proxy_websocket(scope: Scope, receive: Receive, send: Send, upstream: str, prefix: str,
+class _connect(connect):
+    """Redirects are relayed like any other handshake answer: a reverse proxy never follows them on
+    the browser's behalf (nor could it across origins with the endpoint overridden)."""
+
+    def process_redirect(self, exc: Exception) -> Exception:
+        return exc
+
+
+async def _refuse(scope: Scope, send: Send, status: int, headers: list[tuple[bytes, bytes]],
+                  body: bytes) -> None:
+    """Answers the handshake with a plain HTTP response, as the HTTP route would. A server without the
+    ASGI denial extension can only close, which browsers then see as a bare 403."""
+    if "websocket.http.response" in (scope.get("extensions") or {}):
+        await send({"type": "websocket.http.response.start", "status": status, "headers": headers})
+        await send({"type": "websocket.http.response.body", "body": body})
+    else:
+        await send({"type": "websocket.close", "code": 1011 if status >= 500 else 1008})
+
+
+async def _refuse_page(scope: Scope, send: Send, status: int, title: str, detail: str) -> None:
+    if "websocket.http.response" in (scope.get("extensions") or {}):
+        await _page(send, status, title, detail, kind="websocket.http.response")
+    else:
+        await _refuse(scope, send, status, [], b"")
+
+
+async def _proxy_websocket(scope: Scope, receive: Receive, send: Send, upstream: str | None, prefix: str,
                            raw_path: bytes) -> None:
     if (await receive())["type"] != "websocket.connect":
+        return
+    if upstream is None:
+        await _refuse_page(scope, send, 404, "Preview not available",
+                           "This preview has stopped or its address changed. Open it again from Mooi.")
         return
     endpoint = httpx.URL(upstream)
     host = (_header(scope, b"host") or b"").decode("latin-1")
@@ -308,18 +341,34 @@ async def _proxy_websocket(scope: Scope, receive: Receive, send: Send, upstream:
     headers = [(key.decode("latin-1"), value.decode("latin-1"))
                for key, value in _request_headers(scope, prefix, _WEBSOCKET_HANDSHAKE)]
     try:
-        # The URI carries the public Host; the TCP connection goes to the private endpoint.
-        upstream_socket: ClientConnection = await connect(
-            f"ws://{host}{path}" + (f"?{query}" if query else ""), host=endpoint.host, port=endpoint.port,
+        # The URI carries the public Host; the TCP connection goes to the private endpoint. httpx
+        # normalizes default ports away (`http://app:80` has no port), so they are restored here.
+        upstream_socket: ClientConnection = await _connect(
+            f"ws://{host}{path}" + (f"?{query}" if query else ""), host=endpoint.host,
+            port=endpoint.port or (443 if endpoint.scheme == "https" else 80),
             additional_headers=headers, subprotocols=scope.get("subprotocols") or None,
             user_agent_header=None, proxy=None, max_size=None, open_timeout=10,
         )
+    except InvalidStatus as rejection:
+        # The application declined the upgrade (auth, origin, routing...): the browser gets its answer.
+        response = rejection.response
+        raw = [(key.encode("latin-1"), value.encode("latin-1")) for key, value in response.headers.raw_items()]
+        await _refuse(scope, send, response.status_code,
+                      _response_headers(raw, upstream, prefix, frozenset({"content-length"})), bytes(response.body))
+        return
     except (OSError, WebSocketException, TimeoutError):
-        LOG.debug("Preview WebSocket upstream refused", exc_info=True)
-        await send({"type": "websocket.close", "code": 1011})
+        LOG.debug("Preview WebSocket upstream unavailable", exc_info=True)
+        await _refuse_page(scope, send, 502, "Preview unavailable",
+                           "The application is not answering right now. Reload once it is running again.")
         return
     async with upstream_socket:
-        await send({"type": "websocket.accept", "subprotocol": upstream_socket.subprotocol})
+        # The upgrade answer travels like any HTTP response (cookies included); each hop negotiates
+        # its own handshake headers, and the subprotocol the application chose is relayed as such.
+        assert upstream_socket.response is not None
+        raw = [(key.encode("latin-1"), value.encode("latin-1"))
+               for key, value in upstream_socket.response.headers.raw_items()]
+        await send({"type": "websocket.accept", "subprotocol": upstream_socket.subprotocol,
+                    "headers": _response_headers(raw, upstream, prefix, _WEBSOCKET_UPGRADE_OWNED)})
 
         async def browser_to_application() -> None:
             while True:
@@ -372,10 +421,8 @@ class PreviewGateway:
         upstream = _routes.resolve(label) if _LABEL.fullmatch(label) else None
         prefix = f"{PREFIX}{label}"
         if scope["type"] == "websocket":
-            if upstream is None or not slash:
-                await send({"type": "websocket.close", "code": 1008})
-                return
-            await _proxy_websocket(scope, receive, send, upstream, prefix, ("/" + rest).encode("latin-1"))
+            await _proxy_websocket(scope, receive, send, upstream if slash else None, prefix,
+                                   ("/" + rest).encode("latin-1"))
         elif upstream is None:
             await _page(send, 404, "Preview not available",
                         "This preview has stopped or its address changed. Open it again from Mooi.")
