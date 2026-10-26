@@ -53,7 +53,7 @@ export const ProductionReleaseDialog = ({ projectId, defaultBranch, busy, error,
     footer={<><Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
       <Button variant="brand" disabled={!valid || busy || loading} onClick={() => onSelect(choice)}>
         {busy ? <LoaderCircle className="size-4 animate-spin" /> : <Rocket className="size-4" />}
-        {busy ? 'Starting…' : mode === 'create' ? `Publish ${choice.tag || 'release'} and deploy` : `Deploy ${choice.tag || 'release'}`}
+        {busy ? 'Starting…' : mode === 'create' ? 'Publish' : 'Deploy'}
       </Button></>}>
     <div role="radiogroup" aria-label="Release source" className="grid grid-cols-2 gap-2 rounded-xl bg-surface-2 p-1">
       {modes.map(({ id, icon: Icon, title, hint, disabled }) => <button key={id} type="button" role="radio" aria-checked={mode === id}

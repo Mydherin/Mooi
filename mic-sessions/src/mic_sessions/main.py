@@ -30,6 +30,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         await workspaces.get_workspaces().reconcile(preserve=preserved)
     await web.open_http_client()
     sessions.start_reaper()
+    sessions.start_reconciler()
     try:
         yield
     finally:

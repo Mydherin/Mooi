@@ -204,6 +204,16 @@ public class Auth {
     public @interface ServiceCall {
     }
 
+    /**
+     * Marks a handler as reachable only by another internal service acting on its own behalf, with no
+     * player session: recording the outcome of a run that may outlive the access token that started
+     * it, or reconciling runs a restart left behind. Callers must scope every lookup themselves.
+     */
+    @Retention(RetentionPolicy.RUNTIME)
+    @Target({ElementType.METHOD, ElementType.TYPE})
+    public @interface ServiceOnly {
+    }
+
     // --- configuration ---
 
     /**
@@ -498,8 +508,8 @@ public class Auth {
     // --- http guard ---
 
     /**
-     * Runs in front of every handler annotated with {@link Authenticated} or {@link RequireRole}, and
-     * steps aside for every other one. Two indexed primary key lookups per call is what buys
+     * Runs in front of every handler annotated with {@link Authenticated}, {@link RequireRole} or
+     * {@link ServiceOnly}, and steps aside for every other one. Two indexed primary key lookups per call is what buys
      * revocation that takes effect immediately rather than eventually.
      */
     @RequiredArgsConstructor
@@ -519,6 +529,10 @@ public class Auth {
             if (!(handler instanceof HandlerMethod handlerMethod)) {
                 return true;
             }
+            if (annotation(handlerMethod, ServiceOnly.class) != null) {
+                requireServiceToken(request, "A service call");
+                return true;
+            }
             RequireRole requireRole = annotation(handlerMethod, RequireRole.class);
             if (requireRole == null && annotation(handlerMethod, Authenticated.class) == null) {
                 return true;
@@ -533,7 +547,7 @@ public class Auth {
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Insufficient role");
             }
             if (annotation(handlerMethod, ServiceCall.class) != null) {
-                requireServiceToken(request, player);
+                requireServiceToken(request, "Player " + player.id());
             }
 
             request.setAttribute(PRINCIPAL_ATTRIBUTE, new Principal(player, claims.sessionId()));
@@ -546,13 +560,12 @@ public class Auth {
          * A blank configured token refuses every call rather than accepting one: an unset
          * {@code SERVICE_TOKEN} must fail the calls that need it, not silently open them.
          */
-        private void requireServiceToken(HttpServletRequest request, AuthenticatedPlayer player) {
+        private void requireServiceToken(HttpServletRequest request, String caller) {
             byte[] expected = settings.getServiceToken().getBytes(StandardCharsets.UTF_8);
             String header = request.getHeader(SERVICE_TOKEN_HEADER);
             byte[] provided = (header == null ? "" : header).getBytes(StandardCharsets.UTF_8);
             if (expected.length == 0 || !MessageDigest.isEqual(expected, provided)) {
-                LOG.info("Player {} was refused {} (missing or invalid service token)", player.id(),
-                        request.getRequestURI());
+                LOG.info("{} was refused {} (missing or invalid service token)", caller, request.getRequestURI());
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN, SERVICE_TOKEN_REQUIRED);
             }
         }

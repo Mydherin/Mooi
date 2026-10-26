@@ -60,8 +60,9 @@ def _bearer(caller: Caller) -> dict[str, str]:
     return {"Authorization": f"Bearer {caller.token}"}
 
 
-def _service_headers(caller: Caller) -> dict[str, str]:
-    return {**_bearer(caller), _SERVICE_TOKEN_HEADER: get_settings().service_token}
+def _service_headers(caller: Caller | None) -> dict[str, str]:
+    """`None` is this service acting on its own behalf, for the endpoints no player token may reach."""
+    return {**(_bearer(caller) if caller else {}), _SERVICE_TOKEN_HEADER: get_settings().service_token}
 
 
 def _raise_for_status(response: httpx.Response, not_found_message: str) -> None:
@@ -164,15 +165,10 @@ async def write_production_recipe(caller: Caller, project_id: UUID, recipe: dict
     return response.json()
 
 
-async def publish_production_recipe(caller: Caller, project_id: UUID) -> dict:
-    try:
-        response = await get_http_client().post(
-            f"{get_settings().mooi_api_base_url}/me/projects/{project_id}/production/recipe/publish",
-            headers=_service_headers(caller))
-    except httpx.HTTPError:
-        raise ApiException.bad_gateway() from None
-    _raise_for_status(response, "Project not found")
-    return response.json()
+async def publish_production_recipe(project_id: UUID) -> dict:
+    """Service-only: runs once a deployment proves the draft, possibly after the player's access token expired."""
+    return await _send("POST", f"/internal/projects/{project_id}/production/recipe/publish", None,
+                       "Project not found") or {}
 
 
 async def delete_production_recipe(caller: Caller, project_id: UUID) -> None:
@@ -217,18 +213,22 @@ async def start_production_deployment(caller: Caller, project_id: UUID, operatio
     _raise_for_status(response, "Project not found")
 
 
-async def finish_production_deployment(caller: Caller, project_id: UUID, operation_id: UUID,
+async def finish_production_deployment(project_id: UUID, operation_id: UUID,
                                        state: str, message: str, logs: list[str]) -> None:
-    try:
-        response = await get_http_client().put(
-            f"{get_settings().mooi_api_base_url}/me/projects/{project_id}/production/deployments/{operation_id}",
-            headers=_service_headers(caller), json={"state": state, "message": message, "logs": logs})
-    except httpx.HTTPError:
-        raise ApiException.bad_gateway() from None
-    _raise_for_status(response, "Deployment not found")
+    """Service-only, so the outcome is saved even after the starting player's access token expired."""
+    await _send("PUT", f"/internal/projects/{project_id}/production/deployments/{operation_id}", None,
+                "Deployment not found", {"state": state, "message": message, "logs": logs})
 
 
-async def _send(method: str, path: str, caller: Caller, not_found_message: str, payload: dict | None = None) -> dict | None:
+async def reconcile_production_deployments(active: list[UUID]) -> int:
+    """Fails every unfinished deployment outside `active`: ones a restart of this service orphaned."""
+    body = await _send("POST", "/internal/production/deployments/reconcile", None, "Not found",
+                       {"active": [str(operation_id) for operation_id in active]})
+    return int((body or {}).get("interrupted", 0))
+
+
+async def _send(method: str, path: str, caller: Caller | None, not_found_message: str,
+                payload: dict | None = None) -> dict | None:
     """A service call that changes state in `mic-mooi`; answers its JSON body, or None when it has none."""
     try:
         response = await get_http_client().request(method, f"{get_settings().mooi_api_base_url}{path}",
@@ -268,8 +268,10 @@ async def write_backup_recipe(caller: Caller, project_id: UUID, recipe: dict) ->
     return await _send("PUT", f"/me/projects/{project_id}/backups/recipe/draft", caller, "Project not found", recipe)
 
 
-async def publish_backup_recipe(caller: Caller, project_id: UUID) -> dict:
-    return await _send("POST", f"/me/projects/{project_id}/backups/recipe/publish", caller, "Project not found")
+async def publish_backup_recipe(project_id: UUID) -> dict:
+    """Service-only: runs once a restore proves the draft, possibly after the player's access token expired."""
+    return await _send("POST", f"/internal/projects/{project_id}/backups/recipe/publish", None,
+                       "Project not found") or {}
 
 
 async def delete_backup_recipe(caller: Caller, project_id: UUID) -> None:
@@ -313,10 +315,18 @@ async def start_backup_operation(caller: Caller, project_id: UUID, backup_id: UU
         "operationId": str(operation_id), "action": action, "target": target, "script": script})
 
 
-async def finish_backup_operation(caller: Caller, project_id: UUID, backup_id: UUID, operation_id: UUID,
+async def finish_backup_operation(project_id: UUID, backup_id: UUID, operation_id: UUID,
                                   state: str, message: str, logs: list[str]) -> None:
-    await _send("PUT", f"/me/projects/{project_id}/backups/{backup_id}/operations/{operation_id}", caller,
+    """Service-only, so the outcome is saved even after the starting player's access token expired."""
+    await _send("PUT", f"/internal/projects/{project_id}/backups/{backup_id}/operations/{operation_id}", None,
                 "Backup not found", {"state": state, "message": message, "logs": logs})
+
+
+async def reconcile_backup_operations(active: list[UUID]) -> int:
+    """Fails every unfinished backup operation outside `active`: ones a restart of this service orphaned."""
+    body = await _send("POST", "/internal/backups/operations/reconcile", None, "Not found",
+                       {"active": [str(operation_id) for operation_id in active]})
+    return int((body or {}).get("interrupted", 0))
 
 
 async def delete_backup(caller: Caller, project_id: UUID, backup_id: UUID) -> None:

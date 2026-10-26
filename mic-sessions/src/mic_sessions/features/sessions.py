@@ -32,7 +32,7 @@ import secrets
 import signal
 import tempfile
 import time
-from collections.abc import Coroutine, Iterable
+from collections.abc import Awaitable, Callable, Coroutine, Iterable
 from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -414,14 +414,14 @@ _SEMANTIC_TAG = re.compile(r"(v?)(\d+)\.(\d+)\.(\d+)")
 
 
 async def _next_release_tag(caller: Caller, project: mooi.Project) -> str:
-    """The patch after the highest semantic release, keeping its `v` prefix; v1.0.0 before any."""
+    """The minor after the highest semantic release (patch reset), keeping its `v` prefix; v1.0.0 before any."""
     releases = await _github_api(caller, project.full_name, "GET", "releases?per_page=100")
     versions = [match for item in releases if (match := _SEMANTIC_TAG.fullmatch(item.get("tag_name") or ""))]
     if not versions:
         return _FIRST_RELEASE_TAG
     latest = max(versions, key=lambda match: tuple(int(part) for part in match.groups()[1:]))
-    prefix, major, minor, patch = latest.groups()
-    return f"{prefix}{major}.{minor}.{int(patch) + 1}"
+    prefix, major, minor, _ = latest.groups()
+    return f"{prefix}{major}.{int(minor) + 1}.0"
 
 
 async def _test_release(caller: Caller, project: mooi.Project, fresh: bool) -> StartProductionRequest:
@@ -2107,6 +2107,23 @@ class ProductionRun:
 _production_runs: dict[UUID, ProductionRun] = {}
 _production_capacity_lock = asyncio.Lock()
 _production_status_capacity = asyncio.Semaphore(16)
+_OUTCOME_RETRY_SECONDS = (1, 3)
+
+
+async def _save_outcome(save: Callable[[], Awaitable[None]], operation: str) -> None:
+    """Persists a production or backup run's outcome, retrying while mic-mooi is unreachable. An outcome
+    that still cannot be saved is later reconciled as interrupted, never left running."""
+    failure: Exception | None = None
+    for delay in (0, *_OUTCOME_RETRY_SECONDS):
+        await asyncio.sleep(delay)
+        try:
+            await save()
+            return
+        except Exception as error:
+            failure = error
+            if not (isinstance(error, ApiException) and error.status_code == status.HTTP_502_BAD_GATEWAY):
+                break
+    LOG.warning("Could not save the outcome of %s", operation, exc_info=failure)
 
 
 def _production_run(caller: Caller, project_id: UUID) -> ProductionRun:
@@ -2445,10 +2462,9 @@ async def _run_production(run: ProductionRun, caller: Caller, project: mooi.Proj
 
     async def conclude(state: Literal["succeeded", "failed"], message: str) -> None:
         """Persist first, so clients reloading history on the final snapshot see the outcome."""
-        try:
-            await mooi.finish_production_deployment(caller, project.id, operation_id, state, message, run.logs)
-        except Exception:
-            LOG.warning("Could not save %s deployment %s", state, operation_id, exc_info=True)
+        logs = run.logs
+        await _save_outcome(lambda: mooi.finish_production_deployment(project.id, operation_id, state, message, logs),
+                            f"deployment {operation_id}")
         _publish_production(run, started.model_copy(update={
             "state": state, "message": message, "updatedAt": datetime.now(UTC)}))
 
@@ -2466,7 +2482,7 @@ async def _run_production(run: ProductionRun, caller: Caller, project: mooi.Proj
         if code != 0:
             raise RuntimeError(f"deploy.sh exited with code {code}")
         if publish_draft:
-            documents = ProductionDocuments.model_validate(await mooi.publish_production_recipe(caller, project.id))
+            documents = ProductionDocuments.model_validate(await mooi.publish_production_recipe(project.id))
             _notify_production_configuration(run, documents)
         chat = _production_chat(run.player_id, run.project_id)
         if chat is not None:
@@ -2999,10 +3015,9 @@ async def _run_backup_operation(run: BackupRun, caller: Caller, project: mooi.Pr
 
     async def conclude(state: Literal["succeeded", "failed"], message: str) -> None:
         """Persist first, so clients reloading the list on the final snapshot see the outcome."""
-        try:
-            await mooi.finish_backup_operation(caller, project.id, backup_id, operation_id, state, message, run.logs)
-        except Exception:
-            LOG.warning("Could not save %s backup operation %s", state, operation_id, exc_info=True)
+        logs = run.logs
+        await _save_outcome(lambda: mooi.finish_backup_operation(project.id, backup_id, operation_id, state, message,
+                                                                 logs), f"backup operation {operation_id}")
         _publish_backup(run, started.model_copy(update={"state": state, "message": message,
                                                         "updatedAt": datetime.now(UTC)}))
 
@@ -3023,7 +3038,7 @@ async def _run_backup_operation(run: BackupRun, caller: Caller, project: mooi.Pr
         if code != 0:
             raise RuntimeError(f"{name} exited with code {code}")
         if publish_draft:
-            documents = BackupDocuments.model_validate(await mooi.publish_backup_recipe(caller, project.id))
+            documents = BackupDocuments.model_validate(await mooi.publish_backup_recipe(project.id))
             _notify_backup_configuration(run, documents.revision)
         if proves and (chat := _backup_chat(run.player_id, run.project_id)) is not None:
             chat.platform_tested = True
@@ -3331,6 +3346,41 @@ async def agent_backup_operation(session_id: UUID, request: Request, wait: int =
     if wait > 0 and run.snapshot.state == "running" and task is not None and not task.done():
         await asyncio.wait({task}, timeout=min(wait, 120))
     return {"snapshot": run.snapshot.model_dump(mode="json"), "output": run.logs[-200:]}
+
+
+_RECONCILE_INTERVAL_SECONDS = 300
+_RECONCILE_RETRY_SECONDS = 30
+_reconciler_task: asyncio.Task[None] | None = None
+
+
+def _active_operations(runs: Iterable[ProductionRun | BackupRun]) -> list[UUID]:
+    return [run.snapshot.operationId for run in runs
+            if run.snapshot.state == "running" and run.snapshot.operationId is not None]
+
+
+async def _reconcile_loop() -> None:
+    """This process is the only runner of production and backup scripts, so a persisted run it does not
+    hold is over: orphaned by a restart or crash, or its outcome could not be saved. Sweeping from
+    boot, then periodically, turns those into failures instead of runs that look alive forever."""
+    while True:
+        try:
+            interrupted = (await mooi.reconcile_production_deployments(_active_operations(_production_runs.values()))
+                           + await mooi.reconcile_backup_operations(_active_operations(_backup_runs.values())))
+            if interrupted:
+                LOG.info("Marked %d orphaned production or backup runs as interrupted", interrupted)
+            delay = _RECONCILE_INTERVAL_SECONDS
+        except Exception:
+            LOG.debug("Run reconciliation is unavailable; retrying", exc_info=True)
+            delay = _RECONCILE_RETRY_SECONDS
+        await asyncio.sleep(delay)
+
+
+def start_reconciler() -> None:
+    """Starts the background run reconciler. Called once from `main.py`'s `lifespan` on startup;
+    `close_all` cancels it again on shutdown."""
+    global _reconciler_task
+    if _reconciler_task is None:
+        _reconciler_task = asyncio.create_task(_reconcile_loop())
 
 
 async def close_backups() -> None:
@@ -3996,12 +4046,13 @@ def start_reaper() -> None:
 async def close_all() -> None:
     """Closes every live session — runtime disconnect and workspace removal, via `close_session` —
     and stops the reaper. Called once from `main.py`'s `lifespan` on shutdown."""
-    global _reaper_task
-    if _reaper_task is not None:
-        _reaper_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await _reaper_task
-        _reaper_task = None
+    global _reaper_task, _reconciler_task
+    for task in (_reaper_task, _reconciler_task):
+        if task is not None:
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+    _reaper_task = _reconciler_task = None
     for session in get_registry().all():
         await close_session(session.id)
     await close_productions()
