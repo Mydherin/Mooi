@@ -8,4 +8,4 @@
 - [ ] Proper admin menu seeing current active users, current sessions accross all users
 - [ ] Allow with drag and drop move todo items
 - [ ] Microphone sometimes when you have used from first time and you enable again take so much time to work
-- [ ] When you go through dev deploy in deterministic way chat get pause, even if chat and dev deploy is synced it is not totally sync in that way
+- [ ] When you ask the chat for something and chat makes a deterministic deployment in dev session, the deployment set up message appears, and it should not appers cause that message is always when you are setting up the deployment with the agent from fisrt time (triggered from chat or from button)
