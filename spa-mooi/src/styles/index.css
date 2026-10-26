@@ -33,6 +33,17 @@
   color: transparent;
 }
 
+/* Live status text: a highlight sweeps across the words while the agent works, as in Codex. */
+@utility text-shimmer {
+  background-image: linear-gradient(90deg, var(--ink-subtle) 0%, var(--ink-subtle) 35%, var(--ink) 50%,
+    var(--ink-subtle) 65%, var(--ink-subtle) 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 2.4s linear infinite;
+}
+
 /* A faint dotted grid for hero and empty surfaces. Static, so it costs one paint. */
 @utility bg-dot-grid {
   background-image: radial-gradient(color-mix(in oklab, var(--ink) 9%, transparent) 1px, transparent 1px);

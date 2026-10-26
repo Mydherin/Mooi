@@ -49,6 +49,7 @@ from claude_agent_sdk import (
     ClaudeAgentOptions,
     ClaudeSDKClient,
     CLIJSONDecodeError,
+    HookMatcher,
     ConversationResetMessage,
     PermissionResult,
     PermissionResultAllow,
@@ -68,6 +69,7 @@ from claude_agent_sdk import (
     UserMessage,
 )
 
+from mic_sessions.shared.agent_conduct import conduct_instructions, shell_file_write
 from mic_sessions.shared.browser import playwright_server
 from mic_sessions.shared.env import get_settings
 from mic_sessions.shared import images as session_images
@@ -470,6 +472,26 @@ def _claude_model_label(entry: dict[str, Any], model_id: str) -> str:
     description = entry.get("description")
     headline = description.split("·", 1)[0].strip() if isinstance(description, str) else ""
     return headline if headline.lower().startswith(f"{name.lower()} ") and len(headline) <= 40 else name
+
+
+_CLAUDE_CONDUCT = conduct_instructions(read_tools="the Read tool",
+                                       edit_tools="the Write, Edit, MultiEdit and NotebookEdit tools")
+
+
+async def _steer_shell_file_writes(input_data: Any, tool_use_id: str | None, context: Any) -> dict[str, Any]:
+    """Turns a Bash call that writes a project file back to the file tools, with the reason, so the
+    agent retries with Write or Edit and the user sees the change as an edit with its diff."""
+    target = shell_file_write(str((input_data.get("tool_input") or {}).get("command") or ""))
+    if target is None:
+        return {}
+    return {"hookSpecificOutput": {
+        "hookEventName": "PreToolUse",
+        "permissionDecision": "deny",
+        "permissionDecisionReason": (
+            f"Do not write files through the shell ({target}). Create new files with the Write tool and "
+            "change existing ones with Edit or MultiEdit, one file per call, so the user sees each change "
+            "and its diff; then run any commands separately."),
+    }}
 
 
 class ClaudeAgentRuntime:
@@ -875,10 +897,7 @@ class ClaudeAgentRuntime:
         plugins = ([{"type": "local", "path": str(self._workspace)}]
                    if (self._workspace / ".claude-plugin" / "plugin.json").is_file() else [])
         system_append = (
-            "Prefer the dedicated Read tool for reading files and Edit, MultiEdit, "
-            "Write or NotebookEdit for changing files when applicable, so the session "
-            "can display file operations and their results clearly. Use shell tools "
-            "for commands that require them.\n\n"
+            _CLAUDE_CONDUCT + "\n\n"
             "The session shows the user every image a tool returns. To deliver an image "
             "(created, rendered, converted or captured), save it as a PNG, JPEG, WebP or GIF "
             "file and open it with the Read tool."
@@ -905,6 +924,8 @@ class ClaudeAgentRuntime:
             # own questions reach the player.
             permission_mode="default",
             can_use_tool=self._can_use_tool,
+            # A hook runs whatever the project's permission settings allow, unlike `can_use_tool`.
+            hooks={"PreToolUse": [HookMatcher(matcher="Bash", hooks=[_steer_shell_file_writes])]},
             sandbox={"enabled": False},
             include_partial_messages=True,
             max_buffer_size=settings.agent_claude_max_message_bytes,
@@ -1236,6 +1257,8 @@ CODEX_CAPABILITIES = AgentCapabilities(streaming=True, thinking=True, questions=
 
 # Full access, like the Claude adapter: Codex never asks for approvals and runs unsandboxed
 # inside the session's own clone. Only the agent's own questions reach the player.
+# Codex approves nothing per call (`approvalPolicy: never`), so its file rule is instruction only.
+_CODEX_CONDUCT = conduct_instructions(read_tools="your shell read commands", edit_tools="apply_patch")
 _CODEX_ACCESS = {"approvalPolicy": "never", "sandbox": "danger-full-access"}
 _CODEX_FILE_TOOLS = {"add": "Write", "delete": "Edit", "update": "Edit"}
 
@@ -1321,9 +1344,8 @@ class CodexAgentRuntime:
         await self._emit(event["type"], event["data"])
 
     def _thread_params(self) -> dict[str, Any]:
-        params = {"cwd": str(self._workspace), "model": self._config.model, **_CODEX_ACCESS}
-        if self._instructions:
-            params["developerInstructions"] = self._instructions
+        params = {"cwd": str(self._workspace), "model": self._config.model, **_CODEX_ACCESS,
+                  "developerInstructions": "\n\n".join(filter(None, [_CODEX_CONDUCT, self._instructions]))}
         if self._environment:
             # The account's app-server is shared by sessions: per-thread overrides scope the variables
             # to this conversation's shell commands, on top of the server's `inherit="none"` policy.
