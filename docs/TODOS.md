@@ -8,5 +8,4 @@
 - [ ] Proper admin menu seeing current active users, current sessions accross all users
 - [ ] Allow with drag and drop move todo items
 - [ ] Microphone sometimes when you have used from first time and you enable again take so much time to work
-- [ ] When you are showing working in chat wrokign as title of the block chande suddnelty by another name accoridgn the task that is being resolving but i could not even see it because it returns working instantly, please check this an adjust in proper way
 - [ ] When you go through dev deploy in deterministic way chat get pause, even if chat and dev deploy is synced it is not totally sync in that way
