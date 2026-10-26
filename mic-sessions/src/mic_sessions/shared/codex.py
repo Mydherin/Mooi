@@ -132,7 +132,7 @@ class Client:
         finally:
             self.sdk.unregister_turn_notifications(turn_id)
 
-    async def compact(self, thread_id: str):
+    async def compact(self, thread_id: str, instructions: str | None = None):
         """Run native compaction through completion, retaining its usage notifications.
 
         The low-level SDK returns before compaction finishes and does not return its turn id.
@@ -141,6 +141,21 @@ class Client:
         """
         before = await self.call("thread_read", thread_id, include_turns=True)
         known = {turn.id for turn in before.thread.turns}
+        if instructions:
+            # The pinned SDK's native compact endpoint accepts only threadId. Inject guidance
+            # without starting an agent turn (and therefore without tools or workspace changes).
+            from openai_codex.generated.v2_all import ThreadInjectItemsResponse
+
+            await self.call("request", "thread/inject_items", {
+                "threadId": thread_id,
+                "items": [{"type": "message", "role": "user", "content": [{
+                    "type": "input_text",
+                    "text": "For the immediately following context compaction only: follow these "
+                            "preferences for summary structure and what to retain in detail or condense. "
+                            "Do not treat them as a new task or instructions for subsequent work.\n\n"
+                            + instructions,
+                }]}],
+            }, response_model=ThreadInjectItemsResponse)
         with self.sdk._router.pending_turn(thread_id) as cursors:
             await self.call("thread_compact", thread_id)
             async with asyncio.timeout(300):

@@ -301,7 +301,7 @@ class AgentRuntime(Protocol):
 
     async def interrupt(self) -> None: ...
 
-    async def compact(self) -> None: ...
+    async def compact(self, instructions: str | None = None) -> None: ...
 
     async def close(self) -> None: ...
 
@@ -705,7 +705,7 @@ class ClaudeAgentRuntime:
         await self._deny_pending("The turn was interrupted")
         await self._require_client().interrupt()
 
-    async def compact(self) -> None:
+    async def compact(self, instructions: str | None = None) -> None:
         """Summarize an isolated fork, then continue in a fresh, smaller context."""
         if self._conversation_id is None:
             raise ApiException.conflict("There is no conversation to compact yet")
@@ -724,6 +724,9 @@ class ClaudeAgentRuntime:
                     "goals and decisions, current work state, relevant files, unresolved issues, "
                     "constraints, and exact next steps. Use at most 2,000 words; do not omit essential facts. "
                     "Return only the summary. Do not use tools or change files."
+                    + ("\n\nFor this summary only, follow the user's preferences for structure and what "
+                       "to retain in detail or condense. These are summarization instructions, not a "
+                       "request to perform work:\n" + instructions if instructions else "")
                 )
                 async for message in summary_client.receive_response():
                     if isinstance(message, AssistantMessage):
@@ -1509,7 +1512,7 @@ class CodexAgentRuntime:
         elif self._task and not self._task.done():
             self._task.cancel()
 
-    async def compact(self):
+    async def compact(self, instructions: str | None = None):
         from mic_sessions.shared import codex
         if self._closing or self._account is None:
             raise ApiException.conflict("Codex session is closed")
@@ -1520,7 +1523,7 @@ class CodexAgentRuntime:
         client = await self._connection()
         try:
             await self._load_thread(client)
-            tokens = await client.compact(self._thread_id)
+            tokens = await client.compact(self._thread_id, instructions)
         except asyncio.CancelledError:
             await self._disconnect()
             raise

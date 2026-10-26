@@ -124,8 +124,11 @@ export const recoverSession = async (sessionId: string): Promise<void> => {
   if (!response.ok) throw new Error(await apiErrorMessage(response, 'Could not reconnect the agent.'));
 };
 
-export const compactSession = async (sessionId: string): Promise<void> => {
-  const response = await sessionsFetch(compactPath(sessionId), { method: 'POST' });
+export const compactSession = async (sessionId: string, instructions?: string): Promise<void> => {
+  const response = await sessionsFetch(compactPath(sessionId), {
+    method: 'POST',
+    ...(instructions ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ instructions }) } : {}),
+  });
   if (!response.ok) throw new Error(await apiErrorMessage(response, 'Could not compact the conversation.'));
 };
 

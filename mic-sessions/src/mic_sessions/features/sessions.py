@@ -565,6 +565,10 @@ class SendMessageRequest(BaseModel):
     images: list[ImageUploadRequest] = Field(default_factory=list, max_length=images.MAX_IMAGES)
 
 
+class CompactSessionRequest(BaseModel):
+    instructions: str | None = Field(default=None, max_length=10_000)
+
+
 class UpdateSessionConfigurationRequest(BaseModel):
     # `model_fields_set` below distinguishes an omitted field from an explicit
     # null effort, which is how clients select a model with no effort setting.
@@ -1634,7 +1638,8 @@ async def clear_session_conversation(
 
 @router.post("/sessions/{session_id}/compact", status_code=status.HTTP_202_ACCEPTED)
 async def compact_session_conversation(
-    session_id: UUID, caller: Annotated[Caller, Depends(current_caller)]
+    session_id: UUID, caller: Annotated[Caller, Depends(current_caller)],
+    body: CompactSessionRequest | None = None,
 ) -> None:
     session = get_registry().get_for(caller, session_id)
     async with session.operation_lock:
@@ -1646,16 +1651,19 @@ async def compact_session_conversation(
         record(session, EVENT_SESSION_COMPACTION, {"phase": "started"})
         _record_status(session, STATUS_COMPACTING)
         record(session, "session.usage", {"context": None})
-        _spawn(session, _run_compaction(session, previous_context))
+        instructions = ((body.instructions or "").strip() or None) if body else None
+        _spawn(session, _run_compaction(session, previous_context, instructions))
 
 
-async def _run_compaction(session: Session, previous_context: dict[str, Any] | None) -> None:
+async def _run_compaction(
+    session: Session, previous_context: dict[str, Any] | None, instructions: str | None = None,
+) -> None:
     """Own the long provider operation after the HTTP request has returned."""
     async with session.operation_lock:
         if session.closing or session.status != STATUS_COMPACTING:
             return
         try:
-            await _runtime(session).compact()
+            await _runtime(session).compact(instructions)
         except asyncio.CancelledError:
             raise
         except Exception:

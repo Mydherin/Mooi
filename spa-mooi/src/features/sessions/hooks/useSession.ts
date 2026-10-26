@@ -28,7 +28,7 @@ interface UseSession {
   send: (text: string, images?: PreparedImage[]) => Promise<boolean>;
   interrupt: () => Promise<boolean>;
   recover: () => Promise<boolean>;
-  compact: () => Promise<boolean>;
+  compact: (instructions?: string) => Promise<boolean>;
   clearConversation: () => Promise<boolean>;
   allowPermission: (requestId: string, updatedInput?: Record<string, unknown>) => Promise<boolean>;
   denyPermission: (requestId: string, message?: string) => Promise<boolean>;
@@ -192,8 +192,8 @@ export const useSession = (sessionId: string | undefined): UseSession => {
   );
 
   const compact = useCallback(
-    () => (sessionId && useSessionsStore.getState().sessions.some((item) => item.id === sessionId && item.status === 'ready')
-      ? runAction(() => compactSession(sessionId)) : Promise.resolve(false)),
+    (instructions?: string) => (sessionId && useSessionsStore.getState().sessions.some((item) => item.id === sessionId && item.status === 'ready')
+      ? runAction(() => compactSession(sessionId, instructions)) : Promise.resolve(false)),
     [sessionId, runAction],
   );
 

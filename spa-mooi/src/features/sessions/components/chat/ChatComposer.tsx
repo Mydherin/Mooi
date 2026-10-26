@@ -16,6 +16,7 @@ import { ComposerModelMenu } from './ComposerModelMenu';
 import { ComposerSelect } from './ComposerSelect';
 import { Button } from '@/shared/components/Button';
 import { cn } from '@/shared/utils/cn';
+import { compactInstructions } from '@/features/sessions/lib/compactCommand';
 
 interface ChatComposerProps {
   status: SessionStatus;
@@ -36,7 +37,7 @@ interface ChatComposerProps {
   /** The session failed with its agent and workspace intact: offer to reconnect it. */
   recoverable?: boolean;
   onRecover: () => Promise<boolean>;
-  onCompact: () => Promise<boolean>;
+  onCompact: (instructions?: string) => Promise<boolean>;
   onClear: () => Promise<boolean>;
   onConfigurationChange: (configuration: SessionConfiguration) => void;
   /** Extra toolbar actions next to the context indicator, e.g. applying a recipe. */
@@ -78,6 +79,7 @@ export const ChatComposer = ({
   const dictation = useDictation(textareaRef);
   const [value, setValue] = useState('');
   const [dragging, setDragging] = useState(false);
+  const [commandDismissed, setCommandDismissed] = useState(false);
   const draft = useImageDraft();
 
   const effortOptions = modelOptions.find((option) => option.id === model)?.efforts ?? [];
@@ -103,7 +105,19 @@ export const ChatComposer = ({
   const canAttach = acceptsImages && !blocked && !draft.full;
   const readyImages = draft.images.filter((image) => image.status === 'ready');
   const hasImages = draft.images.length > 0;
-  const sendable = (value.trim().length > 0 || readyImages.length > 0) && !draft.preparing && !(hasImages && imagesReason);
+  const instructions = compactInstructions(value);
+  const compactReason = instructions === null ? null
+    : hasImages ? 'Remove attached images before compacting.'
+    : !hasConversation ? 'Start a conversation before compacting.'
+    : instructions.length > 10_000 ? 'Keep compaction instructions under 10,000 characters.' : null;
+  const suggestCompact = !blocked && !commandDismissed && value.trim().startsWith('/')
+    && '/compact'.startsWith(value.trimStart());
+  const selectCompact = () => {
+    setValue('/compact ');
+    setCommandDismissed(false);
+    textareaRef.current?.focus();
+  };
+  const sendable = (value.trim().length > 0 || readyImages.length > 0) && !draft.preparing && !(hasImages && imagesReason) && !compactReason;
   const imageStatus = draft.notice ?? (hasImages && imagesReason ? `${imagesReason}. Pick another model or remove them.` : null);
 
   const attach = (files: File[]) => {
@@ -142,7 +156,10 @@ export const ChatComposer = ({
 
     dictation.finish();
     const sent = readyImages;
-    if (!await onSend(text, sent.flatMap((image) => image.prepared ? [image.prepared] : []))) return;
+    const accepted = instructions !== null
+      ? await onCompact(instructions || undefined)
+      : await onSend(text, sent.flatMap((image) => image.prepared ? [image.prepared] : []));
+    if (!accepted) return;
     setValue((current) => current.trim() === text ? '' : current);
     draft.discard(sent.map((image) => image.key));
 
@@ -175,6 +192,16 @@ export const ChatComposer = ({
           </div>
         ) : null}
         {hasImages ? <ComposerImageStrip images={draft.images} onRemove={draft.remove} /> : null}
+        {suggestCompact ? (
+          <div className="absolute inset-x-0 bottom-full z-20 mb-2 rounded-xl border border-line bg-surface p-2 shadow-pop">
+            <button type="button" onClick={selectCompact}
+              className="w-full rounded-lg px-3 py-2 text-left hover:bg-surface-2 focus-visible:outline-brand">
+              <span className="text-sm font-semibold text-ink">/compact</span>
+              <span className="ml-2 text-xs text-ink-subtle">[optional instructions]</span>
+              <span className="mt-1 block text-xs text-ink-muted">Compact context. Optionally specify what to preserve, condense, or how to structure the summary.</span>
+            </button>
+          </div>
+        ) : null}
         <textarea
           ref={textareaRef}
           rows={2}
@@ -182,6 +209,7 @@ export const ChatComposer = ({
           disabled={blocked}
           onChange={(event) => {
             setValue(event.target.value);
+            setCommandDismissed(false);
           }}
           onPaste={(event) => {
             const files = acceptsImages ? imageFilesFrom(event.clipboardData) : [];
@@ -191,6 +219,17 @@ export const ChatComposer = ({
             attach(files);
           }}
           onKeyDown={(event) => {
+            if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
+            if (suggestCompact && event.key === 'Escape') {
+              event.preventDefault();
+              setCommandDismissed(true);
+              return;
+            }
+            if (suggestCompact && (event.key === 'Tab' || (event.key === 'Enter' && instructions === null && !event.shiftKey))) {
+              event.preventDefault();
+              selectCompact();
+              return;
+            }
             if (
               event.key === 'Enter'
               && !event.nativeEvent.isComposing
@@ -204,12 +243,16 @@ export const ChatComposer = ({
               submit();
             }
           }}
-          placeholder={hint ? undefined : 'Describe the next change…'}
+          placeholder={hint ? undefined : 'Describe the next change, or type / for commands…'}
+          aria-describedby={instructions !== null ? 'compact-instructions-hint' : undefined}
           aria-label="Message the agent"
           enterKeyHint="send"
           data-compose
           className="max-h-[min(12rem,25dvh)] w-full resize-none bg-transparent px-4 pt-3 text-base leading-relaxed keyboard:max-h-32 sm:px-5 sm:pt-4 text-ink placeholder:text-ink-subtle focus:outline-none disabled:cursor-not-allowed"
         />
+        {instructions !== null ? <p id="compact-instructions-hint" role="status" className="px-4 pb-2 text-xs text-ink-muted sm:px-5">
+          {compactReason ?? 'Optional instructions: what should the summary preserve or condense? Leave empty for standard compaction.'}
+        </p> : null}
         {hint ? <p role="status" className="px-4 pb-2 text-xs text-ink-muted sm:px-5">{hint}</p> : null}
         {imageStatus ? <p role="status" className="px-4 pb-2 text-xs text-warning sm:px-5">{imageStatus}</p> : null}
 
