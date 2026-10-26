@@ -12,6 +12,12 @@ has to build its frontend for the public base path, which the deployment receive
 `MOOI_PREVIEW_BASE_PATH`; the proxy sends it as `X-Forwarded-Prefix` and keeps path-absolute
 redirects and cookie paths inside it.
 
+Applications see the public request, as behind any reverse proxy: the gateway's `X-Forwarded-Host`
+becomes the upstream `Host` (and stays `X-Forwarded-Host`) for HTTP and WebSockets alike, so redirects
+and same-origin checks (`Origin` against `Host`) work unchanged. Trusting that header is safe because
+mic-sessions is reachable only through Mooi's gateway or locally; without it the incoming Host is kept.
+Absolute redirects to the public host are brought back inside the prefix as well.
+
 `PreviewGateway` wraps the API application and diverts requests by path before any API middleware.
 HTTP is streamed both ways untouched (no decompression, no buffering, SSE and uploads included);
 WebSockets are relayed frame by frame, and a refused upgrade reaches the browser with the
@@ -150,16 +156,35 @@ def _connection_tokens(headers: list[tuple[bytes, bytes]]) -> set[str]:
             for token in value.decode("latin-1").split(",") if token.strip()}
 
 
+# A bare authority: hostname, IPv4 or [IPv6], optional port. Anything else (CRLF, spaces, paths,
+# userinfo) is not a host and is ignored.
+_AUTHORITY = re.compile(rb"(\[[0-9a-fA-F:.]+\]|[A-Za-z0-9.-]+)(:\d{1,5})?")
+
+
+def _public_host(scope: Scope) -> bytes | None:
+    """The host the browser addressed: the gateway's `X-Forwarded-Host` (first entry of a list) when
+    it is a valid authority, the incoming Host otherwise (local runs, direct access to the port)."""
+    if (forwarded := _header(scope, b"x-forwarded-host")) is not None:
+        candidate = forwarded.split(b",", 1)[0].strip()
+        if _AUTHORITY.fullmatch(candidate):
+            return candidate
+    return _header(scope, b"host")
+
+
 def _request_headers(scope: Scope, prefix: str, drop: frozenset[str] = frozenset()) -> list[tuple[bytes, bytes]]:
     """The browser's headers minus hop-by-hop ones, with the forwarding facts of the public request.
 
-    Host is kept: the application sees Mooi's public host, as behind any reverse proxy. mic-sessions
-    is reachable only through Mooi's gateway or locally, so the gateway's scheme and host win over the
-    connection's own.
+    The application sees Mooi's public host, as behind any reverse proxy: the gateway's X-Forwarded-Host
+    becomes the upstream Host (exactly once) and X-Forwarded-Host. mic-sessions is reachable only
+    through Mooi's gateway or locally, so the gateway's scheme and host win over the connection's own.
+    WebSockets drop Host here: their client writes it from the request URI.
     """
     raw: list[tuple[bytes, bytes]] = scope["headers"]
-    excluded = _HOP_BY_HOP | _FORWARDING | _connection_tokens(raw) | drop
+    excluded = _HOP_BY_HOP | _FORWARDING | _connection_tokens(raw) | drop | {"host"}
     headers = [(key, value) for key, value in raw if key.decode("latin-1").lower() not in excluded]
+    host = _public_host(scope)
+    if host is not None and "host" not in drop:
+        headers.insert(0, (b"host", host))
     client = scope.get("client")
     if client:
         chain = _header(scope, b"x-forwarded-for")
@@ -168,7 +193,7 @@ def _request_headers(scope: Scope, prefix: str, drop: frozenset[str] = frozenset
         headers.append((b"x-forwarded-for", chain + b", " + address if chain else address))
     proto = _header(scope, b"x-forwarded-proto") or scope.get("scheme", "http").replace("ws", "http").encode("ascii")
     headers.append((b"x-forwarded-proto", proto))
-    if (host := _header(scope, b"x-forwarded-host") or _header(scope, b"host")) is not None:
+    if host is not None:
         headers.append((b"x-forwarded-host", host))
     headers.append((b"x-forwarded-prefix", prefix.encode("ascii")))
     return headers
@@ -178,16 +203,28 @@ _FRAME_ANCESTORS = re.compile(r"(?i)(^|;)\s*frame-ancestors\b[^;]*")
 _COOKIE_PATH = re.compile(r"(?i)(;\s*path\s*=\s*)/?([^;]*)")
 
 
-def _location(text: str, upstream: str, prefix: str) -> str:
-    """Redirects to the private endpoint or to a path-absolute URL stay inside the preview prefix."""
-    if text.startswith(upstream) and text[len(upstream):len(upstream) + 1] in ("", "/", "?", "#"):
-        text = text[len(upstream):] or "/"
+def _strip_origin(text: str, origin: str) -> str | None:
+    """`text` as a path-absolute URL when it starts with `origin` (host compared case-insensitively)."""
+    if text[:len(origin)].lower() == origin.lower() and text[len(origin):len(origin) + 1] in ("", "/", "?", "#"):
+        rest = text[len(origin):]
+        return rest if rest.startswith("/") else "/" + rest
+    return None
+
+
+def _location(text: str, upstream: str, prefix: str, public_host: str | None = None) -> str:
+    """Redirects to the private endpoint, to the public host (which applications now build absolute
+    URLs from) or to a path-absolute URL stay inside the preview prefix."""
+    origins = [upstream] + ([f"http://{public_host}", f"https://{public_host}"] if public_host else [])
+    for origin in origins:
+        if (path := _strip_origin(text, origin)) is not None:
+            text = path
+            break
     if text.startswith("/") and not text.startswith("//") and not text.startswith(prefix + "/"):
         return prefix + text
     return text
 
 
-def _response_headers(raw: list[tuple[bytes, bytes]], upstream: str, prefix: str,
+def _response_headers(raw: list[tuple[bytes, bytes]], upstream: str, prefix: str, public_host: str | None,
                       drop: frozenset[str] = frozenset()) -> list[tuple[bytes, bytes]]:
     """Upstream headers as sent (multiple Set-Cookie included), with only the embedding policy owned
     by Mooi: framing restricted to Mooi itself, redirects and cookie paths kept inside the prefix."""
@@ -202,7 +239,7 @@ def _response_headers(raw: list[tuple[bytes, bytes]], upstream: str, prefix: str
             value = _FRAME_ANCESTORS.sub(lambda match: f"{match.group(1)} {ancestors}",
                                          value.decode("latin-1")).encode("latin-1")
         elif name in ("location", "content-location"):
-            value = _location(value.decode("latin-1"), upstream, prefix).encode("latin-1")
+            value = _location(value.decode("latin-1"), upstream, prefix, public_host).encode("latin-1")
         elif name == "set-cookie":
             # Each preview keeps its own cookie jar, apart from Mooi's and from other previews.
             value = _COOKIE_PATH.sub(lambda match: f"{match.group(1)}{prefix}/{match.group(2)}",
@@ -255,7 +292,9 @@ async def _proxy_http(scope: Scope, receive: Receive, send: Send, upstream: str,
     query = scope.get("query_string") or b""
     url = endpoint.copy_with(raw_path=path + (b"?" + query if query else b""))
     headers = _request_headers(scope, prefix)
+    public_host = _public_host(scope)
     has_body = any(key in (b"content-length", b"transfer-encoding") for key, _ in scope["headers"])
+    # An explicit Host is sent as is: httpx derives one from the private URL only when it is missing.
     request = httpx.Request(scope["method"], url, headers=headers,
                             content=_request_body(receive) if has_body else None)
     try:
@@ -269,7 +308,8 @@ async def _proxy_http(scope: Scope, receive: Receive, send: Send, upstream: str,
         return
     try:
         await send({"type": "http.response.start", "status": response.status_code,
-                    "headers": _response_headers(response.headers.raw, upstream, prefix)})
+                    "headers": _response_headers(response.headers.raw, upstream, prefix,
+                                                 public_host and public_host.decode("latin-1"))})
 
         async def stream() -> None:
             async for chunk in response.aiter_raw():
@@ -335,13 +375,14 @@ async def _proxy_websocket(scope: Scope, receive: Receive, send: Send, upstream:
                            "This preview has stopped or its address changed. Open it again from Mooi.")
         return
     endpoint = httpx.URL(upstream)
-    host = (_header(scope, b"host") or b"").decode("latin-1")
+    host = (_public_host(scope) or b"").decode("latin-1")
     path = raw_path.decode("latin-1")
     query = (scope.get("query_string") or b"").decode("latin-1")
     headers = [(key.decode("latin-1"), value.decode("latin-1"))
                for key, value in _request_headers(scope, prefix, _WEBSOCKET_HANDSHAKE)]
     try:
-        # The URI carries the public Host; the TCP connection goes to the private endpoint. httpx
+        # The URI carries the public Host (the handshake's only Host header, so same-origin checks
+        # pass); the TCP connection goes to the private endpoint. httpx
         # normalizes default ports away (`http://app:80` has no port), so they are restored here.
         upstream_socket: ClientConnection = await _connect(
             f"ws://{host}{path}" + (f"?{query}" if query else ""), host=endpoint.host,
@@ -354,7 +395,8 @@ async def _proxy_websocket(scope: Scope, receive: Receive, send: Send, upstream:
         response = rejection.response
         raw = [(key.encode("latin-1"), value.encode("latin-1")) for key, value in response.headers.raw_items()]
         await _refuse(scope, send, response.status_code,
-                      _response_headers(raw, upstream, prefix, frozenset({"content-length"})), bytes(response.body))
+                      _response_headers(raw, upstream, prefix, host, frozenset({"content-length"})),
+                      bytes(response.body))
         return
     except (OSError, WebSocketException, TimeoutError):
         LOG.debug("Preview WebSocket upstream unavailable", exc_info=True)
@@ -368,7 +410,7 @@ async def _proxy_websocket(scope: Scope, receive: Receive, send: Send, upstream:
         raw = [(key.encode("latin-1"), value.encode("latin-1"))
                for key, value in upstream_socket.response.headers.raw_items()]
         await send({"type": "websocket.accept", "subprotocol": upstream_socket.subprotocol,
-                    "headers": _response_headers(raw, upstream, prefix, _WEBSOCKET_UPGRADE_OWNED)})
+                    "headers": _response_headers(raw, upstream, prefix, host, _WEBSOCKET_UPGRADE_OWNED)})
 
         async def browser_to_application() -> None:
             while True:
