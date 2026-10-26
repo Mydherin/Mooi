@@ -6,3 +6,4 @@
 - [ ] Langfuse view over session
 - [ ] ALlow see screenshots from playwright after testing, with real time paring when it runs the app through playwright according dev deploy even with first setup all connected in one way
 - [ ] Proper admin menu
+- [ ] Allow with drag and drop move todo items
