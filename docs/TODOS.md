@@ -1,10 +1,5 @@
 # TODOs
 
-- [ ] Support send images/audio
-- [ ] Support generate images/audio/videos
-- [x] Support agentic merge
-- [x] Support production deployment
-- [ ] Support General chat with AG-UI
 - [ ] Support STT in the chat
 - [ ] Embed in capacitor
 - [x] Support dynamic backups system
