@@ -58,6 +58,17 @@ from it. Where they differ, this context wins over the current implementation (s
 - **Agentic merge**: merging an outdated branch with conflicts makes the agent resolve them, preserving
   both sides' features.
 
+## Project to-do list
+
+- Each project has a **To-dos** tab: a view over `docs/TODOS.md` on the default branch, which is the only
+  copy. Mooi stores no list of its own.
+- Adding, editing, checking, unchecking and removing items commits the file transparently with the user's
+  GitHub grant; a missing file is created by the first item. Each save names the file revision it read, so
+  concurrent changes are replayed, never overwritten.
+- Mooi edits only what it renders losslessly: an optional `# Title` and `- [ ]` / `- [x]` items. Any other
+  content is reported, never changed, until the user chooses to clean it up or keep managing it by hand.
+- Managed from UI or chat (session agents use the same platform API); changes stream live to every view.
+
 ## Development environment variables
 
 - Project-wide, shared by all sessions of the project, propagated live (a variable set from one session is

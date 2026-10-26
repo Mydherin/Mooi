@@ -264,6 +264,19 @@ async def write_development_environment(caller: Caller, project_id: UUID, values
     return [str(name) for name in (payload or {}).get("environment") or []]
 
 
+# --- to-dos: the project's docs/TODOS.md, read and committed on its default branch -------------
+
+
+async def fetch_todos(caller: Caller, project_id: UUID) -> dict:
+    return await _get(get_http_client(), f"{get_settings().mooi_api_base_url}/me/projects/{project_id}/todos",
+                      _service_headers(caller), "Project not found")
+
+
+async def write_todos(caller: Caller, project_id: UUID, todos: dict) -> dict:
+    """Commits the whole list against the revision the caller read; a stale one answers 409."""
+    return await _send("PUT", f"/me/projects/{project_id}/todos", caller, "Project not found", todos) or {}
+
+
 # --- backups: configuration and durable records ------------------------------------------------
 
 

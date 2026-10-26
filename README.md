@@ -41,6 +41,7 @@ sync in real time.
 | 🎛️ | **Models & accounts** | Pick model and thinking effort; connect several provider accounts, even of the same provider. |
 | 🧩 | **Live previews** | One click deploys a session to an isolated container, embedded in mobile and desktop views, reachable only through Mooi. Run as many as you need. |
 | 🔀 | **Agentic merge** | Conflicts with the main branch are resolved by the agent, keeping both sides. |
+| ✅ | **Project to-dos** | A to-do tab backed by the repository's own `docs/TODOS.md`, committed as you check items off. |
 | 🔐 | **Shared environments** | Project-wide variables, live across every session, never committed. |
 | 🌍 | **Deploy anywhere** | Describe your target once (VPS, AWS, anything); the agent builds and tests a repeatable script reused for every release. |
 | 💾 | **Backups & restore** | The same describe-once flow, versioned per release, restorable to production or a sandbox. |

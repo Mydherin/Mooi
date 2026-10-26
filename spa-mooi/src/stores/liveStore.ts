@@ -4,6 +4,7 @@ import { applyPlatformSnapshot, applyPlatformStreamEvent } from '@/features/plat
 import type { PlatformEnvironmentVariable } from '@/features/platform/types/PlatformEnvironmentVariable';
 import type { PlatformSnapshot } from '@/features/platform/types/PlatformSnapshot';
 import type { PlatformStreamState } from '@/features/platform/types/PlatformStreamState';
+import type { TodoList } from '@/features/todos/types/TodoList';
 import type { LiveState } from '@/stores/types/LiveState';
 
 interface OperationPayload {
@@ -22,6 +23,7 @@ const initial = {
   epoch: 0,
   finished: { production: 0, backup: 0 },
   developmentEnvironments: {},
+  todos: {},
 };
 
 const bump = (counters: Record<string, number>, ...keys: string[]): Record<string, number> =>
@@ -37,7 +39,8 @@ const ended = (snapshot: PlatformSnapshot | null | undefined): boolean =>
 /**
  * Everything live outside session transcripts, folded from the player's channel: each project's
  * production and backup operation with its console, and revisions that tell views when a
- * configuration, an environment or a persisted history changed, whichever side changed it.
+ * configuration, an environment or a persisted history changed, whichever side changed it, and
+ * each project's to-do list as last read or committed.
  * Session summaries from the same channel go to `sessionsStore`. Not persisted: server state.
  */
 export const useLiveStore = create<LiveState>((set) => ({
@@ -58,6 +61,9 @@ export const useLiveStore = create<LiveState>((set) => ({
       };
     }
     const projectId = String(data.projectId ?? '');
+    if (frame.type === 'project.todos') {
+      return { todos: { ...state.todos, [projectId]: data.todos as TodoList } };
+    }
     if (frame.type === 'development.environment') {
       return {
         developmentEnvironments: { ...state.developmentEnvironments, [projectId]: data.environment as PlatformEnvironmentVariable[] },
@@ -79,6 +85,8 @@ export const useLiveStore = create<LiveState>((set) => ({
     operations: { ...state.operations, [kind]: { ...state.operations[kind],
       [projectId]: applyPlatformSnapshot(state.operations[kind][projectId] ?? EMPTY, snapshot) } },
   })),
+
+  adoptTodos: (projectId, todos) => set((state) => ({ todos: { ...state.todos, [projectId]: todos } })),
 
   reconnect: () => set((state) => ({ generation: state.generation + 1 })),
 

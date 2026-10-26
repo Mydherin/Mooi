@@ -338,6 +338,19 @@ class DevelopmentEnvironment(BaseModel):
     environment: list[DevelopmentEnvironmentVariable]
 
 
+class TodoItem(BaseModel):
+    text: str = Field(min_length=1, max_length=500)
+    done: bool = False
+
+
+class TodosUpdate(BaseModel):
+    """The whole list, against the revision it was read at (null creates docs/TODOS.md)."""
+
+    revision: str | None = Field(default=None, max_length=128)
+    title: str | None = Field(default=None, max_length=200)
+    items: list[TodoItem] = Field(max_length=500)
+
+
 class AgentEnvironment(BaseModel):
     """What an agent reads: the project's own values. Server-wide defaults from .env belong to the
     operator, so only their names are listed."""
@@ -1420,6 +1433,7 @@ _announced: set[UUID] = set()
 EVENT_SESSION_UPDATED = "session.updated"
 EVENT_SESSION_REMOVED = "session.removed"
 EVENT_DEVELOPMENT_ENVIRONMENT = "development.environment"
+EVENT_PROJECT_TODOS = "project.todos"
 # Session events that change what a session list shows; anything else stays in the transcript.
 _SUMMARY_EVENTS = frozenset({
     EVENT_SESSION_STATUS, EVENT_PERMISSION_REQUEST, EVENT_QUESTION_REQUEST, EVENT_PERMISSION_RESOLVED,
@@ -1939,6 +1953,12 @@ Use the Mooi platform API:
 - `GET {base}`: `values` (the project's variables) and `serverProvided` (names of server-wide defaults whose values you cannot read).
 - `PUT {base}` with JSON `{{"values": {{"MOOI_DEVELOPMENT_NAME": "value"}}}}` (null removes a variable): saves them and returns the stored names.
 
+## Project to-do list
+The project's to-do list is `docs/TODOS.md` on the default branch, shown in the project's To-dos tab. Whenever the user asks in this chat to show, add, complete, reopen, edit, reorder or remove to-dos, use the Mooi platform API, never edit that file in this session's branch: Mooi commits the change to the default branch and every open view updates at once.
+- `GET {root}/todos/agent`: `state` (`missing`: no file yet; `ready`: managed by Mooi; `unsupported`: content Mooi cannot render, listed in `issues`), `revision`, `title` and `items` (`text`, `done`).
+- `PUT {root}/todos/agent` with JSON `{{"revision": "<revision you read, null when missing>", "title": "<title>", "items": [{{"text": "...", "done": false}}]}}`: commits the whole list in that order. A 409 means the list changed meanwhile: read it again and reapply the request.
+- When `state` is `unsupported`, do not save: tell the user Mooi cannot render the file and ask whether to clean it up (save the `salvage` items) or keep it and edit it by hand.
+
 ## Shared Docker host
 Docker here is the host's shared engine: other projects' live containers, volumes and networks (production ones included) run on it, and the same names may appear in this repository.
 - Compose commands are scoped to this session's project through `COMPOSE_PROJECT_NAME={_compose_project(session)}`; keep it, never pass `--project-name`/`-p` or override it.
@@ -2054,6 +2074,40 @@ async def agent_save_development_environment(session_id: UUID, request: Request,
                                              body: ProductionEnvironmentUpdate) -> DevelopmentEnvironment:
     session, caller = _agent_access(session_id, request, "session")
     return await _save_development_environment(caller, session.project_id, body)
+
+
+# --- the project's to-do list: docs/TODOS.md on the default branch, the file being the only copy ---
+
+
+@router.get("/projects/{project_id}/todos")
+async def project_todos(project_id: UUID, caller: Annotated[Caller, Depends(current_caller)]) -> dict:
+    return await mooi.fetch_todos(caller, project_id)
+
+
+@router.put("/projects/{project_id}/todos")
+async def save_project_todos(project_id: UUID, body: TodosUpdate,
+                             caller: Annotated[Caller, Depends(current_caller)]) -> dict:
+    return await _save_todos(caller, project_id, body)
+
+
+async def _save_todos(caller: Caller, project_id: UUID, body: TodosUpdate) -> dict:
+    """Commits the list and announces it live, whichever side (the To-dos tab, another device or an
+    agent) changed it."""
+    todos = await mooi.write_todos(caller, project_id, body.model_dump(mode="json"))
+    _channels.publish(caller.player_id, EVENT_PROJECT_TODOS, {"projectId": str(project_id), "todos": todos})
+    return todos
+
+
+@router.get("/sessions/{session_id}/todos/agent")
+async def agent_todos(session_id: UUID, request: Request) -> dict:
+    session, caller = _agent_access(session_id, request, "session")
+    return await mooi.fetch_todos(caller, session.project_id)
+
+
+@router.put("/sessions/{session_id}/todos/agent")
+async def agent_save_todos(session_id: UUID, request: Request, body: TodosUpdate) -> dict:
+    session, caller = _agent_access(session_id, request, "session")
+    return await _save_todos(caller, session.project_id, body)
 
 
 class PlatformHandoffRequest(BaseModel):
