@@ -1,6 +1,5 @@
 # TODOs
 
-- [x] Support Codex as Agent Engine
 - [ ] Support send images/audio
 - [ ] Support generate images/audio/videos
 - [x] Support agentic merge
