@@ -4,7 +4,7 @@ The investigation went through two iterations. Both are kept here; the latest on
 
 | Iteration | Status |
 | --- | --- |
-| **2 — engine deaf after a near-silent start** (section 0) | **Supposed problem and solution, measured in production by replay; fix awaiting its production test** |
+| **2 — engine deaf after a near-silent start** (section 0) | **Solved: confirmed in production on 2026-10-27 (commit `683d78b`)** |
 | 1 — browser capture and server lock (sections 1–7, commit `cc2abb1`) | Deployed; did not solve the symptom. Its fixes stay (they remove real faults), but its browser hypothesis was not the cause |
 
 ## 0. Iteration 2: the engine goes deaf when a stream starts near-silent
@@ -30,8 +30,8 @@ by the page was recorded in the browser and replayed, paced in real time, throug
 | cut exactly at the first word | works, but loses "uno" |
 | **gated: from 0.2 s before the first frame with sound** | **every word** |
 
-- **Supposed cause** (reproduced deterministically by replay): a NeMo-Speech.cpp (`nemotron-3.5` streaming) realtime session whose first audio is
-  near-silent stays deaf for several seconds and loses the words spoken meanwhile. Silence later in the
+- **Cause** (reproduced deterministically by replay, confirmed by the production fix): a NeMo-Speech.cpp
+  (`nemotron-3.5` streaming) realtime session whose first audio is near-silent stays deaf for several seconds and loses the words spoken meanwhile. Silence later in the
   stream is harmless.
 - **Why only Chrome, and mostly after the first dictation** (observed, not isolated): Chrome's
   echo-cancelled capture opens with about 0.1–0.2 s of near-zero frames; the user sees the failure
@@ -43,14 +43,31 @@ by the page was recorded in the browser and replayed, paced in real time, throug
   A dictation that is only silence ends `empty` without touching the engine. The log line gains
   `lead_silence_s`.
 
-### Still to confirm
+### Production confirmation (2026-10-27, image `683d78b`)
 
-- In production, desktop Chrome, many dictations in a row on one page: words from the first one, no
-  late start. `lead_silence_s` in the `speech.dictation` log shows how much silence was held back.
-- The gate was validated on two recordings only (one failed, one good). The thresholds are empirical:
-  RMS 500 opens on any speech onset seen (1 570–14 000) and stays above the room noise seen (38–253);
-  a mouse click can open it early, which was shown to be harmless.
-- If a failure remains, record the page's frames and replay them as in this section: the gated replay
+- The user tested desktop Chrome with many start/stop dictations in a row on one page: every one
+  transcribed from its first word, with no late start. Safari and the phone keep working.
+- Server log of the first five dictations after the deploy:
+
+| Audio | `lead_silence_s` | First partial | Stop to final |
+| --- | --- | --- | --- |
+| 5.3 s | 0.1 | 1.9 s | 0.34 s |
+| 5.5 s | 0.0 | 2.6 s | 0.31 s |
+| 3.4 s | 0.6 | 1.7 s | 0.43 s |
+| 2.9 s | 0.1 | 1.5 s | 0.31 s |
+| 6.7 s | 0.4 | 1.6 s | 0.24 s |
+
+  Before the fix, failing dictations reached their first partial after 6.5–48 s, or never.
+
+### Known limits
+
+- The thresholds are empirical, from the recordings above: RMS 500 opens on every speech onset seen
+  (1 570–14 000) and stays above the room noise seen (38–253). A mouse click can open the gate early,
+  which was shown to be harmless. A very soft first syllable below RMS 500 would be dropped with the
+  silence; the 0.2 s pre-roll covers the usual onset.
+- The cause sits in the engine; the gate works around it. Re-check it when NeMo-Speech.cpp or the
+  model is upgraded (replay a recording that starts near-silent without the gate).
+- If a failure ever comes back, record the page's frames and replay them as in this section: the gated replay
   tells at once whether the engine or the capture is at fault.
 
 ## Iteration 1 (commit `cc2abb1`)
