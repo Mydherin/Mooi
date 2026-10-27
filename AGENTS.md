@@ -142,6 +142,16 @@ from it. Where they differ, this context wins over the current implementation (s
   always states the latest vision.
 - When the implementation conflicts with *Context*, align new work with *Context*, never the other way round.
 
+## Testing
+
+- Do not write programmatic tests: no unit, integration or end-to-end test files, test suites, test runners
+  or test dependencies (pytest, vitest, `node:test`...) when adding or changing features. The repository
+  keeps none.
+- This does not mean skipping verification: test every new or changed feature manually with the agent's
+  tools (run the code, call the API, drive the app in a browser, deploy the preview, read the logs) and
+  report what was checked.
+- Type checks, linters and builds are not programmatic tests; keep them passing.
+
 ## Deployment channels
 
 Three channels, each owned by one Mooi feature. Edit a channel's files only when the request comes from its
