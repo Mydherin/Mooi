@@ -15,6 +15,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -33,6 +34,7 @@ import jakarta.persistence.Table;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.RequiredArgsConstructor;
@@ -90,6 +92,17 @@ public class AuthFeature {
     @Auth.Authenticated
     public CurrentPlayerPayload me(Auth.Principal principal) {
         return new CurrentPlayerPayload(AuthService.toPayload(principal.player()));
+    }
+
+    /**
+     * Service-only: a fresh access token for a sign-in that is still live, so an agent or a run acting
+     * for the player keeps working after the token of the request that started it expired.
+     */
+    @PostMapping("/internal/auth/sessions/{sessionId}/access-token")
+    @Auth.ServiceOnly
+    public AccessTokenPayload renewAccessToken(@PathVariable UUID sessionId,
+                                               @Valid @RequestBody AccessTokenRequest request) {
+        return authService.renewAccessToken(sessionId, request.playerId());
     }
 
     @GetMapping("/admin/ping")
@@ -217,6 +230,24 @@ public class AuthFeature {
             Player player = playerRepository.findById(session.getPlayerId())
                     .orElseThrow(() -> new Auth.AuthenticationException(SESSION_NOT_ACTIVE));
             return issueSessionTokens(player, row.getSessionId(), now);
+        }
+
+        /**
+         * Mints an access token under a live session without touching its refresh tokens. Revocation,
+         * the subject binding and the session's maximum lifetime apply exactly as they do to a refresh,
+         * so a player who signs out stops every agent acting for them at its next renewal.
+         */
+        @Transactional(readOnly = true)
+        public AccessTokenPayload renewAccessToken(UUID sessionId, UUID playerId) {
+            OffsetDateTime now = OffsetDateTime.now(clock);
+            AuthSession session = authSessionRepository.findByIdAndRevokedAtIsNull(sessionId)
+                    .filter(found -> found.getPlayerId().equals(playerId))
+                    .filter(found -> !found.getCreatedAt().plus(settings.getSessionMaxLifetime()).isBefore(now))
+                    .orElseThrow(() -> new Auth.AuthenticationException(SESSION_NOT_ACTIVE));
+            Player player = playerRepository.findById(session.getPlayerId())
+                    .orElseThrow(() -> new Auth.AuthenticationException(SESSION_NOT_ACTIVE));
+            return new AccessTokenPayload(tokens.signAccessToken(player.getId(), player.getRole(), sessionId),
+                    tokens.accessTokenExpiresInSeconds());
         }
 
         /**
@@ -487,6 +518,12 @@ public class AuthFeature {
     /** {@code googleId} is deliberately absent: it never leaves the server. */
     public record PlayerPayload(UUID id, String username, String email, String avatarUrl, String role,
                                 OffsetDateTime createdAt) {
+    }
+
+    public record AccessTokenRequest(@NotNull UUID playerId) {
+    }
+
+    public record AccessTokenPayload(String accessToken, long expiresIn) {
     }
 
     public record SessionPayload(String accessToken, long expiresIn, String refreshToken, PlayerPayload player) {

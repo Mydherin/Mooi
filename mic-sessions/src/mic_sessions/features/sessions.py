@@ -2049,7 +2049,7 @@ async def _save_development_environment(caller: Caller, project_id: UUID,
 _AGENT_TOKEN_HEADER = "X-Mooi-Agent-Token"
 
 
-def _agent_access(session_id: UUID, request: Request, kind: SessionKind) -> tuple[Session, Caller]:
+async def _agent_access(session_id: UUID, request: Request, kind: SessionKind) -> tuple[Session, Caller]:
     """The one guard of every agent endpoint: only a live chat of `kind`'s own agent, from inside the
     pod, with its chat's token, acting for the chat's latest caller. Anything else is a plain 404."""
     session = get_registry().get(session_id)
@@ -2059,12 +2059,20 @@ def _agent_access(session_id: UUID, request: Request, kind: SessionKind) -> tupl
             or not hmac.compare_digest(token, session.agent_token)
             or session.agent_caller is None):
         raise ApiException.not_found("Not found")
-    return session, session.agent_caller
+    return session, await _agent_caller(session)
+
+
+async def _agent_caller(session: Session) -> Caller | None:
+    """The chat's caller with a valid token: a turn or a test run easily outlasts the access token of the
+    message that started it, so the caller is renewed here rather than failing the agent mid-task."""
+    if session.agent_caller is not None:
+        session.agent_caller = await mooi.renewed(session.agent_caller)
+    return session.agent_caller
 
 
 @router.get("/sessions/{session_id}/development/agent/environment")
 async def agent_development_environment(session_id: UUID, request: Request) -> AgentEnvironment:
-    session, caller = _agent_access(session_id, request, "session")
+    session, caller = await _agent_access(session_id, request, "session")
     return _agent_environment(await mooi.fetch_development_environment(caller, session.project_id),
                               development_environment())
 
@@ -2072,7 +2080,7 @@ async def agent_development_environment(session_id: UUID, request: Request) -> A
 @router.put("/sessions/{session_id}/development/agent/environment")
 async def agent_save_development_environment(session_id: UUID, request: Request,
                                              body: ProductionEnvironmentUpdate) -> DevelopmentEnvironment:
-    session, caller = _agent_access(session_id, request, "session")
+    session, caller = await _agent_access(session_id, request, "session")
     return await _save_development_environment(caller, session.project_id, body)
 
 
@@ -2100,13 +2108,13 @@ async def _save_todos(caller: Caller, project_id: UUID, body: TodosUpdate) -> di
 
 @router.get("/sessions/{session_id}/todos/agent")
 async def agent_todos(session_id: UUID, request: Request) -> dict:
-    session, caller = _agent_access(session_id, request, "session")
+    session, caller = await _agent_access(session_id, request, "session")
     return await mooi.fetch_todos(caller, session.project_id)
 
 
 @router.put("/sessions/{session_id}/todos/agent")
 async def agent_save_todos(session_id: UUID, request: Request, body: TodosUpdate) -> dict:
-    session, caller = _agent_access(session_id, request, "session")
+    session, caller = await _agent_access(session_id, request, "session")
     return await _save_todos(caller, session.project_id, body)
 
 
@@ -2123,7 +2131,7 @@ async def agent_platform_handoff(session_id: UUID, kind: Literal["production", "
     """A production or backup request made in a session chat opens that platform chat exactly like the
     page's button: same account, model and effort as this session, the request as its first message
     wrapped in the platform brief. A busy platform chat is never replaced from here."""
-    session, caller = _agent_access(session_id, request, "session")
+    session, caller = await _agent_access(session_id, request, "session")
     current = next((chat for chat in get_registry().list_for(caller.player_id, session.project_id)
                     if chat.kind == kind and not chat.closing), None)
     if current is not None and current.status in (STATUS_PROVISIONING, STATUS_WORKING, STATUS_WAITING, STATUS_COMPACTING):
@@ -2647,7 +2655,7 @@ async def delete_production_deployment(project_id: UUID, operation_id: UUID,
 
 @router.get("/sessions/{session_id}/production/agent/documents")
 async def agent_production_documents(session_id: UUID, request: Request) -> ProductionDocuments:
-    session, caller = _agent_access(session_id, request, "production")
+    session, caller = await _agent_access(session_id, request, "production")
     return await _production_documents(caller, session.project_id)
 
 
@@ -2656,7 +2664,7 @@ async def agent_production_documents(session_id: UUID, request: Request) -> Prod
 async def agent_save_production_documents(session_id: UUID, request: Request,
                                           body: ProductionFilesPatch) -> ProductionDocuments:
     """Saves some or all documents into the draft; a full PUT behaves exactly like a PATCH of all three."""
-    session, caller = _agent_access(session_id, request, "production")
+    session, caller = await _agent_access(session_id, request, "production")
     return await _save_production_draft(caller, session.project_id, body)
 
 
@@ -2664,7 +2672,7 @@ async def agent_save_production_documents(session_id: UUID, request: Request,
 async def agent_commit_repository(session_id: UUID, request: Request, body: MergeRequest) -> MergePayload:
     """Publishes the chat's repository changes, which the agent only calls after the user approved
     them: one commit onto the default branch, pushed as a fast-forward and never forced."""
-    session, caller = _agent_access(session_id, request, "production")
+    session, caller = await _agent_access(session_id, request, "production")
     payload = await _commit_platform_repository(session, caller, body)
     if payload.commit is not None:
         session.production_release_pending = True
@@ -2693,7 +2701,7 @@ async def _commit_platform_repository(session: Session, caller: Caller, body: Me
 
 @router.get("/sessions/{session_id}/production/agent/environment")
 async def agent_production_environment(session_id: UUID, request: Request) -> AgentEnvironment:
-    session, caller = _agent_access(session_id, request, "production")
+    session, caller = await _agent_access(session_id, request, "production")
     development, stored = await asyncio.gather(mooi.fetch_development_environment(caller, session.project_id),
                                                mooi.fetch_production_environment(caller, session.project_id))
     return _agent_environment({**development, **stored}, {**development_environment(), **production_environment()})
@@ -2702,20 +2710,20 @@ async def agent_production_environment(session_id: UUID, request: Request) -> Ag
 @router.put("/sessions/{session_id}/production/agent/environment")
 async def agent_save_production_environment(session_id: UUID, request: Request,
                                             body: ProductionEnvironmentUpdate) -> ProductionDocuments:
-    session, caller = _agent_access(session_id, request, "production")
+    session, caller = await _agent_access(session_id, request, "production")
     return await _save_production_environment(caller, session.project_id, body)
 
 
 @router.get("/sessions/{session_id}/production/agent/deployments/{operation_id}")
 async def agent_production_deployment_detail(session_id: UUID, operation_id: UUID, request: Request) -> dict:
-    session, caller = _agent_access(session_id, request, "production")
+    session, caller = await _agent_access(session_id, request, "production")
     return await mooi.fetch_production_deployment_detail(caller, session.project_id, operation_id)
 
 
 @router.post("/sessions/{session_id}/production/agent/deployments", status_code=status.HTTP_202_ACCEPTED)
 async def agent_test_production(session_id: UUID, request: Request) -> ProductionSnapshot:
     """A real deployment of the current configuration with the release `_test_release` picks."""
-    session, caller = _agent_access(session_id, request, "production")
+    session, caller = await _agent_access(session_id, request, "production")
     project = await mooi.fetch_project(caller, session.project_id)
     run = _production_run(caller, session.project_id)
     release = await _test_release(caller, project, session.production_release_pending)
@@ -2728,7 +2736,7 @@ async def agent_test_production(session_id: UUID, request: Request) -> Productio
 @router.get("/sessions/{session_id}/production/agent/deployment")
 async def agent_production_deployment(session_id: UUID, request: Request, wait: int = 0) -> dict:
     """The live deployment snapshot and its latest output, optionally waiting while it runs."""
-    session, caller = _agent_access(session_id, request, "production")
+    session, caller = await _agent_access(session_id, request, "production")
     run = _production_run(caller, session.project_id)
     task = run.task
     if wait > 0 and run.snapshot.state == "running" and task is not None and not task.done():
@@ -3323,20 +3331,20 @@ async def forget_backup(project_id: UUID, backup_id: UUID, caller: Annotated[Cal
 
 @router.get("/sessions/{session_id}/backup/agent/documents")
 async def agent_backup_documents(session_id: UUID, request: Request) -> BackupDocuments:
-    session, caller = _agent_access(session_id, request, "backup")
+    session, caller = await _agent_access(session_id, request, "backup")
     return await _backup_documents(caller, session.project_id)
 
 
 @router.put("/sessions/{session_id}/backup/agent/documents")
 @router.patch("/sessions/{session_id}/backup/agent/documents")
 async def agent_save_backup_documents(session_id: UUID, request: Request, body: BackupFilesPatch) -> BackupDocuments:
-    session, caller = _agent_access(session_id, request, "backup")
+    session, caller = await _agent_access(session_id, request, "backup")
     return await _save_backup_draft(caller, session.project_id, body)
 
 
 @router.get("/sessions/{session_id}/backup/agent/environment")
 async def agent_backup_environment(session_id: UUID, request: Request) -> AgentEnvironment:
-    session, caller = _agent_access(session_id, request, "backup")
+    session, caller = await _agent_access(session_id, request, "backup")
     development, production, stored = await asyncio.gather(
         mooi.fetch_development_environment(caller, session.project_id),
         mooi.fetch_production_environment(caller, session.project_id),
@@ -3348,13 +3356,13 @@ async def agent_backup_environment(session_id: UUID, request: Request) -> AgentE
 @router.put("/sessions/{session_id}/backup/agent/environment")
 async def agent_save_backup_environment(session_id: UUID, request: Request,
                                         body: ProductionEnvironmentUpdate) -> BackupDocuments:
-    session, caller = _agent_access(session_id, request, "backup")
+    session, caller = await _agent_access(session_id, request, "backup")
     return await _save_backup_environment(caller, session.project_id, body)
 
 
 @router.get("/sessions/{session_id}/backup/agent/production")
 async def agent_backup_production(session_id: UUID, request: Request) -> dict:
-    session, caller = _agent_access(session_id, request, "backup")
+    session, caller = await _agent_access(session_id, request, "backup")
     documents, deployed = await asyncio.gather(_production_documents(caller, session.project_id),
                                                _current_release(caller, session.project_id))
     return {"active": documents.active.model_dump() if documents.active else None,
@@ -3363,25 +3371,25 @@ async def agent_backup_production(session_id: UUID, request: Request) -> dict:
 
 @router.post("/sessions/{session_id}/backup/agent/repository/commit")
 async def agent_commit_backup_repository(session_id: UUID, request: Request, body: MergeRequest) -> MergePayload:
-    session, caller = _agent_access(session_id, request, "backup")
+    session, caller = await _agent_access(session_id, request, "backup")
     return await _commit_platform_repository(session, caller, body)
 
 
 @router.get("/sessions/{session_id}/backup/agent/backups")
 async def agent_backups(session_id: UUID, request: Request) -> dict:
-    session, caller = _agent_access(session_id, request, "backup")
+    session, caller = await _agent_access(session_id, request, "backup")
     return await mooi.fetch_backups(caller, session.project_id)
 
 
 @router.get("/sessions/{session_id}/backup/agent/backups/{backup_id}")
 async def agent_backup_detail(session_id: UUID, backup_id: UUID, request: Request) -> dict:
-    session, caller = _agent_access(session_id, request, "backup")
+    session, caller = await _agent_access(session_id, request, "backup")
     return await mooi.fetch_backup_detail(caller, session.project_id, backup_id)
 
 
 @router.post("/sessions/{session_id}/backup/agent/backups", status_code=status.HTTP_202_ACCEPTED)
 async def agent_test_backup(session_id: UUID, request: Request) -> BackupSnapshot:
-    session, caller = _agent_access(session_id, request, "backup")
+    session, caller = await _agent_access(session_id, request, "backup")
     project = await mooi.fetch_project(caller, session.project_id)
     return await _admit_backup_operation(_backup_run(caller, project.id), caller, project, "backup", chat=session)
 
@@ -3389,7 +3397,7 @@ async def agent_test_backup(session_id: UUID, request: Request) -> BackupSnapsho
 @router.post("/sessions/{session_id}/backup/agent/restores", status_code=status.HTTP_202_ACCEPTED)
 async def agent_test_restore(session_id: UUID, request: Request, body: AgentRestoreRequest) -> BackupSnapshot:
     """Always the disposable verification instance: the agent can never restore into production."""
-    session, caller = _agent_access(session_id, request, "backup")
+    session, caller = await _agent_access(session_id, request, "backup")
     project = await mooi.fetch_project(caller, session.project_id)
     backup = await _find_backup(caller, project.id, body.backupId)
     return await _admit_backup_operation(_backup_run(caller, project.id), caller, project, "restore",
@@ -3399,7 +3407,7 @@ async def agent_test_restore(session_id: UUID, request: Request, body: AgentRest
 @router.get("/sessions/{session_id}/backup/agent/operation")
 async def agent_backup_operation(session_id: UUID, request: Request, wait: int = 0) -> dict:
     """The live operation snapshot and its latest output, optionally waiting while it runs."""
-    session, caller = _agent_access(session_id, request, "backup")
+    session, caller = await _agent_access(session_id, request, "backup")
     run = _backup_run(caller, session.project_id)
     task = run.task
     if wait > 0 and run.snapshot.state == "running" and task is not None and not task.done():
@@ -3814,7 +3822,7 @@ async def _run_deployment_start(session: Session, operation_id: UUID) -> None:
         async with asyncio.timeout_at(deadline):
             docker, manifests = Docker(), _deployment_storage()
             # The project's development environment, for Compose interpolation only.
-            variables = (await _development_environment(session.agent_caller, session.project_id)
+            variables = (await _development_environment(await _agent_caller(session), session.project_id)
                          if session.agent_caller is not None else development_environment())
             log.protect(variables.values())
             # Known before the build: the frontend is built for the public path it will be served at.
@@ -3955,7 +3963,7 @@ async def _admit_deployment_setup(session: Session, caller: Caller, instructions
 async def agent_deployment_brief(session_id: UUID, request: Request) -> dict:
     """The development deployment brief for a setup asked in the chat: the same text the Deploy button
     sends, and the same visible setup state."""
-    session, caller = _agent_access(session_id, request, "session")
+    session, caller = await _agent_access(session_id, request, "session")
     project = await mooi.fetch_project(caller, session.project_id)
     if not project.web_application:
         raise ApiException.conflict("Deploy and preview are only available for web applications")
@@ -3967,7 +3975,7 @@ async def agent_deployment_brief(session_id: UUID, request: Request) -> dict:
 @router.post("/sessions/{session_id}/deployment/agent/start", status_code=status.HTTP_202_ACCEPTED)
 async def agent_start_deployment(session_id: UUID, request: Request) -> DeploymentSnapshot:
     """The setup's test: the same deployment Deploy runs, replacing a running or leftover one first."""
-    session, caller = _agent_access(session_id, request, "session")
+    session, caller = await _agent_access(session_id, request, "session")
     project = await mooi.fetch_project(caller, session.project_id)
     if not project.web_application:
         raise ApiException.conflict("Deploy and preview are only available for web applications")
@@ -3986,7 +3994,7 @@ async def agent_start_deployment(session_id: UUID, request: Request) -> Deployme
 @router.get("/sessions/{session_id}/deployment/agent")
 async def agent_deployment(session_id: UUID, request: Request, wait: int = 0) -> dict:
     """The deployment snapshot and its latest output, optionally waiting while it starts."""
-    session, _ = _agent_access(session_id, request, "session")
+    session, _ = await _agent_access(session_id, request, "session")
     task = session.deployment_task
     if wait > 0 and session.deployment.state == "starting" and task is not None and not task.done():
         await asyncio.wait({task}, timeout=min(wait, 120))

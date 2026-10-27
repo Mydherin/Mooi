@@ -11,6 +11,7 @@ those carry information this service should forward verbatim.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from collections.abc import Awaitable, Callable
 from datetime import datetime
@@ -18,11 +19,13 @@ from uuid import UUID
 
 import httpx
 
-from mic_sessions.shared.auth import Caller
+from mic_sessions.shared.auth import Caller, verify_access_token
 from mic_sessions.shared.env import get_settings
 from mic_sessions.shared.web import ApiException, get_http_client
 
 _SERVICE_TOKEN_HEADER = "X-Service-Token"
+# Renewed this long before expiry, so a call started on a still valid token never lands on an expired one.
+_RENEWAL_MARGIN_SECONDS = 120
 
 
 @dataclass(frozen=True)
@@ -240,6 +243,17 @@ async def _send(method: str, path: str, caller: Caller | None, not_found_message
         raise ApiException.bad_gateway() from None
     _raise_for_status(response, not_found_message)
     return response.json() if response.content else None
+
+
+async def renewed(caller: Caller) -> Caller:
+    """`caller` itself while its token stays valid, else a new token for the same sign-in. For callers
+    kept beyond their request (an agent's chat, a long run): `mic-mooi` refuses once the player signed
+    out or the sign-in reached its maximum lifetime, exactly as a refresh would."""
+    if caller.expires_at - time.time() > _RENEWAL_MARGIN_SECONDS:
+        return caller
+    body = await _send("POST", f"/internal/auth/sessions/{caller.session_id}/access-token", None,
+                       "Session is no longer active", {"playerId": str(caller.player_id)})
+    return verify_access_token((body or {})["accessToken"])
 
 
 # --- development: the environment every session of a project shares ---------------------------
