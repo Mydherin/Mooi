@@ -64,8 +64,8 @@ export const TodosUnsupported = ({ list, kept, onCleanUp, onKeep }: TodosUnsuppo
           <h3 className="text-base font-semibold tracking-[-0.015em] text-ink">This to-do list can't be rendered by Mooi</h3>
           <p className="mt-1.5 max-w-2xl text-[13px] leading-relaxed text-ink-muted">
             <code className="font-mono text-[12px] text-ink">{list.path}</code> already exists, but some of its content
-            does not match the format Mooi edits: a title and plain task items (<code className="font-mono">- [ ]</code> or{' '}
-            <code className="font-mono">- [x]</code>). Mooi will not change it unless you ask to.
+            does not match the format Mooi edits: a title and plain task items (<code className="font-mono">- [ ]</code>,{' '}
+            <code className="font-mono">- [/]</code> or <code className="font-mono">- [x]</code>). Mooi will not change it unless you ask to.
           </p>
         </div>
       </div>

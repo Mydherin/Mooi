@@ -5,6 +5,7 @@ import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -48,7 +49,7 @@ import lombok.RequiredArgsConstructor;
  * change (another device, an agent, a push from a laptop) is refused instead of overwriting it.
  *
  * <p>Mooi only edits files it can render without losing anything: an optional {@code # Title}
- * followed by GitHub task-list items. Any other content is reported as {@code unsupported}, with
+ * followed by task-list items, open, in progress or done. Any other content is reported as {@code unsupported}, with
  * the lines that are not understood and the items that a clean-up would keep, and is never changed
  * unless the player asks for that clean-up.
  *
@@ -120,7 +121,7 @@ public class ProjectTodoFeature {
             }
 
             List<TodoItem> items = request.items().stream()
-                    .map(item -> new TodoItem(TodoDocument.clean(item.text()), item.done()))
+                    .map(item -> new TodoItem(TodoDocument.clean(item.text()), item.status()))
                     .toList();
             String title = request.title() == null || request.title().isBlank()
                     ? TodoDocument.DEFAULT_TITLE : TodoDocument.clean(request.title());
@@ -177,11 +178,13 @@ public class ProjectTodoFeature {
      * The one format Mooi reads and writes, parsed and rendered as pure functions.
      *
      * <p>Supported: blank lines, at most one leading {@code # Title}, and task items {@code - [ ] text}
-     * or {@code - [x] text} ({@code *} bullets and an upper-case {@code X} read the same). Everything
-     * else is an issue, reported with its line, because rewriting it would lose what it says.
+     * (open), {@code - [/] text} (in progress, the marker task tools such as Obsidian use; GitHub shows
+     * it as plain text) or {@code - [x] text} (done); {@code *} bullets and an upper-case {@code X}
+     * read the same. Everything else is an issue, reported with its line, because rewriting it would
+     * lose what it says. Items have no length limit: an item is one line, however long.
      *
      * <p>{@code salvage} is the clean-up offer for unsupported files: every list line that still reads
-     * as a task, ticked only when its marker is an {@code x}, flattened and in file order.
+     * as a task, keeping its status when the marker is a known one, flattened and in file order.
      */
     record TodoDocument(String title, List<TodoItem> items, List<TodoIssue> issues, List<TodoItem> salvage) {
 
@@ -189,7 +192,7 @@ public class ProjectTodoFeature {
         static final int MAX_PREVIEW = 64 * 1024;
         private static final int MAX_ISSUES = 50;
         private static final Pattern TITLE = Pattern.compile("^#\\s+(\\S.*)$");
-        private static final Pattern TASK = Pattern.compile("^[-*]\\s\\[([ xX])]\\s+(\\S.*)$");
+        private static final Pattern TASK = Pattern.compile("^[-*]\\s\\[([ xX/])]\\s+(\\S.*)$");
         private static final Pattern LOOSE_TASK = Pattern.compile("^\\s*[-*+]\\s+\\[(.?)]\\s*(\\S.*)$");
         private static final Pattern LOOSE_BULLET = Pattern.compile("^\\s*(?:[-*+]|\\d+[.)])\\s+(\\S.*)$");
 
@@ -214,7 +217,7 @@ public class ProjectTodoFeature {
                 if (!seenContent && heading.matches()) {
                     title = clean(heading.group(1));
                 } else if (task.matches()) {
-                    items.add(new TodoItem(clean(task.group(2)), !" ".equals(task.group(1))));
+                    items.add(new TodoItem(clean(task.group(2)), TodoStatus.ofMarker(task.group(1))));
                 } else if (issues.size() < MAX_ISSUES) {
                     issues.add(new TodoIssue(index + 1, line.length() > 200 ? line.substring(0, 200) : line));
                 }
@@ -227,12 +230,12 @@ public class ProjectTodoFeature {
         private static void salvage(String line, List<TodoItem> salvage) {
             Matcher task = LOOSE_TASK.matcher(line);
             if (task.matches()) {
-                salvage.add(new TodoItem(clean(task.group(2)), "x".equalsIgnoreCase(task.group(1))));
+                salvage.add(new TodoItem(clean(task.group(2)), TodoStatus.ofMarker(task.group(1))));
                 return;
             }
             Matcher bullet = LOOSE_BULLET.matcher(line);
             if (bullet.matches()) {
-                salvage.add(new TodoItem(clean(bullet.group(1)), false));
+                salvage.add(new TodoItem(clean(bullet.group(1)), TodoStatus.open));
             }
         }
 
@@ -241,7 +244,7 @@ public class ProjectTodoFeature {
             if (!items.isEmpty()) {
                 text.append("\n");
             }
-            items.forEach(item -> text.append("- [").append(item.done() ? "x" : " ").append("] ")
+            items.forEach(item -> text.append("- [").append(item.status().marker).append("] ")
                     .append(item.text()).append("\n"));
             return text.toString();
         }
@@ -278,20 +281,20 @@ public class ProjectTodoFeature {
                 return "docs(todos): remove \"" + summary(removed) + "\"";
             }
             if (added.isEmpty() && removedCount == 0 && previous.size() == after.size()) {
-                List<TodoItem> toggled = new ArrayList<>();
+                List<TodoItem> moved = new ArrayList<>();
                 boolean reordered = false;
                 for (int index = 0; index < after.size(); index++) {
                     if (!previous.get(index).text().equals(after.get(index).text())) {
                         reordered = true;
-                    } else if (previous.get(index).done() != after.get(index).done()) {
-                        toggled.add(after.get(index));
+                    } else if (previous.get(index).status() != after.get(index).status()) {
+                        moved.add(after.get(index));
                     }
                 }
-                if (!reordered && toggled.size() == 1) {
-                    TodoItem item = toggled.getFirst();
-                    return "docs(todos): " + (item.done() ? "complete" : "reopen") + " \"" + summary(item.text()) + "\"";
+                if (!reordered && moved.size() == 1) {
+                    TodoItem item = moved.getFirst();
+                    return "docs(todos): " + item.status().verb + " \"" + summary(item.text()) + "\"";
                 }
-                if (reordered && toggled.isEmpty()) {
+                if (reordered && moved.isEmpty()) {
                     return "docs(todos): reorder to-do list";
                 }
             }
@@ -374,7 +377,30 @@ public class ProjectTodoFeature {
     /** {@code missing}: no file yet; {@code ready}: Mooi manages it; {@code unsupported}: left for the player to decide. */
     public enum TodoListState { missing, ready, unsupported }
 
-    public record TodoItem(String text, boolean done) {
+    /** What a task item says about its progress, with the marker it is written with in the file. */
+    public enum TodoStatus {
+        open(' ', "reopen"), inProgress('/', "start"), done('x', "complete");
+
+        final char marker;
+        /** How a commit names a change to this status. */
+        final String verb;
+
+        TodoStatus(char marker, String verb) {
+            this.marker = marker;
+            this.verb = verb;
+        }
+
+        /** Any marker other than {@code x} or {@code /} reads as open: it is what a clean-up can honestly keep. */
+        static TodoStatus ofMarker(String marker) {
+            return switch (marker.toLowerCase(Locale.ROOT)) {
+                case "x" -> done;
+                case "/" -> inProgress;
+                default -> open;
+            };
+        }
+    }
+
+    public record TodoItem(String text, TodoStatus status) {
     }
 
     /** A line Mooi cannot render, 1-based as an editor shows it. */
@@ -390,7 +416,7 @@ public class ProjectTodoFeature {
                                   String content, String htmlUrl) {
     }
 
-    /** Pattern {@code \S[^\n]*}: an item is one non-blank line, so it can never break the file apart. */
+    /** An item is one non-blank line of any length, so it can never break the file apart. */
     public record SaveTodosRequest(
             @Size(max = 128) String revision,
             @Size(max = 200) @jakarta.validation.constraints.Pattern(regexp = "[^\\r\\n]*") String title,
@@ -398,7 +424,7 @@ public class ProjectTodoFeature {
     }
 
     public record SaveTodoItem(
-            @NotBlank @Size(max = 500) @jakarta.validation.constraints.Pattern(regexp = "[^\\r\\n]*") String text,
-            boolean done) {
+            @NotBlank @jakarta.validation.constraints.Pattern(regexp = "[^\\r\\n]*") String text,
+            @NotNull TodoStatus status) {
     }
 }

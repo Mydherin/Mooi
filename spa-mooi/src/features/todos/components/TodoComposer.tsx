@@ -1,10 +1,9 @@
 import { useState, type FormEvent } from 'react';
 import { Plus } from 'lucide-react';
+import { TodoTextArea } from '@/features/todos/components/TodoTextArea';
 import { normalizeTodoText } from '@/features/todos/lib/normalizeTodoText';
 import { Button } from '@/shared/components/Button';
 import { cn } from '@/shared/utils/cn';
-
-const MAX_LENGTH = 500;
 
 interface TodoComposerProps {
   /** Texts already on the list: an item is addressed by its text, so each one appears once. */
@@ -18,8 +17,8 @@ export const TodoComposer = ({ existing, disabled, onAdd }: TodoComposerProps) =
   const text = normalizeTodoText(value);
   const duplicate = text.length > 0 && existing.includes(text);
 
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
+  const submit = (event?: FormEvent) => {
+    event?.preventDefault();
     if (!text || duplicate || disabled) return;
     onAdd(text);
     setValue('');
@@ -27,23 +26,23 @@ export const TodoComposer = ({ existing, disabled, onAdd }: TodoComposerProps) =
 
   return (
     <form onSubmit={submit} className="flex flex-col gap-1.5">
-      <div className="flex items-center gap-2">
+      <div className="flex items-start gap-2">
         <label
           className={cn(
-            'flex h-11 min-w-0 flex-1 items-center gap-2.5 rounded-control border border-line bg-surface px-3 shadow-card transition-[border-color,box-shadow] duration-150 hover:border-line-strong focus-within:border-brand/60 focus-within:ring-4 focus-within:ring-brand/12',
+            'flex min-h-11 min-w-0 flex-1 items-start gap-2.5 rounded-control border border-line bg-surface px-3 shadow-card transition-[border-color,box-shadow] duration-150 hover:border-line-strong focus-within:border-brand/60 focus-within:ring-4 focus-within:ring-brand/12',
             duplicate && 'border-warning/60 focus-within:border-warning/60 focus-within:ring-warning/12',
           )}
         >
-          <Plus className="size-4 shrink-0 text-ink-subtle" />
-          <input
+          <Plus className="mt-3.5 size-4 shrink-0 text-ink-subtle" />
+          <TodoTextArea
             value={value}
             onChange={(event) => setValue(event.target.value)}
-            maxLength={MAX_LENGTH}
+            onSubmit={submit}
             disabled={disabled}
             enterKeyHint="done"
             placeholder="Add a to-do…"
             aria-label="New to-do"
-            className="h-full w-full min-w-0 bg-transparent text-sm font-medium text-ink placeholder:text-ink-subtle focus:outline-none disabled:cursor-not-allowed"
+            className="max-h-60 w-full min-w-0 bg-transparent py-[11px] text-sm leading-5 font-medium text-ink placeholder:text-ink-subtle focus:outline-none disabled:cursor-not-allowed"
           />
         </label>
         <Button type="submit" size="md" disabled={disabled || !text || duplicate} className="h-11">

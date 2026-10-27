@@ -1,18 +1,26 @@
 import { useMemo, useState } from 'react';
 import { CircleCheckBig, ExternalLink, ListTodo, RefreshCw } from 'lucide-react';
 import { TodoComposer } from '@/features/todos/components/TodoComposer';
-import { TodoRow } from '@/features/todos/components/TodoRow';
+import { TodoSortableList } from '@/features/todos/components/TodoSortableList';
 import { TodosCleanupDialog } from '@/features/todos/components/TodosCleanupDialog';
 import { TodosUnsupported } from '@/features/todos/components/TodosUnsupported';
 import { TodoSyncIndicator } from '@/features/todos/components/TodoSyncIndicator';
 import { useProjectTodos } from '@/features/todos/hooks/useProjectTodos';
 import { keptTodosRevision } from '@/features/todos/lib/keptTodosRevision';
 import type { TodoFilter } from '@/features/todos/types/TodoFilter';
+import type { TodoStatus } from '@/features/todos/types/TodoStatus';
 import { Card } from '@/shared/components/Card';
 import { EmptyState } from '@/shared/components/EmptyState';
 import { Eyebrow } from '@/shared/components/Eyebrow';
 import { SegmentedControl } from '@/shared/components/SegmentedControl';
 import { cn } from '@/shared/utils/cn';
+
+const emptyFilter: Record<TodoFilter, string> = {
+  all: 'All clear',
+  open: 'Everything is started',
+  inProgress: 'Nothing in progress',
+  done: 'Nothing completed yet',
+};
 
 interface TodosPanelProps {
   projectId: string;
@@ -30,9 +38,13 @@ export const TodosPanel = ({ projectId, branch }: TodosPanelProps) => {
   const [cleaning, setCleaning] = useState(false);
   const [keptRevision, setKeptRevision] = useState(() => keptTodosRevision.read(projectId));
 
-  const done = items.filter((item) => item.done).length;
+  const counts = useMemo(() => {
+    const total: Record<TodoStatus, number> = { open: 0, inProgress: 0, done: 0 };
+    for (const item of items) total[item.status] += 1;
+    return total;
+  }, [items]);
   const visible = useMemo(
-    () => items.filter((item) => (filter === 'all' ? true : filter === 'done' ? item.done : !item.done)),
+    () => (filter === 'all' ? items : items.filter((item) => item.status === filter)),
     [items, filter],
   );
   const texts = useMemo(() => items.map((item) => item.text), [items]);
@@ -62,7 +74,7 @@ export const TodosPanel = ({ projectId, branch }: TodosPanelProps) => {
     change({ kind: 'replace', items: list.salvage });
   };
 
-  const progress = items.length === 0 ? 0 : Math.round((done / items.length) * 100);
+  const share = (count: number) => (items.length === 0 ? 0 : (count / items.length) * 100);
 
   return (
     <section className="flex flex-col gap-4">
@@ -112,7 +124,8 @@ export const TodosPanel = ({ projectId, branch }: TodosPanelProps) => {
               <div className="min-w-0">
                 <h2 className="truncate text-[17px] font-semibold tracking-[-0.02em] text-ink">{list.title}</h2>
                 <p className="mt-0.5 text-[13px] text-ink-muted">
-                  {items.length === 0 ? 'Nothing planned yet' : `${done} of ${items.length} done`}
+                  {items.length === 0 ? 'Nothing planned yet' : `${counts.done} of ${items.length} done`}
+                  {counts.inProgress > 0 ? ` · ${counts.inProgress} in progress` : null}
                 </p>
               </div>
               {items.length > 0 ? (
@@ -121,15 +134,17 @@ export const TodosPanel = ({ projectId, branch }: TodosPanelProps) => {
                   onChange={(next) => setFilter(next as TodoFilter)}
                   items={[
                     { id: 'all', label: `All ${items.length}` },
-                    { id: 'open', label: `Open ${items.length - done}` },
-                    { id: 'done', label: `Done ${done}` },
+                    { id: 'inProgress', label: `In progress ${counts.inProgress}` },
+                    { id: 'open', label: `To do ${counts.open}` },
+                    { id: 'done', label: `Done ${counts.done}` },
                   ]}
                 />
               ) : null}
             </div>
             {items.length > 0 ? (
-              <div aria-hidden className="h-1 overflow-hidden rounded-full bg-surface-3">
-                <div className="h-full rounded-full bg-success-dot transition-[width] duration-500 ease-out-expo" style={{ width: `${progress}%` }} />
+              <div aria-hidden className="flex h-1 overflow-hidden rounded-full bg-surface-3">
+                <div className="h-full bg-success-dot transition-[width] duration-500 ease-out-expo" style={{ width: `${share(counts.done)}%` }} />
+                <div className="h-full bg-info-dot/60 transition-[width] duration-500 ease-out-expo" style={{ width: `${share(counts.inProgress)}%` }} />
               </div>
             ) : null}
             <TodoComposer existing={texts} disabled={list.state === 'unsupported'}
@@ -137,19 +152,7 @@ export const TodosPanel = ({ projectId, branch }: TodosPanelProps) => {
           </div>
 
           {visible.length > 0 ? (
-            <ul className="divide-y divide-line border-t border-line">
-              {visible.map((item, index) => (
-                <TodoRow
-                  // Texts are unique once Mooi edits the file; a hand-written copy may still repeat one.
-                  key={`${item.text}:${visible.slice(0, index).filter((other) => other.text === item.text).length}`}
-                  item={item}
-                  taken={(text) => texts.includes(text)}
-                  onToggle={() => change({ kind: 'toggle', text: item.text, done: !item.done })}
-                  onEdit={(next) => change({ kind: 'edit', text: item.text, next })}
-                  onRemove={() => change({ kind: 'remove', text: item.text })}
-                />
-              ))}
-            </ul>
+            <TodoSortableList items={visible} texts={texts} locked={list.state === 'unsupported'} change={change} />
           ) : (
             <div className="flex flex-col items-center border-t border-line px-6 py-10 text-center">
               <span className={cn('flex size-10 items-center justify-center rounded-xl border border-line bg-surface shadow-raised',
@@ -158,7 +161,7 @@ export const TodosPanel = ({ projectId, branch }: TodosPanelProps) => {
               </span>
               <p className="mt-3 text-sm font-semibold text-ink">
                 {items.length === 0 ? (list.state === 'missing' ? 'Start the project’s to-do list' : 'All clear')
-                  : filter === 'open' ? 'Everything is done' : 'Nothing completed yet'}
+                  : emptyFilter[filter]}
               </p>
               <p className="mt-1 max-w-sm text-[13px] leading-relaxed text-ink-muted">
                 {list.state === 'missing'

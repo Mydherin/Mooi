@@ -124,7 +124,7 @@ export const ProjectPage = () => {
             label: 'To-dos',
             icon: ListTodo,
             // Open items, once the file was read: the tab never reaches GitHub before it is opened.
-            count: todos?.state === 'ready' ? todos.items.filter((item) => !item.done).length : undefined,
+            count: todos?.state === 'ready' ? todos.items.filter((item) => item.status !== 'done').length : undefined,
           },
         ]}
       />
