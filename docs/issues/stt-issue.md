@@ -70,6 +70,22 @@ by the page was recorded in the browser and replayed, paced in real time, throug
 - If a failure ever comes back, record the page's frames and replay them as in this section: the gated replay
   tells at once whether the engine or the capture is at fault.
 
+### Cleanup after the fix (no behaviour change)
+
+The whole pipeline was reviewed once the fix was confirmed. It was already lean, and every iteration-1
+safeguard still has a job, so it stays: microphone before engine, the shared suspended engine, the
+signal check with one rebuild, and the pre-ready frame queue. These guard against iOS/WebKit silence and
+a dead capture, which the onset gate does not cover. Only these changed:
+
+- **Metrics fix:** a silence-only dictation ends at once without the engine, yet it recorded a
+  `stop_to_final_ms` of about 0 ms. That pulled the p50/p95 down. Only dictations whose gate opened
+  are now measured.
+- **Unused field:** `sampleRate` was removed from the `ready` message. The page always sends 16 kHz and
+  never read it.
+- **Duplication:** the socket `onerror` and `onclose` share one handler. Escape (`cancel`) is `finish`
+  plus the rollback. Pointer and keyboard toggles share one `end()`. `isActive` reads only the session,
+  because the state leaves `idle` only together with it.
+
 ## Iteration 1 (commit `cc2abb1`)
 
 Status at the time: **supposed problem and proposed solution**.

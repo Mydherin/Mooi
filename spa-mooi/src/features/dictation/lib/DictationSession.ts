@@ -129,8 +129,9 @@ export class DictationSession {
     this.socket = socket;
     this.arm(CONNECT_TIMEOUT_MS, DICTATION_MESSAGES.connectTimeout);
     socket.onmessage = (event) => this.receive(event.data);
-    socket.onerror = () => this.fail(this.serverReady ? DICTATION_MESSAGES.connectionInterrupted : DICTATION_MESSAGES.connectFailed);
-    socket.onclose = () => this.fail(this.serverReady ? DICTATION_MESSAGES.connectionInterrupted : DICTATION_MESSAGES.connectFailed);
+    const lost = () => this.fail(this.serverReady ? DICTATION_MESSAGES.connectionInterrupted : DICTATION_MESSAGES.connectFailed);
+    socket.onerror = lost;
+    socket.onclose = lost;
   }
 
   private receive(data: unknown): void {

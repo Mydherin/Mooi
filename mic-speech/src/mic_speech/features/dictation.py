@@ -208,9 +208,10 @@ async def _cancel(task: asyncio.Task | None) -> None:
 
 
 def _record(dictation: _Transcription, outcome: str) -> None:
+    # Only a transcription the engine finished has a finalization latency; silence ends at once.
     stop_to_final_ms = (
         (dictation.final_at - dictation.stop_at) * 1000
-        if outcome in ("final", "empty") and dictation.received_bytes and dictation.stop_at and dictation.final_at
+        if outcome in ("final", "empty") and dictation.onset.open and dictation.stop_at and dictation.final_at
         else None
     )
     entry = Dictation(
@@ -301,7 +302,7 @@ async def stream(websocket: WebSocket) -> None:
     loop = asyncio.get_running_loop()
     try:
         await dictation.open(get_engine().realtime_url)
-        await _send(websocket, {"type": "ready", "sampleRate": SAMPLE_RATE, "maxSeconds": settings.speech_max_seconds})
+        await _send(websocket, {"type": "ready", "maxSeconds": settings.speech_max_seconds})
         deadline = loop.time() + settings.speech_max_seconds + DEADLINE_MARGIN_SECONDS
         browser_task = asyncio.create_task(websocket.receive())
         engine_task = asyncio.create_task(dictation.engine.recv())
