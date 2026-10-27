@@ -50,6 +50,11 @@ from claude_agent_sdk import (
     ClaudeSDKClient,
     CLIJSONDecodeError,
     ConversationResetMessage,
+    HookCallback,
+    HookContext,
+    HookInput,
+    HookJSONOutput,
+    HookMatcher,
     PermissionResult,
     PermissionResultAllow,
     PermissionResultDeny,
@@ -475,6 +480,47 @@ def _claude_model_label(entry: dict[str, Any], model_id: str) -> str:
 
 _CLAUDE_CONDUCT = conduct_instructions(edit_tools="the Write, Edit, MultiEdit and NotebookEdit tools")
 
+# `rtk rewrite` exit codes that come with a rewritten command: 0 plain, 3 when a settings `ask` rule
+# matched (every tool is approved here anyway). 1 means no RTK filter, 2 a settings `deny` rule.
+_RTK_REWRITTEN = {0, 3}
+_RTK_TIMEOUT_SECONDS = 5
+
+
+def _shell_compressor(rtk: str) -> HookCallback:
+    """PreToolUse hook running Bash commands through RTK, which keeps only what the model needs of
+    their output (as RTK's own Claude Code hook does), so every later request carries less context.
+
+    Only the executed command changes: the transcript keeps the agent's command, and a command RTK
+    does not know, or any RTK failure, runs unchanged. It never denies: a denied call is paid twice.
+    """
+
+    async def compress(input_data: HookInput, tool_use_id: str | None, context: HookContext) -> HookJSONOutput:
+        tool_input = input_data.get("tool_input") or {}
+        command = tool_input.get("command")
+        if not isinstance(command, str) or not command.strip():
+            return {}
+        try:
+            process = await asyncio.create_subprocess_exec(
+                rtk, "rewrite", command, cwd=input_data.get("cwd") or None,
+                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            )
+            try:
+                stdout, _ = await asyncio.wait_for(process.communicate(), _RTK_TIMEOUT_SECONDS)
+            except TimeoutError:
+                process.kill()
+                await process.wait()
+                raise
+        except Exception:
+            LOG.warning("RTK could not rewrite a shell command; it runs unchanged", exc_info=True)
+            return {}
+        rewritten = stdout.decode("utf-8", "replace").strip()
+        if process.returncode not in _RTK_REWRITTEN or not rewritten or rewritten == command:
+            return {}
+        return {"hookSpecificOutput": {
+            "hookEventName": "PreToolUse", "updatedInput": {**tool_input, "command": rewritten}}}
+
+    return compress
+
 
 class ClaudeAgentRuntime:
     """Adapter for Claude Code through `claude_agent_sdk`, the only module here that imports it.
@@ -891,6 +937,8 @@ class ClaudeAgentRuntime:
             system_append += "\n\n" + self._instructions
         if self._compacted_context:
             system_append += "\n\nContext retained from the conversation before compaction:\n" + self._compacted_context
+        rtk = shutil.which("rtk") if settings.agent_claude_rtk else None
+        hooks = {"PreToolUse": [HookMatcher(matcher="Bash", hooks=[_shell_compressor(rtk)])]} if rtk else None
         return ClaudeAgentOptions(
             cwd=str(self._workspace),
             env={
@@ -909,6 +957,7 @@ class ClaudeAgentRuntime:
             # own questions reach the player.
             permission_mode="default",
             can_use_tool=self._can_use_tool,
+            hooks=hooks,
             sandbox={"enabled": False},
             include_partial_messages=True,
             max_buffer_size=settings.agent_claude_max_message_bytes,

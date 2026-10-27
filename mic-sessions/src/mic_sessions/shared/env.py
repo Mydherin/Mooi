@@ -111,6 +111,8 @@ class Settings(BaseSettings):
     agent_claude_disallowed_tools: Annotated[list[str], NoDecode] = []
     # Largest single CLI message (a tool result carrying screenshots or a big file read is one line).
     agent_claude_max_message_bytes: int = Field(default=64 * 1024 * 1024, ge=1024 * 1024)
+    # Run the agent's shell commands through RTK (when installed) to compress their output.
+    agent_claude_rtk: bool = True
     # Reconnections tried, with backoff, when a provider stream breaks before the session fails.
     agent_recovery_attempts: int = Field(default=3, ge=0, le=10)
 

@@ -323,6 +323,19 @@ const describePackageManager = (name: string, words: Words) => {
   return null;
 };
 
+const RTK_WRAPPERS = new Set(['proxy', 'bypass', 'err', 'test', 'summary']);
+
+/** `rtk git status`, `rtk read a.ts`, `rtk proxy make`: RTK only compresses the output of the command
+ * it wraps, so the wrapped command says what it is for. */
+const describeRtk = (args: Words): Described | null => {
+  const [sub, ...rest] = args;
+  if (sub === 'read') {
+    const files = operands(rest, new Set(['-l', '--level', '-m', '--max-lines', '--head-lines', '--tail-lines']));
+    return files.length ? described('read', 'Reading', 'Read', files.map(basename).join(', ')) : null;
+  }
+  return describeWords(sub && RTK_WRAPPERS.has(sub) ? rest : args);
+};
+
 /** Describes one simple command, or null when it carries no recognisable intent. */
 const describeWords = (input: Words): Described | null => {
   const words = strip(input);
@@ -334,6 +347,7 @@ const describeWords = (input: Words): Described | null => {
     const script = flagValue(args, '-c', '-lc', '-ic', '-lic');
     return script ? describeLine(script) : null;
   }
+  if (name === 'rtk') return describeRtk(args);
   if (READERS.has(name)) return describeRead(name, args);
   if (SEARCHERS.has(name)) return describeSearch(args);
   if (name === 'find' || name === 'fd' || name === 'fdfind') return describeFind(name, args);
