@@ -51,6 +51,11 @@ FROM nginx:1.29-alpine AS runtime
 
 RUN rm /etc/nginx/conf.d/default.conf
 COPY nginx.conf /etc/nginx/conf.d/mooi.conf
+# Dictation upstream: loopback of the shared network namespace in production; the dev stack, which
+# cannot share namespaces, passes the mic-speech service instead.
+ARG SPEECH_UPSTREAM=127.0.0.1:59100
+RUN grep -q 'http://127.0.0.1:59100;' /etc/nginx/conf.d/mooi.conf \
+    && sed -i "s|http://127.0.0.1:59100;|http://${SPEECH_UPSTREAM};|" /etc/nginx/conf.d/mooi.conf
 COPY --from=build /app/dist /usr/share/nginx/html
 
 EXPOSE 80
