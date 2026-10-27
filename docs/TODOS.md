@@ -1,6 +1,6 @@
 # TODOs
 
-- [/] Microphone sometimes when you have used from first time and you enable again take so much time to work
+- [x] Microphone sometimes when you have used from first time and you enable again take so much time to work
 - [ ] Full TODOS view
 - [ ] Adjust at ui ux level properly the session context and 5 hour limit
 - [ ] Adjust ui/ux pattern with proper number in status in todos view
