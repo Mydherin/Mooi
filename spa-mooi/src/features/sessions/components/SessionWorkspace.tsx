@@ -89,7 +89,7 @@ export const SessionWorkspace = ({ sessionId, deployEnabled, children }: Session
         </section> : null}
         {keepPreview && deployment ? <section role="tabpanel" aria-label="Application preview" hidden={visiblePane !== 'preview'}
           className={cn('min-h-0 min-w-0', visiblePane !== 'preview' && 'hidden')}>
-          <PreviewPanel sessionId={sessionId} deployment={deployment} visible={visiblePane === 'preview'} />
+          <PreviewPanel deployment={deployment} visible={visiblePane === 'preview'} />
         </section> : null}
       </div>
       {deployEnabled && logOpen && !consoleHidden ? <DeployLogsDrawer sessionId={sessionId} /> : null}

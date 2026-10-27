@@ -22,7 +22,7 @@ def test_endpoint_accepts_old_and_guided_requests(monkeypatch, body, expected):
     registry = NS(get_for=Mock(return_value=session))
     monkeypatch.setattr(sessions, 'get_registry', lambda: registry)
     monkeypatch.setattr(sessions, '_runtime', lambda _: NS())
-    monkeypatch.setattr(sessions, '_touch_activity', Mock())
+    monkeypatch.setattr(sessions, '_touch', Mock())
     monkeypatch.setattr(sessions, 'record', Mock())
     monkeypatch.setattr(sessions, '_record_status', Mock())
     run = AsyncMock()

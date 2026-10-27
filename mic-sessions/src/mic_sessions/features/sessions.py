@@ -15,8 +15,9 @@ deployments themselves are project-scoped (see the production section): they run
 fetch only the selected release into a temporary checkout.
 
 Sessions and their event logs are memory-resident. After an ungraceful restart they cannot be
-resumed; marked on-disk session directories are reconciled at startup. `start_reaper()` closes idle sessions and `close_all()` closes sessions during a
-graceful shutdown; `main.py`'s lifespan owns calling both.
+resumed; marked on-disk session directories are reconciled at startup. Sessions never expire: whatever
+their state, they live until the user closes them (`DELETE /sessions/{id}`) or a graceful shutdown runs
+`close_all()`, which `main.py`'s lifespan owns calling.
 """
 
 from __future__ import annotations
@@ -35,7 +36,7 @@ import time
 from collections.abc import Awaitable, Callable, Coroutine, Iterable
 from contextlib import suppress
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -707,8 +708,6 @@ class Session:
     operation_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     deployment_task: asyncio.Task[None] | None = None
     deployment_monitor: asyncio.Task[None] | None = None
-    last_human_activity: datetime = field(default_factory=lambda: datetime.now(UTC))
-    activity_heartbeat_at: float | None = None
     # Monotonic time before which a watched session does not refresh its account limits again.
     usage_refresh_at: float = 0.0
 
@@ -778,7 +777,6 @@ def new_session(
         detail=None,
         created_at=now,
         updated_at=now,
-        last_human_activity=now,
         workspace=_UNSET_PATH,
         log=EventLog(),
         usage={"context": {"percent": None, "usedTokens": 0, "limitTokens": None,
@@ -868,9 +866,6 @@ def get_registry() -> SessionRegistry:
     return SessionRegistry()
 
 
-_reaper_task: asyncio.Task[None] | None = None
-
-
 # --- the event fold ----------------------------------------------------------------------------
 
 
@@ -884,8 +879,7 @@ def record(session: Session, type_: str, data: dict[str, Any]) -> Event:
 
     Every change a session list shows is announced on the player's live channel as well.
     Deployment updates share sequence/replay with chat but never acquire a turnId, mutate chat
-    state or renew idle activity. Their payloads are validated before appending to the log.
-    Other events bump display `updated_at`; expiry uses the separate human activity clock.
+    state or bump `updated_at`. Their payloads are validated before appending to the log.
     Sync on purpose: everything runs on one event loop, so the runtime's pump task and the request
     handlers never interleave mid-function and no lock is needed.
     """
@@ -906,8 +900,6 @@ def record(session: Session, type_: str, data: dict[str, Any]) -> Event:
         data = {**data, "recoverable": _recoverable(session)}
     event = session.log.append(type_, {**data, "turnId": session.turn_id})
     session.updated_at = event.at
-    if type_ == "message.user":
-        _touch_activity(session, event.at)
 
     if type_ == "session.usage":
         previous_quota = session.usage.get("quota")
@@ -1188,7 +1180,7 @@ async def _close_registered_session(session: Session) -> None:
 
 async def close_session(session_id: UUID) -> None:
     """Closes and removes one registered session. Reused by `DELETE /sessions/{id}` and by the
-    idle reaper and shutdown hook, neither of which has a caller to check ownership against — that
+    shutdown hook, which has no caller to check ownership against — that
     check, when one is needed, is the caller's job before calling this."""
     registry = get_registry()
     session = registry.get(session_id)
@@ -1552,7 +1544,7 @@ async def recover_session(session_id: UUID, caller: Annotated[Caller, Depends(cu
             raise ApiException.conflict("Only a failed session can be reconnected")
         if not _recoverable(session):
             raise ApiException.conflict("This session cannot be recovered. Start a new one.")
-        _touch_activity(session)
+        _touch(session)
         try:
             await _runtime(session).recover()
         except Exception:
@@ -1608,7 +1600,7 @@ async def update_session_configuration(
         candidate = descriptor.configure(model, effort)
         # Never touch a running turn or a runtime still being provisioned.
         # send_message applies the latest selection under this same lock.
-        _touch_activity(session)
+        _touch(session)
         _record_event(session, session_configuration(candidate.model, candidate.effort))
         return session.to_payload()
 
@@ -1621,7 +1613,7 @@ async def interrupt_session(session_id: UUID, caller: Annotated[Caller, Depends(
         if session.status not in (STATUS_WORKING, STATUS_WAITING) or session.closing:
             raise ApiException.conflict("There is no active turn to interrupt")
         await _runtime(session).interrupt()
-        _touch_activity(session)
+        _touch(session)
 
 
 @router.post("/sessions/{session_id}/clear", status_code=status.HTTP_204_NO_CONTENT)
@@ -1633,7 +1625,7 @@ async def clear_session_conversation(
         if session.status != STATUS_READY or session.closing or session.deployment.state == "starting":
             raise ApiException.conflict("The session is not ready to clear its conversation")
         await _reset_conversation(session, caller)
-        _touch_activity(session)
+        _touch(session)
 
 
 @router.post("/sessions/{session_id}/compact", status_code=status.HTTP_202_ACCEPTED)
@@ -1646,7 +1638,7 @@ async def compact_session_conversation(
         if session.status != STATUS_READY or session.closing or session.deployment.state == "starting":
             raise ApiException.conflict("The session is not ready to compact its conversation")
         _runtime(session)
-        _touch_activity(session)
+        _touch(session)
         previous_context = session.usage.get("context")
         record(session, EVENT_SESSION_COMPACTION, {"phase": "started"})
         _record_status(session, STATUS_COMPACTING)
@@ -1691,7 +1683,7 @@ async def resolve_permission(
     if pending is None or pending["kind"] != "permission":
         raise ApiException.not_found("Unknown permission request")
     await _runtime(session).resolve(request_id, body.model_dump())
-    _touch_activity(session)
+    _touch(session)
 
 
 @router.post("/sessions/{session_id}/questions/{request_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -1716,7 +1708,7 @@ async def resolve_question(
         if any(not value.strip() for value in values):
             raise ApiException.bad_request("Answers cannot be blank")
     await _runtime(session).resolve(request_id, body.model_dump())
-    _touch_activity(session)
+    _touch(session)
 
 
 @router.get("/sessions/{session_id}/changes")
@@ -1819,7 +1811,7 @@ async def check_merge(session_id: UUID, caller: Annotated[Caller, Depends(curren
     token = await mooi.fetch_github_token(caller)
     async with session.operation_lock:
         _require_mergeable(session)
-        _touch_activity(session)
+        _touch(session)
         return _merge_payload(await workspaces.preview_merge(session.workspace, session.base_branch, token))
 
 
@@ -1836,7 +1828,7 @@ async def merge_session(
     token, identity = await asyncio.gather(mooi.fetch_github_token(caller), mooi.fetch_github_identity(caller))
     async with session.operation_lock:
         _require_mergeable(session)
-        _touch_activity(session)
+        _touch(session)
         async with session.changes_lock:
             preview, commit = await workspaces.merge(session.workspace, session.base_branch, message, identity, token)
         if commit is not None:
@@ -3633,7 +3625,7 @@ async def _admit_deployment_start(session: Session, *, by_agent: bool = False) -
                                       updatedAt=datetime.now(UTC))
         # The event-loop cannot execute the worker until this lock scope has returned.
         record(session, EVENT_DEPLOYMENT_UPDATED, snapshot.model_dump())
-        _touch_activity(session, snapshot.updatedAt)
+        _touch(session, snapshot.updatedAt)
         session.deployment_task = _spawn(session, _run_deployment_start(session, operation_id))
         return snapshot
 
@@ -3955,7 +3947,7 @@ async def _admit_deployment_setup(session: Session, caller: Caller, instructions
         runtime = await _reset_conversation(session, caller)
         record(session, EVENT_DEPLOYMENT_SETUP, {"state": "preparing"})
         await _deliver(session, runtime, prompt)
-        _touch_activity(session)
+        _touch(session)
         return session.deployment
 
 
@@ -4045,33 +4037,20 @@ def _admit_deployment_stop(session: Session) -> DeploymentSnapshot:
                                   cleanupRequired=session.deployment.cleanupRequired,
                                   updatedAt=datetime.now(UTC))
     record(session, EVENT_DEPLOYMENT_UPDATED, snapshot.model_dump())
-    _touch_activity(session, snapshot.updatedAt)
+    _touch(session, snapshot.updatedAt)
     if previous is not None and not previous.done():
         previous.cancel()
     session.deployment_task = _spawn(session, _run_deployment_stop(session, operation_id, previous))
     return snapshot
 
 
-def _touch_activity(session: Session, at: datetime | None = None) -> None:
-    session.last_human_activity = at or datetime.now(UTC)
-    session.updated_at = session.last_human_activity
-
-
-@router.post("/sessions/{session_id}/activity", status_code=status.HTTP_204_NO_CONTENT)
-async def session_activity(session_id: UUID, caller: Annotated[Caller, Depends(current_caller)]) -> Response:
-    session = get_registry().get_for(caller, session_id)
-    if session.closing:
-        raise ApiException.conflict("The session is closing")
-    now = asyncio.get_running_loop().time()
-    if (session.activity_heartbeat_at is None
-            or now - session.activity_heartbeat_at >= get_settings().session_activity_interval_seconds):
-        session.activity_heartbeat_at = now
-        _touch_activity(session)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+def _touch(session: Session, at: datetime | None = None) -> None:
+    """Bumps the display `updated_at` for a user action that records no event of its own."""
+    session.updated_at = at or datetime.now(UTC)
 
 
 async def _monitor_deployment(session: Session, operation_id: UUID) -> None:
-    """One bounded read per interval; never restart, invoke AI, or renew human activity."""
+    """One bounded read per interval; never restart nor invoke AI."""
     while not session.closing and session.deployment.state == "running" and session.deployment.operationId == operation_id:
         await asyncio.sleep(get_settings().deployment_monitor_interval_seconds)
         if session.closing or session.deployment.state != "running" or session.deployment.operationId != operation_id:
@@ -4093,52 +4072,15 @@ async def _monitor_deployment(session: Session, operation_id: UUID) -> None:
 # --- lifecycle safety --------------------------------------------------------------------------
 
 
-async def _reap_idle_sessions() -> None:
-    """Reap only ready/failed sessions; never expire active turns or pending user input."""
-    settings = get_settings()
-    timeout = timedelta(minutes=settings.session_idle_timeout_minutes)
-    cutoff = datetime.now(UTC) - timeout
-    idle = [session.id for session in get_registry().all()
-            if session.status in (STATUS_READY, STATUS_FAILED) and session.last_human_activity < cutoff]
-    for session_id in idle:
-        session = get_registry().get(session_id)
-        if session is None:
-            continue
-        async with session.operation_lock:
-            # Earlier cleanup may have awaited Docker while this session received activity.
-            if (not session.closing and session.status in (STATUS_READY, STATUS_FAILED)
-                    and session.last_human_activity < cutoff):
-                LOG.info("Session %s reaped after %s idle", session_id, timeout)
-                await _close_registered_session(session)
-
-
-async def _reaper_loop() -> None:
-    settings = get_settings()
-    interval = max(60, settings.session_idle_timeout_minutes * 60 // 4)
-    while True:
-        await asyncio.sleep(interval)
-        with suppress(Exception):
-            await _reap_idle_sessions()
-
-
-def start_reaper() -> None:
-    """Starts the background idle reaper. Called once from `main.py`'s `lifespan` on startup;
-    `close_all` cancels it again on shutdown."""
-    global _reaper_task
-    if _reaper_task is None:
-        _reaper_task = asyncio.create_task(_reaper_loop())
-
-
 async def close_all() -> None:
     """Closes every live session — runtime disconnect and workspace removal, via `close_session` —
-    and stops the reaper. Called once from `main.py`'s `lifespan` on shutdown."""
-    global _reaper_task, _reconciler_task
-    for task in (_reaper_task, _reconciler_task):
-        if task is not None:
-            task.cancel()
-            with suppress(asyncio.CancelledError):
-                await task
-    _reaper_task = _reconciler_task = None
+    and stops the reconciler. Called once from `main.py`'s `lifespan` on shutdown."""
+    global _reconciler_task
+    if _reconciler_task is not None:
+        _reconciler_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await _reconciler_task
+    _reconciler_task = None
     for session in get_registry().all():
         await close_session(session.id)
     await close_productions()

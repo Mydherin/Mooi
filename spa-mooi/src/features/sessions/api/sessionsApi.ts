@@ -220,11 +220,6 @@ export const stopDeployment = async (sessionId: string): Promise<DeploymentSnaps
   return (await response.json()) as DeploymentSnapshot;
 };
 
-export const sendSessionActivity = async (sessionId: string, signal?: AbortSignal): Promise<void> => {
-  const response = await sessionsFetch(`${sessionPath(sessionId)}/activity`, { method: 'POST', signal });
-  if (!response.ok) throw new Error(await apiErrorMessage(response, 'Could not renew session activity.'));
-};
-
 export const fetchWorkspaces = async (projectId: string): Promise<WorkspaceOverview> => {
   const response = await sessionsFetch(workspacesPath(projectId));
   if (!response.ok) throw new Error(await apiErrorMessage(response, 'Could not load the workspaces.'));

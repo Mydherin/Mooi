@@ -64,8 +64,6 @@ class Settings(BaseSettings):
     # Sessions
     max_sessions: int = Field(default=8, gt=0)
     max_sessions_per_player: int = Field(default=4, gt=0)
-    session_idle_timeout_minutes: int = Field(default=180, gt=0)
-    session_activity_interval_seconds: int = Field(default=60, gt=0)
     event_log_limit: int = Field(default=5000, gt=0)
     event_log_bytes: int = Field(default=8 * 1024 * 1024, gt=0)
     sse_heartbeat_seconds: int = Field(default=15, gt=0)
