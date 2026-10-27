@@ -12,3 +12,4 @@
 - [x] Allow with drag and drop move todo items
 - [x] Do not remove session automatically, just remove it when user click in close session
 - [x] I got an env and platform api token access in mooi platform in prod deployment
+- [ ] Adjust at ui ux level properly the session context and 5 hour limit
