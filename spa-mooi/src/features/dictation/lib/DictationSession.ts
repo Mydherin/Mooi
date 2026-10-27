@@ -283,6 +283,8 @@ export class DictationSession {
   private releaseCapture(): void {
     this.source?.disconnect();
     if (this.node) {
+      // Ends the processor; a closed port alone leaves it running in the shared engine.
+      this.node.port.postMessage('close');
       this.node.port.onmessage = null;
       this.node.port.close();
       this.node.disconnect();
