@@ -3,6 +3,7 @@ import { Activity, Eraser, Layers3, LoaderCircle } from 'lucide-react';
 import { useOnClickOutside } from '@/shared/hooks/useOnClickOutside';
 import { useOnEscape } from '@/shared/hooks/useOnEscape';
 import { cn } from '@/shared/utils/cn';
+import { fiveHourLimit } from '@/features/sessions/lib/fiveHourLimit';
 import type { SessionUsage } from '@/features/sessions/types/SessionUsage';
 import type { UsageMetric } from '@/features/sessions/types/UsageMetric';
 
@@ -40,7 +41,7 @@ interface ChatUsageIndicatorsProps {
 
 export const ChatUsageIndicators = ({ usage, loading = false, actionsDisabled, onCompact, onClear }: ChatUsageIndicatorsProps) => {
   const quotas = usage?.quota ?? {};
-  const fiveHour = quotas.five_hour ?? quotas.primary;
+  const fiveHour = fiveHourLimit(usage);
   const weekly = quotas.seven_day ?? quotas.secondary;
   const extras = Object.entries(quotas).filter(([key]) => !['five_hour', 'primary', 'seven_day', 'secondary'].includes(key));
   const context = usage?.context;

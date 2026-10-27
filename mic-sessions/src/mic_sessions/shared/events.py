@@ -152,6 +152,11 @@ class Channels:
         self._seq += 1
         fanout.offer(new_event(self._seq, type_, data))
 
+    def watched(self, key: Hashable) -> bool:
+        """Someone listens to `key`: lets a publisher skip building a payload nobody would receive."""
+        fanout = self._fanouts.get(key)
+        return fanout is not None and fanout.subscribed
+
     def snapshot(self, type_: str, data: dict[str, Any]) -> Event:
         """An opening frame for one subscriber, ordered with the channel's live events."""
         self._seq += 1

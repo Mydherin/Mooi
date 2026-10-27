@@ -724,6 +724,8 @@ class Session:
     deployment_monitor: asyncio.Task[None] | None = None
     # Monotonic time before which a watched session does not refresh its account limits again.
     usage_refresh_at: float = 0.0
+    # The usage the player's lists last received (see `_usage_signature`), so finer changes stay in the transcript.
+    usage_signature: tuple[Any, ...] | None = None
 
     def to_payload(self) -> SessionPayload:
         descriptor = describe(self.provider)
@@ -963,7 +965,8 @@ def record(session: Session, type_: str, data: dict[str, Any]) -> Event:
         )
 
     _observe_changes(session, type_, data)
-    if type_ in _SUMMARY_EVENTS:
+    if type_ in _SUMMARY_EVENTS or (type_ == "session.usage"
+                                    and _usage_signature(session.usage) != session.usage_signature):
         _announce(session)
     return event
 
@@ -1452,15 +1455,33 @@ _SUMMARY_EVENTS = frozenset({
 })
 
 
+def _usage_signature(usage: dict[str, Any]) -> tuple[Any, ...]:
+    """What a session list shows of the usage: whole percents and window states. Context moves on
+    every streamed message; only a change the lists can display is worth a summary."""
+    def metric(value: Any) -> tuple[Any, ...] | None:
+        if not isinstance(value, dict):
+            return None
+        percent = value.get("percent")
+        shown = round(percent) if isinstance(percent, (int, float)) else None
+        return shown, value.get("status"), value.get("resetsAt")
+
+    quota = usage.get("quota")
+    windows = (tuple(sorted((str(name), metric(value)) for name, value in quota.items()))
+               if isinstance(quota, dict) else None)
+    return metric(usage.get("context")), windows
+
+
 def _announce(session: Session) -> None:
-    """Publishes the session's summary once per event-loop iteration, however many events changed it."""
+    """Publishes the session's summary once per event-loop iteration, however many events changed it.
+    Nobody watching the player's channel means nothing is built: the next `sync` carries the state."""
     if session.id in _announced:
         return
     _announced.add(session.id)
 
     def flush() -> None:
         _announced.discard(session.id)
-        if get_registry().get(session.id) is session:
+        session.usage_signature = _usage_signature(session.usage)
+        if get_registry().get(session.id) is session and _channels.watched(session.player_id):
             _channels.publish(session.player_id, EVENT_SESSION_UPDATED, session.to_payload().model_dump(mode="json"))
 
     asyncio.get_running_loop().call_soon(flush)
@@ -1469,6 +1490,30 @@ def _announce(session: Session) -> None:
 def _announce_removed(session: Session) -> None:
     _channels.publish(session.player_id, EVENT_SESSION_REMOVED,
                       {"sessionId": str(session.id), "projectId": str(session.project_id)})
+
+
+# Monotonic time before which a watched player channel does not look for stale account limits again.
+_player_usage_refresh_at: dict[UUID, float] = {}
+
+
+def _refresh_listed_usage(player_id: UUID) -> None:
+    """Account limits move with every session and device on the account: while the player's lists are
+    open, refresh them through one live session per account, at most once a minute. Sessions of the
+    same account share the reading, so one refresh keeps every row of that account current."""
+    now = time.monotonic()
+    if now < _player_usage_refresh_at.get(player_id, 0.0):
+        return
+    _player_usage_refresh_at[player_id] = now + _USAGE_REFRESH_SECONDS
+    chosen: dict[UUID, Session] = {}
+    for session in get_registry().list_for(player_id, None):
+        if session.runtime is None or session.status not in (STATUS_READY, STATUS_WORKING, STATUS_WAITING):
+            continue
+        current = chosen.get(session.connection_id)
+        # The one refreshed least recently is the one whose throttle lets it through.
+        if current is None or session.usage_refresh_at < current.usage_refresh_at:
+            chosen[session.connection_id] = session
+    for session in chosen.values():
+        _refresh_visible_usage(session)
 
 
 @router.get("/events")
@@ -1482,8 +1527,14 @@ async def stream_player_events(request: Request, caller: Annotated[Caller, Depen
         "production": [_operation_payload(run) for run in _production_runs.values() if run.player_id == player_id],
         "backups": [_operation_payload(run) for run in _backup_runs.values() if run.player_id == player_id],
     })
-    return event_stream(request, queue, [sync], after=0, authorize=current_caller,
-                        close=lambda: _channels.unsubscribe(player_id, queue))
+
+    def close() -> None:
+        _channels.unsubscribe(player_id, queue)
+        if not _channels.watched(player_id):
+            _player_usage_refresh_at.pop(player_id, None)
+
+    return event_stream(request, queue, [sync], after=0, authorize=current_caller, close=close,
+                        tick=lambda: _refresh_listed_usage(player_id))
 
 
 @router.post("/sessions/{session_id}/messages", status_code=status.HTTP_202_ACCEPTED)
