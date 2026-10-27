@@ -6,6 +6,7 @@
 - [ ] Say how diff commits from main to previous release
 - [ ] Shared deployments between some users
 - [ ] Upgrade playwright
+- [ ] Full TODOS view
 - [ ] Files view, allowing editing files with plain text manually
 - [ ] Langfuse view over session
 - [ ] ALlow see screenshots from playwright after testing, with real time paring when it runs the app through playwright according dev deploy even with first setup all connected in one way
@@ -14,4 +15,3 @@
 - [x] Allow with drag and drop move todo items
 - [x] Do not remove session automatically, just remove it when user click in close session
 - [x] I got an env and platform api token access in mooi platform in prod deployment
-- [ ] Full TODOS view
