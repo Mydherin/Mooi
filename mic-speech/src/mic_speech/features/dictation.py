@@ -16,6 +16,10 @@ sent, so the next dictation can start at once. The engine socket never holds the
 `ENGINE_CLOSE_TIMEOUT_SECONDS`: an engine still behind real time acknowledges a close only after
 transcribing its backlog, so an abandoned session is dropped instead. Audio and text are never
 stored nor logged: only counts and timings.
+
+The engine stream starts at the speech onset (`_OnsetGate`): a realtime session whose first audio
+is near-silent stays deaf for several seconds and loses the words spoken meanwhile, whatever
+follows. Chrome's echo-cancelled capture opens with such frames, mostly on a resumed audio engine.
 """
 
 from __future__ import annotations
@@ -23,7 +27,11 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
+import sys
 import time
+from array import array
+from collections import deque
 
 from fastapi import APIRouter, WebSocket
 from websockets.asyncio.client import ClientConnection, connect
@@ -46,6 +54,10 @@ ENGINE_CLOSE_TIMEOUT_SECONDS = 1
 ENGINE_MAX_MESSAGE_BYTES = 1 << 20
 LOCK_WAIT_SECONDS = 3
 CONTEXT_BOOST = 3.0
+# A frame this loud (RMS, PCM16) opens the engine stream: above room noise, below any speech onset.
+ONSET_RMS = 500
+# Audio kept before the onset frame: the engine needs a short lead-in to catch the first word.
+PREROLL_BYTES = BYTES_PER_SECOND // 5
 
 BUSY_MESSAGE = "Dictation is busy. Try again."
 INVALID_MESSAGE = "The session expired or the audio is not valid. Try again."
@@ -59,6 +71,44 @@ class _InvalidSession(Exception):
     """Client broke the protocol or a deadline expired: close with 1008."""
 
 
+def _rms(frame: bytes) -> float:
+    samples = array("h", frame)
+    if sys.byteorder == "big":
+        samples.byteswap()
+    return math.sqrt(math.sumprod(samples, samples) / len(samples))
+
+
+class _OnsetGate:
+    """Holds the audio back until the first frame with sound, then releases it with its pre-roll.
+
+    Leading silence carries no words, so dropping it loses nothing; the engine only ever sees a
+    stream that starts on real signal. Once open, every frame passes through untouched.
+    """
+
+    def __init__(self) -> None:
+        self.open = False
+        self.held_back_bytes = 0
+        self._preroll: deque[bytes] = deque()
+        self._preroll_bytes = 0
+
+    def admit(self, frame: bytes) -> list[bytes]:
+        """Returns the frames to forward to the engine now, in order."""
+        if self.open:
+            return [frame]
+        if _rms(frame) >= ONSET_RMS:
+            self.open = True
+            frames = [*self._preroll, frame]
+            self.held_back_bytes -= self._preroll_bytes
+            self._preroll.clear()
+            return frames
+        self.held_back_bytes += len(frame)
+        self._preroll.append(frame)
+        self._preroll_bytes += len(frame)
+        while self._preroll_bytes - len(self._preroll[0]) >= PREROLL_BYTES:
+            self._preroll_bytes -= len(self._preroll.popleft())
+        return []
+
+
 class _Transcription:
     """One engine realtime session plus the text assembled from its events."""
 
@@ -68,6 +118,7 @@ class _Transcription:
         self.finalized: list[str] = []
         self.draft = ""
         self.received_bytes = 0
+        self.onset = _OnsetGate()
         self.partials = 0
         self.created_at = time.perf_counter()
         self.first_partial_ms: float | None = None
@@ -170,8 +221,9 @@ def _record(dictation: _Transcription, outcome: str) -> None:
         stop_to_final_ms=stop_to_final_ms,
     )
     LOG.info(
-        "Dictation outcome=%s audio_s=%.1f first_partial_ms=%s partials=%d stop_to_final_ms=%s",
-        outcome, entry.audio_seconds, _ms(entry.first_partial_ms), entry.partial_count, _ms(stop_to_final_ms),
+        "Dictation outcome=%s audio_s=%.1f lead_silence_s=%.1f first_partial_ms=%s partials=%d stop_to_final_ms=%s",
+        outcome, entry.audio_seconds, dictation.onset.held_back_bytes / BYTES_PER_SECOND,
+        _ms(entry.first_partial_ms), entry.partial_count, _ms(stop_to_final_ms),
     )
 
     async def write() -> None:
@@ -272,13 +324,14 @@ async def stream(websocket: WebSocket) -> None:
                 frame = message.get("bytes")
                 if frame is not None:
                     _validate_frame(dictation, frame, settings.speech_max_seconds)
-                    await dictation.engine.send(frame)
+                    for audio in dictation.onset.admit(frame):
+                        await dictation.engine.send(audio)
                     browser_task = asyncio.create_task(websocket.receive())
                 elif _is_stop(message.get("text")):
                     stopping = True
                     dictation.stop_at = time.perf_counter()
                     browser_task = None
-                    if not dictation.received_bytes:
+                    if not dictation.onset.open:  # silence only: nothing to transcribe
                         await finish("")
                         break
                     await dictation.engine.send(json.dumps({"type": "input_audio_buffer.commit"}))

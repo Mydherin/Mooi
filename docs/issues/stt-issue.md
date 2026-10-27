@@ -1,6 +1,61 @@
 # STT issue: later dictations start late and lose the first words
 
-Status: **supposed problem and proposed solution**, implemented in the working tree but not committed.
+The investigation went through two iterations. Both are kept here; the latest one comes first.
+
+| Iteration | Status |
+| --- | --- |
+| **2 — engine deaf after a near-silent start** (section 0) | **Supposed problem and solution, measured in production by replay; fix awaiting its production test** |
+| 1 — browser capture and server lock (sections 1–7, commit `cc2abb1`) | Deployed; did not solve the symptom. Its fixes stay (they remove real faults), but its browser hypothesis was not the cause |
+
+## 0. Iteration 2: the engine goes deaf when a stream starts near-silent
+
+Measured on the production instance with desktop Chrome and a real microphone. Every audio frame sent
+by the page was recorded in the browser and replayed, paced in real time, through `/api/stt/stream`.
+
+- **Production logs:** the server received the audio but the engine returned nothing for a long time
+  (55 s of audio with no partial; 68 s with the first partial at 33 s), while `stop_to_final_ms` stayed
+  at about 0.3 s. So there is no backlog and no browser stall: the engine ignores audio it has received.
+- **The browser audio is good:** in the failed dictation the speech is loud from 0.9 s ("uno"), but the
+  first partial is "Diez" at 6.5 s.
+- **Deterministic:** replaying the failed recording always gives "Diez, once…", and the good one always
+  transcribes from "1". The engine has no state that carries over between sessions.
+
+| Replay of the failed recording | Result |
+| --- | --- |
+| unchanged | "Diez, once, doce, trece, catorce." |
+| right after the good recording, in one stream | every word: "…un dos, tres … catorce" |
+| first 0.1 s (near-silence, RMS 6) removed | every word |
+| 1 s or 3 s of digital zeros in front | stuck (empty after 6 s) |
+| synthetic noise at RMS 20/50 in front | stuck; RMS 100 works |
+| cut exactly at the first word | works, but loses "uno" |
+| **gated: from 0.2 s before the first frame with sound** | **every word** |
+
+- **Supposed cause** (reproduced deterministically by replay): a NeMo-Speech.cpp (`nemotron-3.5` streaming) realtime session whose first audio is
+  near-silent stays deaf for several seconds and loses the words spoken meanwhile. Silence later in the
+  stream is harmless.
+- **Why only Chrome, and mostly after the first dictation** (observed, not isolated): Chrome's
+  echo-cancelled capture opens with about 0.1–0.2 s of near-zero frames; the user sees the failure
+  mostly once the page's shared audio engine is resumed rather than created. Safari on the Mac and on
+  the phone do not show the problem.
+- **Solution (server, `mic-speech` `features/dictation.py`, `_OnsetGate`):** audio is held back until the
+  first frame with RMS ≥ `ONSET_RMS` (500), then forwarded with `PREROLL_BYTES` (0.2 s) before it.
+  Leading silence carries no words, so nothing is lost; every client is covered, whatever its browser.
+  A dictation that is only silence ends `empty` without touching the engine. The log line gains
+  `lead_silence_s`.
+
+### Still to confirm
+
+- In production, desktop Chrome, many dictations in a row on one page: words from the first one, no
+  late start. `lead_silence_s` in the `speech.dictation` log shows how much silence was held back.
+- The gate was validated on two recordings only (one failed, one good). The thresholds are empirical:
+  RMS 500 opens on any speech onset seen (1 570–14 000) and stays above the room noise seen (38–253);
+  a mouse click can open it early, which was shown to be harmless.
+- If a failure remains, record the page's frames and replay them as in this section: the gated replay
+  tells at once whether the engine or the capture is at fault.
+
+## Iteration 1 (commit `cc2abb1`)
+
+Status at the time: **supposed problem and proposed solution**.
 
 - The server-side causes were reproduced and the fix was measured.
 - The browser-side cause is the most likely explanation of the reported symptom, but it was not
