@@ -94,16 +94,24 @@ from it. Where they differ, this context wins over the current implementation (s
 
 ## Production deployments
 
-- A project starts unconfigured. First **Deploy** asks how to deploy, in free text: local, VPS, AWS, any
-  platform.
-- This opens a chat with a platform prompt: the agent writes a deterministic deployment script, tests it with
-  a real deployment and iterates until it works. Later deployments reuse the script directly.
+- A project starts unconfigured. First **Deploy** asks how to deploy, in free text: local, VPS, AWS, GCP,
+  any platform, or several targets at once (e.g. a VPS and GCP together).
+- This opens a chat with a platform prompt: the agent never deploys with its own tools; it writes a
+  deterministic deployment script, tests it with a real deployment and iterates until it works. From then on
+  the Deploy button runs that script directly, without an agent; the chat suggests clearing itself.
+- **Isolation**: production never collides with any other deployment of the repository or the target (dev
+  stack, local tooling, other stacks): own files under `deploy/production/` and production-specific runtime
+  names (Compose project, volumes, networks, images, directories, cloud resources).
 - **Releases**: create releases from the menu, including from the latest default branch; only releases are
-  deployed.
-- **Platform files** (managed by Mooi, never committed): deployment script, status script (live service
-  status) and `DEPLOYMENT.md` describing the deployment, editable later the same way.
-- **Repository files** (committed when needed): e.g. a production Compose file reading env variables.
-- **Production variables**: set manually in their menu or by the chat; both views stay in sync.
+  deployed. A chat test deploys a new release when it just committed repository changes, otherwise the
+  deployed release or, before the first deployment, the latest release (created when none exists).
+- **Platform files** (managed by Mooi, never committed, since they reveal the real infrastructure):
+  `deploy.sh`, `status.sh` (live status of every target) and `DEPLOYMENT.md`, the natural-language manifest
+  agents read to change the deployment later; all kept consistent with every change.
+- **Repository files** (committed only when the target needs them): e.g. a production Compose file reading
+  env variables, holding variable references, never values.
+- **Production variables**: values stored only in the platform; set manually in their menu or by the chat;
+  both views stay in sync.
 - An open production chat can be reused to change or fix the deployment.
 
 ## Backups

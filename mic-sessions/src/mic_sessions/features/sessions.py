@@ -454,19 +454,20 @@ async def _next_release_tag(caller: Caller, project: mooi.Project) -> str:
 async def _test_release(caller: Caller, project: mooi.Project, fresh: bool) -> StartProductionRequest:
     """The release a chat tests with. `fresh` (repository changes were pushed since the last release)
     creates the next release on the default branch; otherwise the one currently deployed (latest
-    successful deployment) or, before any, v1.0.0 — created on the default branch when missing."""
+    successful deployment) or, before any, the latest published release — a new one (v1.0.0 before
+    any semantic release) is created on the default branch only when the repository has none."""
     if fresh:
         return StartProductionRequest(tag=await _next_release_tag(caller, project), create=True)
     deployed = await _current_release(caller, project.id)
     if deployed:
         return StartProductionRequest(tag=deployed)
     try:
-        await _github_api(caller, project.full_name, "GET", f"releases/tags/{_FIRST_RELEASE_TAG}")
+        latest = await _github_api(caller, project.full_name, "GET", "releases/latest")
     except ApiException as error:
         if error.status_code != status.HTTP_404_NOT_FOUND:
             raise
-        return StartProductionRequest(tag=_FIRST_RELEASE_TAG, create=True)
-    return StartProductionRequest(tag=_FIRST_RELEASE_TAG)
+        return StartProductionRequest(tag=await _next_release_tag(caller, project), create=True)
+    return StartProductionRequest(tag=latest["tag_name"])
 
 
 async def _current_release(caller: Caller, project_id: UUID) -> str | None:
@@ -2286,30 +2287,46 @@ def _production_prompt(session: Session, request: str) -> str:
 
 The working directory is a clone of the default branch `{branch}`. Read it to understand how the project builds, runs and is configured.
 
-## Deployment documents
-The production configuration is exactly three VIRTUAL documents stored only in the Mooi platform. Never write them to the repository or to any file:
-- `DEPLOYMENT.md` (field `manifest`): what the deployment does, its target, method, prerequisites, required environment variables and how the service is verified.
-- `deploy.sh` (field `script`): a non-interactive bash script the platform runs from a detached checkout of the GitHub release the user selects (that checkout is the working directory). It must start with `set -euo pipefail`, be repeatable, read every secret from environment variables and deploy exactly `MOOI_PRODUCTION_RELEASE_SHA`.
-- `status.sh` (field `statusScript`): a non-interactive, read-only bash script, safe to run repeatedly from an empty working directory, that exits 0 only while the deployed service is healthy and prints concise status details. It must not depend on release variables.
+## How production works in Mooi
+The user describes the deployment in free text, and it can be anything: a local machine, one or several VPS, AWS, GCP, Azure, a PaaS, a Kubernetes cluster, or several targets at once (for example a VPS and GCP together). Shape the setup to that description and to what the project needs, never to a fixed template.
+You never deploy with your own tools. You write a deterministic, non-interactive deploy script, the platform runs it and you prove it with a real test deployment. Once a test succeeds, the Deploy button runs exactly that script for every later release without any agent, so everything a deployment needs must live in the script, the release files it reads and the stored variables.
+A production setup is made of three kinds of artifacts; decide where each piece belongs:
+1. Platform files (always): `DEPLOYMENT.md`, `deploy.sh` and `status.sh`, stored only in Mooi.
+2. Environment variables (whenever the deployment needs configuration or secrets): values stored only in Mooi.
+3. Repository files (only when the target needs them): for example a production Compose file, production Dockerfiles, Kubernetes manifests or a CI workflow, committed with variable references, never with values.
+
+## Platform files
+They are VIRTUAL documents stored only in the Mooi platform. Never write them to the repository or to any file: they describe the real production infrastructure (hosts, accounts, paths, topology), which must never reach anyone who can read the repository.
+- `DEPLOYMENT.md` (field `manifest`): the natural-language manifest of the deployment, and the source you or another agent read to change or repair it later. Describe every target, the method, prerequisites, the repository files and variables involved (names only, never values), the production-specific resource names, how a release reaches each target and how the service is verified. Keep it true: update it with every change to the setup.
+- `deploy.sh` (field `script`): a non-interactive bash script the platform runs from a detached checkout of the release being deployed (that checkout is the working directory). It must start with `set -euo pipefail`, be idempotent (a fresh target and an already deployed one both end up running the release; prepare one-time prerequisites itself when it can), read every value from environment variables, deploy exactly `MOOI_PRODUCTION_RELEASE_SHA` to every target and exit non-zero when any target fails.
+- `status.sh` (field `statusScript`): a non-interactive, read-only bash script, safe to run repeatedly from an empty working directory, that exits 0 only while every deployed target is healthy and prints concise status details per target. It must not depend on release variables or repository files.
 
 Save each document with the platform API as soon as you write or change it, one document per request, so the user follows your progress in the Platform files tab.
 
-## Independent production files
-Production is a deployment system of its own, independent from and correlated with no other: the development deployment (root Compose files, their Dockerfiles and `.env`, which Mooi runs as session previews) and local tooling (a Makefile or scripts). Never reuse, include, extend, reference or edit their files, and never change them to fit production; read them only to learn how the project builds and runs.
-Every tracked production file lives under `deploy/production/`, never at the repository root, where Mooi would resolve it as the development deployment. When production builds images, give it its own Dockerfiles there (`deploy/production/<artifact>/Dockerfile`, build context pointing at the artifact's source).
+## Isolation
+Production is a deployment system of its own, independent from and correlated with no other: the development deployment (root Compose files, their Dockerfiles and `.env`, which Mooi runs as session previews), local tooling (a Makefile or scripts) and any other deployment the repository or the target already has. Never reuse, include, extend, reference or edit their files, and never change them to fit production; read them only to learn how the project builds and runs.
+The same holds at run time: production must never collide with, reuse or affect another deployment's resources, even on a shared machine. Give every runtime resource a production-specific name (Compose project, images and tags, volumes, networks, databases, remote directories, services and units, cloud resources and buckets), never set fixed container names or reuse the development stack's names, and publish only the ports production needs. deploy.sh and status.sh touch only this deployment's resources: never prune, stop or remove anything else.
+Every tracked production file lives under `deploy/production/`, never at the repository root, where Mooi would resolve it as the development deployment (a CI workflow stays where its platform requires it). When production builds images, give it its own Dockerfiles there (`deploy/production/<artifact>/Dockerfile`, build context pointing at the artifact's source).
 If an earlier production setup keeps a tracked file elsewhere (for example a Compose file at the root that deploy.sh references), move it under `deploy/production/` as part of this change and leave every development file untouched.
 
-## Production Compose in the repository
-When production uses Docker Compose, its definition MUST be a tracked `deploy/production/compose.prod.yml`, visible in Changes and committed through the repository commit endpoint. Keep DEPLOYMENT.md, deploy.sh and status.sh in Platform files. Never embed, generate or store the Compose definition in those documents.
-Deployment commands always name it explicitly (`-f deploy/production/compose.prod.yml` with its own project name). deploy.sh must consume the Compose from the selected release checkout (and transfer that same file when deploying remotely), with environment values supplied securely to the target process. Never depend on the chat workspace or a newer branch version. status.sh must still work from an empty directory, checking the live deployment without embedding Compose.
+## Production Compose
+When production uses Docker Compose (typical on a VPS or a local machine), its definition MUST be a tracked `deploy/production/compose.prod.yml`, visible in Changes and committed through the repository commit endpoint. Never embed, generate or store the Compose definition in the platform files.
+Deployment commands always name it explicitly (`-f deploy/production/compose.prod.yml` with its own project name). deploy.sh must consume the Compose from the release checkout (and transfer that same file when deploying remotely), with environment values supplied securely to the target process. Never depend on the chat workspace or a newer branch version. status.sh must still work from an empty directory, checking the live deployment without embedding Compose.
 Every configurable Compose value must use environment interpolation. Every sensitive value must come from `MOOI_PRODUCTION_` or inherited `MOOI_DEVELOPMENT_` variables, without literal secrets or secret defaults in tracked files. Persist production values through the existing environment endpoint, never in the repository. Explicitly reference each required Compose variable in deploy.sh (for example `${{MOOI_PRODUCTION_NAME:?required}}`) so the platform detects missing values before deploying, including variables forwarded over SSH.
 
 ## Environment
 Scripts read configuration only from variables named `MOOI_PRODUCTION_<NAME>` and the project's development variables `MOOI_DEVELOPMENT_<NAME>`, which they inherit from the project's sessions: reuse a development value (an API key, a service URL...) when production needs exactly the same one, and give production its own `MOOI_PRODUCTION_` variable when it must differ. The platform provides `MOOI_PRODUCTION_RELEASE_TAG`, `MOOI_PRODUCTION_RELEASE_SHA` and `MOOI_PRODUCTION_RELEASE_URL`. Every other `MOOI_PRODUCTION_` or `MOOI_DEVELOPMENT_` variable the scripts mention without a shell default (`${{NAME:-default}}`) is required. Ask the user for each missing value (hosts, users, keys, tokens, domains...) and never invent credentials. Save the `MOOI_PRODUCTION_` values the user gives you with the environment endpoint; the user can also set them in the Environment section of the deployment overview. Development values belong to the project's sessions: ask the user to set a missing one from any session. Read the stored values with the environment endpoint whenever you need them, and tell the user a value only when they ask for it.
 
 ## Repository changes
-A production Compose definition always belongs in the repository. Other production files (for example its Dockerfiles or a CI workflow) belong there when needed, under `deploy/production/` (a CI workflow stays where its platform requires it). Create or edit them in the working directory: the user sees them in the Changes tab. Never change application behaviour for it.
+Add repository files only when the target needs them: a setup made only of platform files and variables is fine (for example a platform deployed through its CLI), and a production Compose definition always belongs in the repository. They hold variable references, never values. Create or edit them in the working directory: the user sees them in the Changes tab. Never change application behaviour for it.
 Before committing, ask the user whether to commit and push them to `{branch}`, listing every changed file (use your question tool when available, otherwise ask and wait for the reply). Only after an explicit yes, publish them with the commit endpoint; never run `git commit` or `git push` yourself. If the user declines, revert those files; never fall back to embedding Compose in Platform files.
+
+## Releases
+Only releases reach production, and the platform chooses and creates them. A test deploys:
+- right after you commit repository changes, a new release the platform creates from `{branch}`, so it contains them;
+- otherwise the release currently deployed in production (latest successful deployment);
+- before the first deployment, the latest published release, or a first release ({_FIRST_RELEASE_TAG}) created on `{branch}` when the repository has none.
+So commit every repository change the deployment needs before you test. Never run `git tag` or create, publish or choose releases yourself.
 
 ## Platform API
 Use Python urllib with an inline JSON body, never a temporary file, and send the header `X-Mooi-Agent-Token: {session.agent_token}`:
@@ -2319,13 +2336,18 @@ Use Python urllib with an inline JSON body, never a temporary file, and send the
 - `PUT {base}/environment` with JSON `{{"values": {{"MOOI_PRODUCTION_NAME": "value"}}}}` (null removes a variable).
 - `POST {base}/repository/commit` with JSON `{{"message": "<commit title>"}}`: commits every repository change onto `{branch}` as one commit and pushes it. It answers 409 with the conflicting files when `{branch}` moved in a conflicting way.
 - `GET {base}/deployments/{{operationId}}`: read-only detail of a past attempt (files, result, redacted output).
-- `POST {base}/deployments` with an empty JSON body `{{}}`: runs a real test deployment of the draft (or the active configuration when there is no draft). The platform chooses the release itself: right after you commit repository changes, a new release it creates from `{branch}`; otherwise the release currently deployed in production (latest successful deployment) or, when nothing was ever deployed, {_FIRST_RELEASE_TAG}, created on `{branch}` when missing. It returns the deployment snapshot.
+- `POST {base}/deployments` with an empty JSON body `{{}}`: runs a real test deployment of the draft (or the active configuration when there is no draft) with the release chosen as described in Releases. It returns the deployment snapshot.
 - `GET {base}/deployment?wait=120`: waits up to 120 seconds while a deployment runs, then returns its snapshot (state running, succeeded or failed; message; releaseTag) and the latest redacted output. Repeat it while the state is running.
 
-## Testing
-Testing is mandatory: finish every setup, update or fix with a successful test deployment. Once all three documents are saved, every required variable is stored and any repository change is committed, start the test and wait for its result. If it fails, find the cause in the output, save the corrected documents (ask the user for anything missing) and test again. A successful test deploys that release to production and makes the draft the active configuration. Only after a successful test tell the user clearly that the deployment is tested and working: they can deploy any release with the Deploy button and close this chat.
+## Workflow
+1. Read the repository and the current documents. When a setup exists, its DEPLOYMENT.md is your starting point: a change (a new target, another provider, a fix) updates the repository files it needs, deploy.sh, status.sh and DEPLOYMENT.md together, so they always describe the same deployment.
+2. Settle the targets and the method with the user and ask for every missing value.
+3. Write the repository files, save the platform files and store the variables.
+4. Commit the repository changes once the user approves them.
+5. Test. Testing is mandatory: finish every setup, update or fix with a successful test deployment. Once all three documents are saved, every required variable is stored and any repository change is committed, start the test and wait for its result. If it fails, find the cause in the output, save the corrected documents (ask the user for anything missing) and test again. A successful test deploys that release to production and makes the draft the active configuration.
+6. Only after a successful test tell the user clearly that the deployment is tested and working: from now on the Deploy button runs this script deterministically for any release, without an agent. Suggest clearing this chat (or closing it); it can be reused later to change or fix the deployment.
 
-Never run deploy.sh yourself and never choose, create or publish releases yourself: the test endpoint does it.
+Never run deploy.sh yourself and never change production with your own tools (SSH, Docker, cloud CLIs...): every change reaches production through deploy.sh and the test endpoint. Read-only inspection to diagnose a failure is fine.
 
 ## Request
 {request}"""
