@@ -2,6 +2,7 @@
 
 - [/] Microphone sometimes when you have used from first time and you enable again take so much time to work
 - [ ] Say how diff commits from main to previous release
+- [ ] Shared deployments between some users
 - [ ] Upgrade playwright
 - [ ] Files view, allowing editing files with plain text manually
 - [ ] Langfuse view over session
@@ -11,4 +12,3 @@
 - [x] Allow with drag and drop move todo items
 - [x] Do not remove session automatically, just remove it when user click in close session
 - [x] I got an env and platform api token access in mooi platform in prod deployment
-- [ ] Shared deployments between some users
