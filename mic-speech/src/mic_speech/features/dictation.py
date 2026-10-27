@@ -4,14 +4,18 @@
 engine realtime session and streams the running transcript back, full duplex: browser audio and
 engine results are awaited at the same time, so partials never wait behind audio.
 
-Browser protocol — binary audio frames (even length, at most 500 ms), then exactly one
-`{"type":"stop"}`. Server messages: `ready`, `partial` (whole running text), `final` (definitive
+Browser protocol — binary audio frames (even length, at most 500 ms; the SPA sends 100 ms), then
+exactly one `{"type":"stop"}`. Server messages: `ready`, `partial` (whole running text), `final` (definitive
 text, may be empty) and `error` (followed by close). Close codes: 1000 normal, 1008 origin or
 invalid/expired session, 1011 transcription failure, 1013 busy.
 
-One dictation at a time per machine. The session is released (engine socket closed, metrics
-queued, lock freed) before `final` is sent, so the next dictation can start at once. Audio and
-text are never stored nor logged: only counts and timings.
+One dictation at a time per machine. A new dictation waits briefly for the previous one to be
+released (a browser that abandoned it is only noticed after its queued frames), then gets `busy`.
+The session is released (engine socket closed, metrics queued, lock freed) before `final` is
+sent, so the next dictation can start at once. The engine socket never holds the lock longer than
+`ENGINE_CLOSE_TIMEOUT_SECONDS`: an engine still behind real time acknowledges a close only after
+transcribing its backlog, so an abandoned session is dropped instead. Audio and text are never
+stored nor logged: only counts and timings.
 """
 
 from __future__ import annotations
@@ -38,14 +42,16 @@ MAX_FRAME_BYTES = 16000
 DEADLINE_MARGIN_SECONDS = 30
 IDLE_TIMEOUT_SECONDS = 30
 ENGINE_OPEN_TIMEOUT_SECONDS = 15
+ENGINE_CLOSE_TIMEOUT_SECONDS = 1
 ENGINE_MAX_MESSAGE_BYTES = 1 << 20
+LOCK_WAIT_SECONDS = 3
 CONTEXT_BOOST = 3.0
 
 BUSY_MESSAGE = "Dictation is busy. Try again."
 INVALID_MESSAGE = "The session expired or the audio is not valid. Try again."
 FAILURE_MESSAGE = "The audio could not be transcribed."
 
-_busy = False
+_lock = asyncio.Lock()
 _background: set[asyncio.Task] = set()
 
 
@@ -75,7 +81,10 @@ class _Transcription:
         return self._engine
 
     async def open(self, url: str) -> None:
-        self._engine = await connect(url, max_size=ENGINE_MAX_MESSAGE_BYTES, open_timeout=ENGINE_OPEN_TIMEOUT_SECONDS)
+        self._engine = await connect(
+            url, max_size=ENGINE_MAX_MESSAGE_BYTES, open_timeout=ENGINE_OPEN_TIMEOUT_SECONDS,
+            close_timeout=ENGINE_CLOSE_TIMEOUT_SECONDS,
+        )
         if (await self._receive_event()).get("type") != "session.created":
             raise RuntimeError("Engine did not create a session")
         session: dict = {
@@ -197,17 +206,17 @@ def _is_stop(text: str | None) -> bool:
 
 @router.websocket("/api/stt/stream")
 async def stream(websocket: WebSocket) -> None:
-    global _busy
     settings = get_settings()
     if websocket.headers.get("origin") != settings.cors_origin:
         await websocket.close(code=1008)
         return
     await websocket.accept()
-    if _busy:
+    try:
+        await asyncio.wait_for(_lock.acquire(), LOCK_WAIT_SECONDS)
+    except TimeoutError:
         await _send(websocket, {"type": "error", "message": BUSY_MESSAGE})
         await _close(websocket, 1013)
         return
-    _busy = True
 
     dictation = _Transcription(settings)
     browser_task: asyncio.Task | None = None
@@ -217,7 +226,6 @@ async def stream(websocket: WebSocket) -> None:
 
     async def release() -> None:
         nonlocal released
-        global _busy
         if released:
             return
         released = True
@@ -229,7 +237,7 @@ async def stream(websocket: WebSocket) -> None:
         except Exception:  # noqa: BLE001 - release must always free the lock
             LOG.warning("Dictation release failed", exc_info=True)
         finally:
-            _busy = False
+            _lock.release()
 
     async def finish(text: str) -> None:
         nonlocal outcome
