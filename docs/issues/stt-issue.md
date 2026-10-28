@@ -1,4 +1,35 @@
-# STT issue: later dictations start late and lose the first words
+# STT issues: dictation visibility and lost first words
+
+## Cursor movement while dictating (2026-10-28)
+
+**Reported symptom:** while dictation is active, moving the cursor makes the ongoing transcription
+hard to see. Recording should continue and the words being written should remain visible.
+
+**Browser findings:** `LiveTranscript` owns an insertion range captured when dictation starts.
+Moving the cursor does not change that range or stop microphone capture. However, an update with
+the same text as the last partial returned before restoring the caret and scrolling it into view.
+That also affected a final result identical to the last partial. This is a browser insertion and
+visibility issue, separate from the audio/engine failures investigated below.
+
+**Solution:** every accepted nonempty transcript update restores the caret to the end of the
+dictation range and reveals it, even when the transcript text has not changed. Identical text does
+not trigger another value write or input event. Dictation keeps its original insertion position;
+moving the cursor does not redirect subsequent speech elsewhere in the draft.
+
+The same review found that starting with selected text prevented any insertion: the safety check
+expected that selection to have been removed before the first write. It now expects the original
+field value until the first write, then checks the rendered draft. Selected text can therefore be
+replaced by dictation, and Escape can restore the original value and selection. Empty updates
+before the first words leave the selection intact. Actual value edits still prevent replacement
+or rollback from overwriting the user's changes.
+
+**Validation:** the SPA TypeScript check and build pass. No application or browser was run for
+this change. Manual confirmation remains: dictate into a long, scrolling draft, move the cursor
+with the mouse or keyboard and keep speaking; the next transcript update should reveal the end
+of the dictated text. Also check dictation over a selection, Escape, and a final result identical
+to the last partial.
+
+## Earlier issue: later dictations start late and lose the first words
 
 The investigation went through two iterations. Both are kept here; the latest one comes first.
 
