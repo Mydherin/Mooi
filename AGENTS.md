@@ -72,6 +72,8 @@ from it. Where they differ, this context wins over the current implementation (s
 - A **To-dos** entry in the main menu gathers every project's list on one page: each project expands or
   collapses into the same editor as its tab, with its progress at a glance. Lists are read only as they
   come into view, so the page scales to any number of projects.
+- A project dropdown with checkboxes filters the workspace To-dos page and its totals to the selected
+  projects. The selection is remembered per user on the current device.
 - Status filters show their counts in compact pills (`1.2K`) that never overflow, on phones and desktops.
 - Adding, editing, changing the status of, reordering and removing items commits the file transparently
   with the user's GitHub grant; a missing file is created by the first item. Each save names the file

@@ -2,14 +2,16 @@ import { useMemo, useState } from 'react';
 import { ChevronsDownUp, ChevronsUpDown, FolderGit2 } from 'lucide-react';
 import { useProjects } from '@/features/projects/hooks/useProjects';
 import { ProjectTodosSection } from '@/features/todos/components/ProjectTodosSection';
+import { TodoProjectFilter } from '@/features/todos/components/TodoProjectFilter';
 import { countTodos } from '@/features/todos/lib/countTodos';
 import { expandedTodoProjects } from '@/features/todos/lib/expandedTodoProjects';
 import { Button } from '@/shared/components/Button';
 import { Card } from '@/shared/components/Card';
 import { EmptyState } from '@/shared/components/EmptyState';
-import { SearchInput } from '@/shared/components/SearchInput';
 import { formatCount } from '@/shared/utils/formatCount';
+import { useAuthStore } from '@/stores/authStore';
 import { useLiveStore } from '@/stores/liveStore';
+import { useTodoProjectSelectionStore } from '@/stores/todoProjectSelectionStore';
 
 const Stat = ({ label, value }: { label: string; value: number }) => (
   <div>
@@ -28,17 +30,17 @@ const Stat = ({ label, value }: { label: string; value: number }) => (
 export const TodosPage = () => {
   const { projects, status, error, reload } = useProjects();
   const todos = useLiveStore((live) => live.todos);
-  const [query, setQuery] = useState('');
+  const playerId = useAuthStore((state) => state.player?.id);
+  const selection = useTodoProjectSelectionStore((state) => playerId ? state.selections[playerId] : undefined);
+  const select = useTodoProjectSelectionStore((state) => state.select);
   const [expanded, setExpanded] = useState(() => new Set(expandedTodoProjects.read()));
 
-  const visibleProjects = useMemo(() => {
-    const term = query.trim().toLowerCase();
-    return term ? projects.filter((project) => project.fullName.toLowerCase().includes(term)) : projects;
-  }, [projects, query]);
+  const selectedIds = useMemo(() => new Set(selection ?? projects.map((project) => project.id)), [selection, projects]);
+  const visibleProjects = useMemo(() => projects.filter((project) => selectedIds.has(project.id)), [projects, selectedIds]);
 
   // Lists read so far: each one is read once its row nears the screen.
-  const totals = useMemo(() => countTodos(projects.flatMap((project) =>
-    (todos[project.id]?.state === 'ready' ? todos[project.id].items : []))), [projects, todos]);
+  const totals = useMemo(() => countTodos(visibleProjects.flatMap((project) =>
+    (todos[project.id]?.state === 'ready' ? todos[project.id].items : []))), [visibleProjects, todos]);
 
   const remember = (next: Set<string>) => {
     setExpanded(next);
@@ -63,7 +65,7 @@ export const TodosPage = () => {
           <p className="mb-2 font-mono text-[10.5px] font-medium tracking-[0.12em] text-ink-subtle uppercase">Workspace</p>
           <h1 className="text-[30px] leading-[1.1] font-semibold tracking-[-0.04em] text-ink sm:text-[34px]">To-dos</h1>
           <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-ink-muted">
-            Every project’s to-do list in one place. Expand a project to add, start, complete and reorder its items.
+            Choose the projects you want to see. Expand a project to add, start, complete and reorder its items.
           </p>
         </div>
         <dl className="flex gap-6">
@@ -80,8 +82,9 @@ export const TodosPage = () => {
       ) : null}
 
       {projects.length > 0 ? (
-        <div className="flex items-center gap-2">
-          {projects.length > 6 ? <SearchInput value={query} onChange={setQuery} placeholder="Search projects" className="sm:max-w-sm" /> : null}
+        <div className="flex flex-wrap items-center gap-2">
+          <TodoProjectFilter projects={projects} selectedIds={selectedIds}
+            onChange={(ids) => { if (playerId) select(playerId, ids); }} />
           <Button variant="ghost" size="sm" onClick={toggleAll} disabled={visibleProjects.length === 0} className="ml-auto shrink-0">
             {allExpanded ? <ChevronsDownUp className="size-4" /> : <ChevronsUpDown className="size-4" />}
             {allExpanded ? 'Collapse all' : 'Expand all'}
@@ -94,7 +97,7 @@ export const TodosPage = () => {
       ) : projects.length === 0 ? (
         !error && <EmptyState icon={FolderGit2} title="No projects yet" description="Add a project to your workspace to plan its work here." />
       ) : visibleProjects.length === 0 ? (
-        <p className="py-10 text-center text-sm text-ink-muted">No project matches “{query}”.</p>
+        <EmptyState icon={FolderGit2} title="No projects selected" description="Choose projects from the Projects dropdown to see their to-dos." />
       ) : (
         <ul aria-label="Projects" className="flex flex-col gap-3">
           {visibleProjects.map((project) => (
