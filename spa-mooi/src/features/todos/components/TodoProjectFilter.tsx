@@ -43,7 +43,9 @@ export const TodoProjectFilter = ({ projects, selectedIds, onChange }: TodoProje
 
   return (
     <div ref={root} className="relative min-w-0" onBlur={(event) => {
-      if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+      // Clicking label text or the scrollbar can blur with no next focus target.
+      // Let the native label toggle its checkbox; outside pointer clicks close separately.
+      if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) setOpen(false);
     }}>
       <button ref={trigger} type="button" aria-expanded={open} aria-controls={open ? panelId : undefined}
         onClick={() => setOpen((value) => !value)} className={buttonStyles('secondary', 'sm')}>
@@ -63,7 +65,7 @@ export const TodoProjectFilter = ({ projects, selectedIds, onChange }: TodoProje
               <Button variant="ghost" size="sm" onClick={() => onChange([])}>Clear selection</Button>
             </div>
           </div>
-          <div className="min-h-0 overflow-y-auto overscroll-contain p-1">
+          <div className="min-h-0 max-h-[min(15rem,35dvh)] flex-1 overflow-y-auto overscroll-contain p-1">
             {matches.map((project) => (
               <label key={project.id} className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 hover:bg-surface-2 focus-within:bg-surface-2">
                 <input type="checkbox" checked={selectedIds.has(project.id)} onChange={() => toggle(project.id)}
