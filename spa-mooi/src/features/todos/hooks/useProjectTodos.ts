@@ -11,7 +11,7 @@ import { useLiveStore } from '@/stores/liveStore';
 /** Conflicts in a row before giving up: each one means somebody else committed meanwhile. */
 const MAX_REPLAYS = 3;
 
-interface UseProjectTodos {
+export interface UseProjectTodos {
   /** The file as last read, committed or announced; null until the first read. */
   list: TodoList | null;
   /** What the view shows: the file with the edits still on their way applied on top. */
@@ -31,8 +31,11 @@ interface UseProjectTodos {
  * flight, so a burst of clicks costs a commit or two rather than one each. Every commit names the
  * revision it was built on; when the file moved on meanwhile (another device, an agent, a push),
  * the latest file is read and the pending edits are replayed on it, never written over it.
+ *
+ * Nothing is read from GitHub until `enabled`: a view listing many projects reads each list only
+ * once it is looked at, while live announcements still keep any list already read up to date.
  */
-export const useProjectTodos = (projectId: string): UseProjectTodos => {
+export const useProjectTodos = (projectId: string, enabled = true): UseProjectTodos => {
   const list = useLiveStore((live) => live.todos[projectId] ?? null);
   const epoch = useLiveStore((live) => live.epoch);
   const [pending, setPending] = useState<TodoChange[]>([]);
@@ -46,12 +49,13 @@ export const useProjectTodos = (projectId: string): UseProjectTodos => {
   const adopt = useCallback((todos: TodoList) => useLiveStore.getState().adoptTodos(projectId, todos), [projectId]);
 
   useEffect(() => {
+    if (!enabled) return undefined;
     let active = true;
     fetchTodos(projectId)
       .then((todos) => { if (active) { adopt(todos); setLoadError(null); } })
       .catch((failure: Error) => { if (active) setLoadError(failure.message); });
     return () => { active = false; };
-  }, [projectId, epoch, reloads, adopt]);
+  }, [projectId, enabled, epoch, reloads, adopt]);
 
   const setQueue = (next: TodoChange[]) => {
     pendingRef.current = next;

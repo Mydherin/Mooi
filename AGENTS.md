@@ -67,6 +67,12 @@ from it. Where they differ, this context wins over the current implementation (s
   copy. Mooi stores no list of its own.
 - Items are open, in progress or done, and are reordered by drag and drop (pointer, touch and keyboard).
   An item's text has no length limit.
+- One order everywhere: new items go on top and done items sit at the bottom; completing an item moves it to
+  the top of the done items, reopening a done one moves it just below the items still to do.
+- A **To-dos** entry in the main menu gathers every project's list on one page: each project expands or
+  collapses into the same editor as its tab, with its progress at a glance. Lists are read only as they
+  come into view, so the page scales to any number of projects.
+- Status filters show their counts in compact pills (`1.2K`) that never overflow, on phones and desktops.
 - Adding, editing, changing the status of, reordering and removing items commits the file transparently
   with the user's GitHub grant; a missing file is created by the first item. Each save names the file
   revision it read, so concurrent changes are replayed, never overwritten.
@@ -150,10 +156,12 @@ from it. Where they differ, this context wins over the current implementation (s
 - Do not write programmatic tests: no unit, integration or end-to-end test files, test suites, test runners
   or test dependencies (pytest, vitest, `node:test`...) when adding or changing features. The repository
   keeps none.
-- This does not mean skipping verification: test every new or changed feature manually with the agent's
-  tools (run the code, call the API, drive the app in a browser, deploy the preview, read the logs) and
-  report what was checked.
-- Type checks, linters and builds are not programmatic tests; keep them passing.
+- By default, verify without running the application: keep type checks, linters and builds passing, review
+  the change for regressions and report what was checked. Type checks, linters and builds are not
+  programmatic tests.
+- Do not deploy the preview, start the stack, call the running services or drive the app in a browser
+  (Playwright or otherwise) unless the user explicitly asks you to test the application: by default the user
+  deploys and tests manually. When asked, test with those tools and report what was checked.
 
 ## Deployment channels
 

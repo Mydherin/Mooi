@@ -14,6 +14,7 @@ import { ProjectPage } from '@/pages/ProjectPage';
 import { ProjectsPage } from '@/pages/ProjectsPage';
 import { SessionPage } from '@/pages/SessionPage';
 import { SessionsPage } from '@/pages/SessionsPage';
+import { TodosPage } from '@/pages/TodosPage';
 import { DeploymentsPage } from '@/pages/DeploymentsPage';
 import { ProjectDeploymentPage } from '@/pages/ProjectDeploymentPage';
 import { BackupsPage } from '@/pages/BackupsPage';
@@ -44,6 +45,7 @@ export const router = createBrowserRouter([
           { path: ROUTES.project, element: <ProjectPage /> },
           { path: ROUTES.session, element: <SessionPage />, handle: immersive },
           { path: ROUTES.sessions, element: <SessionsPage /> },
+          { path: ROUTES.todos, element: <TodosPage /> },
           { path: ROUTES.deployments, element: <DeploymentsPage /> },
           { path: ROUTES.deployment, element: <ProjectDeploymentPage />, handle: immersive },
           { path: ROUTES.backups, element: <BackupsPage /> },

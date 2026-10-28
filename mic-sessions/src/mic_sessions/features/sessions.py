@@ -2033,9 +2033,10 @@ Use the Mooi platform API:
 - `PUT {base}` with JSON `{{"values": {{"MOOI_DEVELOPMENT_NAME": "value"}}}}` (null removes a variable): saves them and returns the stored names.
 
 ## Project to-do list
-The project's to-do list is `docs/TODOS.md` on the default branch, shown in the project's To-dos tab. Whenever the user asks in this chat to show, add, start, complete, reopen, edit, reorder or remove to-dos, use the Mooi platform API, never edit that file in this session's branch: Mooi commits the change to the default branch and every open view updates at once.
+The project's to-do list is `docs/TODOS.md` on the default branch, shown in the project's To-dos tab and on the workspace To-dos page. Whenever the user asks in this chat to show, add, start, complete, reopen, edit, reorder or remove to-dos, use the Mooi platform API, never edit that file in this session's branch: Mooi commits the change to the default branch and every open view updates at once.
 - `GET {root}/todos/agent`: `state` (`missing`: no file yet; `ready`: managed by Mooi; `unsupported`: content Mooi cannot render, listed in `issues`), `revision`, `title` and `items` (`text`, `status`: `open`, `inProgress` or `done`).
 - `PUT {root}/todos/agent` with JSON `{{"revision": "<revision you read, null when missing>", "title": "<title>", "items": [{{"text": "...", "status": "open"}}]}}`: commits the whole list in that order (items have no length limit). A 409 means the list changed meanwhile: read it again and reapply the request.
+- Keep the order the Mooi views keep: a new item goes on top; done items stay at the bottom, so completing one moves it just above the other done items, and reopening or starting a done one moves it just below the items still to do.
 - When `state` is `unsupported`, do not save: tell the user Mooi cannot render the file and ask whether to clean it up (save the `salvage` items) or keep it and edit it by hand.
 
 ## Shared Docker host

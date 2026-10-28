@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import type { TabItem } from '@/shared/types/TabItem';
 import { cn } from '@/shared/utils/cn';
+import { formatCount } from '@/shared/utils/formatCount';
 
 interface TabsProps {
   items: TabItem[];
@@ -77,12 +78,13 @@ export const Tabs = ({ items, value, onChange, ariaLabel, className }: TabsProps
             {item.label}
             {typeof item.count === 'number' ? (
               <span
+                title={item.count >= 1000 ? item.count.toLocaleString('en') : undefined}
                 className={cn(
                   'min-w-5 rounded-full px-1.5 py-px text-center font-mono text-[10.5px] font-medium tabular-nums transition-colors',
                   isActive ? 'bg-contrast text-contrast-ink' : 'bg-surface-3 text-ink-muted',
                 )}
               >
-                {item.count}
+                {formatCount(item.count)}
               </span>
             ) : null}
             {item.dot ? (
