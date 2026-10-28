@@ -1,6 +1,6 @@
 # TODOs
 
-- [ ] Proper admin menu seeing current active users, current sessions accross all users
+- [/] Proper admin menu seeing current active users, current sessions accross all users
 - [ ] In changes show file name with extension just and as subtitle the full relative path and if you hover it you could see a tooltip with full path if you could not see entrierly as subtitle cause ellipsis
 - [ ] Adjust at ui ux level properly the session context and 5 hour limit
 - [ ] Adjust ui/ux pattern with proper number in status in todos view
