@@ -14,12 +14,15 @@ import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 import dev.mooi.mic.shared.Auth;
 import dev.mooi.mic.shared.Auth.GoogleIdentityProvider.GoogleIdentity;
@@ -111,6 +114,26 @@ public class AuthFeature {
         return new StatusPayload("ok");
     }
 
+    /** Kick: ends every sign-in of the player at once; they may sign in again. */
+    @PostMapping("/admin/players/{playerId}/sign-out")
+    @Auth.RequireRole(Auth.Role.ADMIN)
+    public RevokedSessionsPayload signOutPlayer(@PathVariable UUID playerId, Auth.Principal principal) {
+        return new RevokedSessionsPayload(authService.signOutPlayer(principal.player().id(), playerId));
+    }
+
+    /** Ban: ends every sign-in and refuses every future one until lifted. Idempotent. */
+    @PutMapping("/admin/players/{playerId}/ban")
+    @Auth.RequireRole(Auth.Role.ADMIN)
+    public BanPayload banPlayer(@PathVariable UUID playerId, Auth.Principal principal) {
+        return authService.banPlayer(principal.player().id(), playerId);
+    }
+
+    @DeleteMapping("/admin/players/{playerId}/ban")
+    @Auth.RequireRole(Auth.Role.ADMIN)
+    public BanPayload unbanPlayer(@PathVariable UUID playerId, Auth.Principal principal) {
+        return authService.unbanPlayer(principal.player().id(), playerId);
+    }
+
     // --- application ---
 
     @Service
@@ -119,6 +142,7 @@ public class AuthFeature {
 
         private static final String INVALID_REFRESH_TOKEN = "Invalid refresh token";
         private static final String SESSION_NOT_ACTIVE = "Session is no longer active";
+        private static final String ACCOUNT_SUSPENDED = "This account is suspended";
 
         private final PlayerRepository playerRepository;
         private final AuthSessionRepository authSessionRepository;
@@ -143,7 +167,7 @@ public class AuthFeature {
                 Auth.LOG.warn("Access token subject {} does not match session {}", playerId, sessionId);
                 return Optional.empty();
             }
-            return playerRepository.findById(playerId).map(AuthService::toAuthenticatedPlayer);
+            return playerRepository.findById(playerId).filter(AuthService::allowed).map(AuthService::toAuthenticatedPlayer);
         }
 
         /**
@@ -156,6 +180,10 @@ public class AuthFeature {
             OffsetDateTime now = OffsetDateTime.now(clock);
 
             Optional<Player> existing = playerRepository.findByGoogleId(identity.googleId());
+            if (existing.isPresent() && !allowed(existing.get())) {
+                Auth.LOG.info("Banned player {} was refused sign in", existing.get().getId());
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, ACCOUNT_SUSPENDED);
+            }
             boolean isNewPlayer = existing.isEmpty();
             Player player = existing
                     .map(found -> refreshProfile(found, identity))
@@ -227,7 +255,7 @@ public class AuthFeature {
             }
             authSessionRepository.touch(row.getSessionId(), now);
 
-            Player player = playerRepository.findById(session.getPlayerId())
+            Player player = playerRepository.findById(session.getPlayerId()).filter(AuthService::allowed)
                     .orElseThrow(() -> new Auth.AuthenticationException(SESSION_NOT_ACTIVE));
             return issueSessionTokens(player, row.getSessionId(), now);
         }
@@ -244,7 +272,7 @@ public class AuthFeature {
                     .filter(found -> found.getPlayerId().equals(playerId))
                     .filter(found -> !found.getCreatedAt().plus(settings.getSessionMaxLifetime()).isBefore(now))
                     .orElseThrow(() -> new Auth.AuthenticationException(SESSION_NOT_ACTIVE));
-            Player player = playerRepository.findById(session.getPlayerId())
+            Player player = playerRepository.findById(session.getPlayerId()).filter(AuthService::allowed)
                     .orElseThrow(() -> new Auth.AuthenticationException(SESSION_NOT_ACTIVE));
             return new AccessTokenPayload(tokens.signAccessToken(player.getId(), player.getRole(), sessionId),
                     tokens.accessTokenExpiresInSeconds());
@@ -273,6 +301,56 @@ public class AuthFeature {
             int revoked = authSessionRepository.revokeAllForPlayer(playerId, OffsetDateTime.now(clock));
             Auth.LOG.info("Revoked {} sessions of player {}", revoked, playerId);
             return revoked;
+        }
+
+        /** An administrator ends every sign-in of another player; the player may sign in again. */
+        @Transactional
+        public int signOutPlayer(UUID adminId, UUID playerId) {
+            requirePlayer(playerId);
+            int revoked = authSessionRepository.revokeAllForPlayer(playerId, OffsetDateTime.now(clock));
+            Auth.LOG.info("Admin {} revoked {} sessions of player {}", adminId, revoked, playerId);
+            return revoked;
+        }
+
+        /**
+         * Suspends a player: every sign-in ends now and none is accepted until the ban is lifted. The
+         * guard, refresh and token renewal all read the ban, so agents acting for the player stop at
+         * their next renewal too. An administrator never bans themselves out of the console.
+         */
+        @Transactional
+        public BanPayload banPlayer(UUID adminId, UUID playerId) {
+            if (adminId.equals(playerId)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "You cannot ban your own account");
+            }
+            Player player = requirePlayer(playerId);
+            OffsetDateTime now = OffsetDateTime.now(clock);
+            if (player.getBannedAt() == null) {
+                player.setBannedAt(now);
+                playerRepository.save(player);
+            }
+            int revoked = authSessionRepository.revokeAllForPlayer(playerId, now);
+            Auth.LOG.info("Admin {} banned player {} ({} sessions revoked)", adminId, playerId, revoked);
+            return new BanPayload(playerId, player.getBannedAt());
+        }
+
+        @Transactional
+        public BanPayload unbanPlayer(UUID adminId, UUID playerId) {
+            Player player = requirePlayer(playerId);
+            if (player.getBannedAt() != null) {
+                player.setBannedAt(null);
+                playerRepository.save(player);
+                Auth.LOG.info("Admin {} lifted the ban of player {}", adminId, playerId);
+            }
+            return new BanPayload(playerId, null);
+        }
+
+        private Player requirePlayer(UUID playerId) {
+            return playerRepository.findById(playerId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Player not found"));
+        }
+
+        private static boolean allowed(Player player) {
+            return player.getBannedAt() == null;
         }
 
         /**
@@ -401,6 +479,10 @@ public class AuthFeature {
 
         @Column(name = "created_at", nullable = false, updatable = false)
         private OffsetDateTime createdAt;
+
+        /** NULL means allowed. Set by an administrator: no sign-in is accepted while it is set. */
+        @Column(name = "banned_at")
+        private OffsetDateTime bannedAt;
     }
 
     /** One sign-in — the unit revocation acts on. */
@@ -536,5 +618,8 @@ public class AuthFeature {
     }
 
     public record StatusPayload(String status) {
+    }
+
+    public record BanPayload(UUID playerId, OffsetDateTime bannedAt) {
     }
 }

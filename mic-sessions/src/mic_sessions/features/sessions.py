@@ -57,6 +57,7 @@ from pydantic import (
 
 from mic_sessions.shared import images, mooi, previews, workspaces
 from mic_sessions.shared.agents import (
+    PROVIDERS,
     RECOVERABLE_DETAIL,
     STATUS_COMPACTING,
     STATUS_FAILED,
@@ -1227,9 +1228,9 @@ async def create_session(
 async def _open_session(body: CreateSessionRequest, caller: Caller) -> Session:
     """Opens any chat, from the UI or handed over by another chat's agent: the same path either way."""
     descriptor = describe(body.provider)
-    adapter = descriptor.adapter(body.adapter)
     registry = get_registry()
-    await descriptor.prepare(caller, str(body.connectionId), adapter=adapter.id)
+    # No adapter requested (an agent's handover, an older client) is the platform's default adapter.
+    adapter = await descriptor.prepare(caller, str(body.connectionId), adapter=body.adapter)
     config = descriptor.configure(body.model, body.effort, adapter.id)
     if body.kind == "session":
         if body.branch is None:
@@ -1333,10 +1334,10 @@ async def _provision(session: Session, caller: Caller, project: mooi.Project,
 async def session_provider(provider: str, connectionId: UUID,
                            caller: Annotated[Caller, Depends(current_caller)], refresh: bool = False,
                            adapter: str | None = None) -> dict[str, Any]:
-    """The model catalog of one provider adapter (its default when omitted) and the adapters offered."""
+    """The model catalog of one provider adapter (the platform's default when omitted) and its adapters."""
     descriptor = describe(provider)
-    await descriptor.prepare(caller, str(connectionId), refresh=refresh, adapter=adapter)
-    return descriptor.configuration(adapter)
+    prepared = await descriptor.prepare(caller, str(connectionId), refresh=refresh, adapter=adapter)
+    return descriptor.configuration(prepared.id)
 
 
 @router.get("/sessions/workspaces")
@@ -1495,8 +1496,12 @@ def _announce(session: Session) -> None:
     def flush() -> None:
         _announced.discard(session.id)
         session.usage_signature = _usage_signature(session.usage)
-        if get_registry().get(session.id) is session and _channels.watched(session.player_id):
+        if get_registry().get(session.id) is not session:
+            return
+        if _channels.watched(session.player_id):
             _channels.publish(session.player_id, EVENT_SESSION_UPDATED, session.to_payload().model_dump(mode="json"))
+        if _channels.watched(_ADMIN_CHANNEL):
+            _channels.publish(_ADMIN_CHANNEL, EVENT_ADMIN_SESSION, _admin_session_payload(session))
 
     asyncio.get_running_loop().call_soon(flush)
 
@@ -1504,6 +1509,8 @@ def _announce(session: Session) -> None:
 def _announce_removed(session: Session) -> None:
     _channels.publish(session.player_id, EVENT_SESSION_REMOVED,
                       {"sessionId": str(session.id), "projectId": str(session.project_id)})
+    _channels.publish(_ADMIN_CHANNEL, EVENT_ADMIN_SESSION_REMOVED,
+                      {"sessionId": str(session.id), "playerId": str(session.player_id)})
 
 
 # Monotonic time before which a watched player channel does not look for stale account limits again.
@@ -1542,13 +1549,136 @@ async def stream_player_events(request: Request, caller: Annotated[Caller, Depen
         "backups": [_operation_payload(run) for run in _backup_runs.values() if run.player_id == player_id],
     })
 
+    _publish_presence(player_id)
+
     def close() -> None:
         _channels.unsubscribe(player_id, queue)
         if not _channels.watched(player_id):
             _player_usage_refresh_at.pop(player_id, None)
+        _publish_presence(player_id)
 
     return event_stream(request, queue, [sync], after=0, authorize=current_caller, close=close,
                         tick=lambda: _refresh_listed_usage(player_id))
+
+
+# --- administration ------------------------------------------------------------------------------
+#
+# Administrators follow the whole platform live through one more key of the same `Channels`: who is
+# connected (a player is online while at least one of their devices holds the live channel above,
+# which the app keeps open for its whole shell) and every live chat, as a compact summary. Publishers
+# only build that summary while an administrator watches, so an unwatched console costs nothing.
+# Identity actions (sign out everywhere, ban) belong to mic-mooi; closing chats belongs here.
+
+_ADMIN_CHANNEL = "admin"
+EVENT_ADMIN_PRESENCE = "admin.presence"
+EVENT_ADMIN_SESSION = "admin.session"
+EVENT_ADMIN_SESSION_REMOVED = "admin.session.removed"
+
+
+class AdminSessionPayload(BaseModel):
+    """What the administrators' directory shows of one live chat: no transcript, usage or workspace."""
+
+    id: UUID
+    playerId: UUID
+    kind: SessionKind
+    projectId: UUID
+    projectFullName: str
+    branch: str
+    providerLabel: str
+    adapterLabel: str
+    model: str
+    effort: str | None
+    status: str
+    pending: bool
+    deploymentState: DeploymentState
+    createdAt: datetime
+    updatedAt: datetime
+
+
+class AdminClosedSessions(BaseModel):
+    closed: int
+
+
+async def current_admin(request: Request) -> Caller:
+    """Administrators only. The role is a claim of the signed access token, whose sign-in
+    `current_caller` has just checked is still alive (a banned player's is not)."""
+    caller = await current_caller(request)
+    if caller.role != "admin":
+        raise ApiException.forbidden("Insufficient role")
+    return caller
+
+
+def _admin_session_payload(session: Session) -> dict[str, Any]:
+    descriptor = describe(session.provider)
+    return AdminSessionPayload(
+        id=session.id,
+        playerId=session.player_id,
+        kind=session.kind,
+        projectId=session.project_id,
+        projectFullName=session.project_full_name,
+        branch=session.branch,
+        providerLabel=descriptor.label,
+        adapterLabel=descriptor.adapter(session.adapter).label,
+        model=session.config.model,
+        effort=session.config.effort,
+        status=session.status,
+        pending=session.pending is not None,
+        deploymentState=session.deployment.state,
+        createdAt=session.created_at,
+        updatedAt=session.updated_at,
+    ).model_dump(mode="json")
+
+
+def _publish_presence(player_id: UUID) -> None:
+    if _channels.watched(_ADMIN_CHANNEL):
+        _channels.publish(_ADMIN_CHANNEL, EVENT_ADMIN_PRESENCE,
+                          {"playerId": str(player_id), "connections": _channels.subscriber_count(player_id)})
+
+
+@router.get("/admin/events")
+async def stream_admin_events(request: Request,
+                              caller: Annotated[Caller, Depends(current_admin)]) -> StreamingResponse:
+    """The administrators' live channel: a `sync` snapshot of who is connected (devices per player)
+    and of every live chat in this process, then presence and chat changes as they happen."""
+    queue = _channels.subscribe(_ADMIN_CHANNEL)
+    presence = _channels.subscribers()
+    sync = _channels.snapshot("sync", {
+        "presence": {str(key): count for key, count in presence.items() if isinstance(key, UUID)},
+        "sessions": [_admin_session_payload(session) for session in get_registry().all()],
+    })
+    return event_stream(request, queue, [sync], after=0, authorize=current_admin,
+                        close=lambda: _channels.unsubscribe(_ADMIN_CHANNEL, queue))
+
+
+@router.get("/admin/agents/providers")
+async def admin_agent_providers(caller: Annotated[Caller, Depends(current_admin)]) -> dict[str, Any]:
+    """Every provider and its adapters (the first is the built-in default), for the platform defaults."""
+    return {"providers": [
+        {"id": provider.id, "label": provider.label,
+         "adapters": [{"id": adapter.id, "label": adapter.label} for adapter in provider.adapters]}
+        for provider in PROVIDERS.values()
+    ]}
+
+
+@router.delete("/admin/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def admin_close_session(session_id: UUID, caller: Annotated[Caller, Depends(current_admin)]) -> None:
+    """Closes any player's chat exactly as its owner would; always `204`, like the owner's own close."""
+    session = get_registry().get(session_id)
+    if session is None:
+        return
+    LOG.info("Admin %s closes session %s of player %s", caller.player_id, session_id, session.player_id)
+    await close_session(session_id)
+
+
+@router.delete("/admin/players/{player_id}/sessions")
+async def admin_close_player_sessions(
+    player_id: UUID, caller: Annotated[Caller, Depends(current_admin)]
+) -> AdminClosedSessions:
+    """Closes every chat of one player at once, e.g. alongside a ban."""
+    sessions = get_registry().list_for(player_id, None)
+    LOG.info("Admin %s closes %d sessions of player %s", caller.player_id, len(sessions), player_id)
+    await asyncio.gather(*(close_session(session.id) for session in sessions))
+    return AdminClosedSessions(closed=len(sessions))
 
 
 @router.post("/sessions/{session_id}/messages", status_code=status.HTTP_202_ACCEPTED)

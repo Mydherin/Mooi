@@ -2465,14 +2465,24 @@ class ProviderDescriptor:
             raise ApiException.bad_request("Unknown agent adapter")
         return adapter
 
-    async def prepare(self, caller, connection_id: str, refresh: bool = False, adapter: str | None = None) -> None:
-        runtime_class = self.adapter(adapter).runtime_class
+    def default_adapter(self, configured: str | None) -> AdapterDescriptor:
+        """The administrator's default adapter when this provider still offers it, else the first one."""
+        return next((entry for entry in self.adapters if entry.id == configured), self.adapters[0])
+
+    async def prepare(self, caller, connection_id: str, refresh: bool = False,
+                      adapter: str | None = None) -> AdapterDescriptor:
+        """Loads the catalog of the requested adapter, or of the platform's default one, and returns
+        the adapter it prepared. The credential carries the platform defaults, so resolving the default
+        costs nothing beyond the fetch the catalog needs anyway."""
+        requested = self.adapter(adapter) if adapter else None
+        from mic_sessions.shared.mooi import fetch_agent_credential
+        credential = await fetch_agent_credential(caller, connection_id)
+        if credential.provider != self.id:
+            raise ApiException.bad_request("The selected account belongs to another provider")
+        prepared = requested or self.default_adapter(credential.session_adapter)
+        runtime_class = prepared.runtime_class
         loader = getattr(runtime_class, "load_configuration", None)
         if loader:
-            from mic_sessions.shared.mooi import fetch_agent_credential
-            credential = await fetch_agent_credential(caller, connection_id)
-            if credential.provider != self.id:
-                raise ApiException.bad_request("The selected account belongs to another provider")
             await loader(credential, refresh=refresh)
             catalog = runtime_class.configuration()
             selected = (credential.session_model if credential.session_model and any(
@@ -2485,6 +2495,7 @@ class ProviderDescriptor:
                 catalog["defaultEffort"], *efforts) if value and value in efforts), None)
             runtime_class._catalog.set({**catalog, "providerDefaultModel": catalog["defaultModel"],
                                         "defaultModel": selected, "defaultEffort": preferred_effort})
+        return prepared
 
     def configuration(self, adapter: str | None = None) -> dict[str, Any]:
         selected = self.adapter(adapter)

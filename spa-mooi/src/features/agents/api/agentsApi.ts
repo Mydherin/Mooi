@@ -1,4 +1,6 @@
+import type { AdminAgentProvider } from '@/features/agents/types/AdminAgentProvider';
 import type { EngineDefaults } from '@/features/agents/types/EngineDefaults';
+import { sessionsFetch } from '@/features/sessions/lib/sessionsFetch';
 import { authenticatedFetch } from '@/features/auth/lib/authenticatedFetch';
 import type { AgentAuthorizationResponse } from '@/features/agents/types/AgentAuthorizationResponse';
 import type { AgentConnection } from '@/features/agents/types/AgentConnection';
@@ -116,7 +118,13 @@ export const saveEngineDefaults = async (defaults: EngineDefaults): Promise<Engi
   return response.json();
 };
 
-export const selectDefaultAccount = async (connectionId: string | null): Promise<AgentConnection[]> => {
+export const fetchAdminAgentProviders = async (): Promise<AdminAgentProvider[]> => {
+  const response = await sessionsFetch('/admin/agents/providers');
+  if (!response.ok) throw new Error(await apiErrorMessage(response, 'Could not load the agent providers.'));
+  return ((await response.json()) as { providers: AdminAgentProvider[] }).providers;
+};
+
+export const selectDefaultAccount =async (connectionId: string | null): Promise<AgentConnection[]> => {
   const response = await authenticatedFetch('/me/agents/default-account', {
     method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ connectionId }),
   });

@@ -69,6 +69,10 @@ class Fanout:
     def subscribed(self) -> bool:
         return bool(self._subscribers)
 
+    @property
+    def count(self) -> int:
+        return len(self._subscribers)
+
     def subscribe(self) -> Subscription:
         """Registers a queue synchronously, with no `await`: a caller can snapshot or replay right
         after this with no gap in which an event published in between could be lost. A raw queue is
@@ -156,6 +160,14 @@ class Channels:
         """Someone listens to `key`: lets a publisher skip building a payload nobody would receive."""
         fanout = self._fanouts.get(key)
         return fanout is not None and fanout.subscribed
+
+    def subscribers(self) -> dict[Hashable, int]:
+        """How many streams listen to each watched key: presence, read from what already exists."""
+        return {key: fanout.count for key, fanout in self._fanouts.items() if fanout.subscribed}
+
+    def subscriber_count(self, key: Hashable) -> int:
+        fanout = self._fanouts.get(key)
+        return fanout.count if fanout is not None else 0
 
     def snapshot(self, type_: str, data: dict[str, Any]) -> Event:
         """An opening frame for one subscriber, ordered with the channel's live events."""

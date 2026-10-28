@@ -61,3 +61,7 @@ databaseChangeLog:
       file: db/changelog/changes/030-unfinished-operation-indexes.yaml
   - include:
       file: db/changelog/changes/031-project-development-deployment.yaml
+  - include:
+      file: db/changelog/changes/032-player-bans.yaml
+  - include:
+      file: db/changelog/changes/033-agent-engine-default-adapter.yaml

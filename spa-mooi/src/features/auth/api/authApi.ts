@@ -4,11 +4,21 @@ import type { SessionResponse } from '@/features/auth/types/SessionResponse';
 
 const jsonHeaders = { 'Content-Type': 'application/json' } as const;
 
+/** A failed auth call; `status` tells a suspended account (403) apart from any other failure. */
+export class AuthRequestError extends Error {
+  readonly status: number;
+
+  constructor(path: string, status: number) {
+    super(`Request to ${path} failed with ${status}`);
+    this.status = status;
+  }
+}
+
 const request = async <T>(path: string, init: RequestInit): Promise<T> => {
   const response = await fetch(`${env.apiBaseUrl}${path}`, init);
 
   if (!response.ok) {
-    throw new Error(`Request to ${path} failed with ${response.status}`);
+    throw new AuthRequestError(path, response.status);
   }
 
   return (await response.json()) as T;

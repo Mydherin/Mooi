@@ -5,6 +5,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -176,6 +177,7 @@ public class AgentConnectionFeature {
 
         /** Both modes are always offered: whether OAuth is actually usable is a separate flag. */
         private static final List<String> MODES = List.of(Agents.Mode.OAUTH.wire(), Agents.Mode.SETUP_TOKEN.wire());
+        private static final Pattern ADAPTER_ID = Pattern.compile("^[a-z0-9][a-z0-9_-]{0,31}$");
 
         /** One grant, whichever mode produced it. Fields absent for a mode are simply {@code null}. */
         private record Grant(String accessToken, OffsetDateTime accessTokenExpiresAt, String refreshToken,
@@ -249,7 +251,8 @@ public class AgentConnectionFeature {
             EngineDefaults defaults = engineDefaultsRepository.findById(agentProvider.id()).orElseThrow();
             return new CredentialPayload(agentProvider.id(), connection.getMode(),
                     secretBox.decrypt(connection.getAccessToken()), connection.getAccessTokenExpiresAt(),
-                    connection.getCredentialId(), defaults.getSessionModel(), defaults.getSessionEffort());
+                    connection.getCredentialId(), defaults.getSessionModel(), defaults.getSessionEffort(),
+                    defaults.getSessionAdapter());
         }
 
         /**
@@ -318,6 +321,7 @@ public class AgentConnectionFeature {
             EngineDefaults defaults = engineDefaultsRepository.findById(provider).orElseThrow();
             defaults.setSessionModel(cleanModel(request.sessionModel()));
             defaults.setSessionEffort(cleanEffort(request.sessionEffort()));
+            defaults.setSessionAdapter(cleanAdapter(request.sessionAdapter()));
             return toDefaultsPayload(engineDefaultsRepository.save(defaults));
         }
 
@@ -338,7 +342,20 @@ public class AgentConnectionFeature {
         }
 
         private EngineDefaultsPayload toDefaultsPayload(EngineDefaults defaults) {
-            return new EngineDefaultsPayload(defaults.getProvider(), defaults.getSessionModel(), defaults.getSessionEffort());
+            return new EngineDefaultsPayload(defaults.getProvider(), defaults.getSessionModel(), defaults.getSessionEffort(),
+                    defaults.getSessionAdapter());
+        }
+
+        /**
+         * Adapters are registered in mic-sessions, so only the shape is checked here: an id it does not
+         * know (or no longer knows) simply falls back to the provider's first adapter there.
+         */
+        private String cleanAdapter(String value) {
+            if (value == null || value.isBlank()) return null;
+            String cleaned = value.strip();
+            if (!ADAPTER_ID.matcher(cleaned).matches())
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid adapter");
+            return cleaned;
         }
 
         private String cleanEffort(String value) {
@@ -524,6 +541,8 @@ public class AgentConnectionFeature {
         private String sessionModel;
         @Column(name = "session_effort", length = 32)
         private String sessionEffort;
+        @Column(name = "session_adapter", length = 32)
+        private String sessionAdapter;
     }
 
     public interface EngineDefaultsRepository extends JpaRepository<EngineDefaults, String> { }
@@ -583,7 +602,7 @@ public class AgentConnectionFeature {
      * payload in this feature, where a raw token is ever serialized.
      */
     public record CredentialPayload(String provider, String mode, String token, OffsetDateTime expiresAt, UUID connectionId,
-                                    String sessionModel, String sessionEffort) {
+                                    String sessionModel, String sessionEffort, String sessionAdapter) {
     }
 
     /** One provider this application knows how to link, and whether OAuth is actually usable for it. */
@@ -612,8 +631,9 @@ public class AgentConnectionFeature {
 
     public record DefaultAccountRequest(UUID connectionId) { }
 
-    public record EngineDefaultsPayload(String provider, String sessionModel, String sessionEffort) { }
+    public record EngineDefaultsPayload(String provider, String sessionModel, String sessionEffort,
+                                        String sessionAdapter) { }
 
-    public record DefaultModelsRequest(String sessionModel, String sessionEffort) {
+    public record DefaultModelsRequest(String sessionModel, String sessionEffort, String sessionAdapter) {
     }
 }

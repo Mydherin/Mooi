@@ -51,6 +51,8 @@ class Credential:
     save: Callable[[str], Awaitable[None]] | None = field(default=None, repr=False)
     session_model: str | None = None
     session_effort: str | None = None
+    # The platform's default adapter for this provider; None is the provider's first one.
+    session_adapter: str | None = None
 
 
 @dataclass(frozen=True)
@@ -413,6 +415,7 @@ async def fetch_agent_credential(caller: Caller, connection_id: str) -> Credenti
         connection_id=body.get("connectionId"),
         session_model=body.get("sessionModel"),
         session_effort=body.get("sessionEffort"),
+        session_adapter=body.get("sessionAdapter"),
         save=save if body["provider"] == "codex" else None,
         expires_at=datetime.fromisoformat(expires_at) if expires_at else None,
     )

@@ -4,7 +4,7 @@ import { ArrowUpRight, CircleCheck } from 'lucide-react';
 import { ROUTES } from '@/app/routes';
 import { env } from '@/config/env';
 import { PipelineShowcase } from '@/features/brand/components/PipelineShowcase';
-import { loginWithGoogle } from '@/features/auth/api/authApi';
+import { AuthRequestError, loginWithGoogle } from '@/features/auth/api/authApi';
 import { GoogleSignInButton } from '@/features/auth/components/GoogleSignInButton';
 import { MockSignInButton } from '@/features/auth/components/MockSignInButton';
 import { toAuthSession } from '@/features/auth/lib/toAuthSession';
@@ -41,9 +41,11 @@ export const LoginPage = () => {
           setSession(response.player, toAuthSession(response));
           navigate(ROUTES.projects, { replace: true });
         })
-        .catch(() => {
+        .catch((failure: unknown) => {
           setBusy(false);
-          setError('Sign in failed. Please try again.');
+          setError(failure instanceof AuthRequestError && failure.status === 403
+            ? 'This account is suspended. Contact an administrator.'
+            : 'Sign in failed. Please try again.');
         });
     },
     [navigate, setSession],

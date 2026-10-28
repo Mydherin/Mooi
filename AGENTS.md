@@ -136,8 +136,14 @@ from it. Where they differ, this context wins over the current implementation (s
 ## Accounts and administration
 
 - Account area: profile, linked GitHub, provider accounts and other personal settings; secure storage.
-- Roles. **Admin** gets dynamic sections with rich insights: active users, sessions per user, detailed user
-  information, default models per provider (Claude, Codex) and other platform settings.
+- Roles. **Admin** gets a tabbed console with rich, live insights and controls:
+  - **Users**: every registered user with their last connection, who is online right now (and on how many
+    devices), their live sessions and what each agent is doing, projects, provider accounts and devices,
+    all updated in real time. Admins close a user's sessions, sign them out everywhere, and ban (sign out,
+    close sessions, block sign-in) or unban them. Live data costs nothing while no admin watches.
+  - **Agents**: minimal per-provider session defaults (adapter, model, thinking effort) preselected for
+    every user; saved on change.
+  - Other platform settings as they come.
 
 ## Other capabilities
 
