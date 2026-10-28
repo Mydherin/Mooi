@@ -16,6 +16,9 @@ export interface Session {
   model: string;
   effort?: string | null;
   providerLabel: string;
+  /** The provider adapter the agent runs on, e.g. `cli` labelled "Claude CLI". */
+  adapter?: string;
+  adapterLabel?: string;
   branch: string;
   baseBranch: string;
   status: SessionStatus;

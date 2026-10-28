@@ -6,10 +6,12 @@ interface SegmentedControlProps {
   value: string;
   onChange: (id: string) => void;
   className?: string;
+  /** Id of the element naming the group. */
+  labelledBy?: string;
 }
 
-export const SegmentedControl = ({ items, value, onChange, className }: SegmentedControlProps) => (
-  <div role="group" className={cn('inline-flex flex-wrap gap-1 rounded-control border border-line bg-surface-2 p-0.5', className)}>
+export const SegmentedControl = ({ items, value, onChange, className, labelledBy }: SegmentedControlProps) => (
+  <div role="group" aria-labelledby={labelledBy} className={cn('inline-flex flex-wrap gap-1 rounded-control border border-line bg-surface-2 p-0.5', className)}>
     {items.map((item) => {
       const Icon = item.icon;
       const isActive = item.id === value;

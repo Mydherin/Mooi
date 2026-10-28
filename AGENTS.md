@@ -49,8 +49,11 @@ from it. Where they differ, this context wins over the current implementation (s
   (worktree/clone), so features progress in parallel without interfering.
 - Chat UX like Claude Code / Codex. Supported providers: **Claude** and **Codex**.
 - Live view of what the agent does and of changed files on the session branch.
-- Provider integration: official SDKs today, possibly CLIs later. Keep one provider-agnostic API so the
-  integration technology can change without touching the rest.
+- Provider integration through **adapters** behind one provider-agnostic API: a provider may offer
+  several (Claude: **Claude SDK**, the default, and **Claude CLI**, which drives the Claude Code CLI
+  natively; Codex: its SDK). Each adapter supports every session feature (streaming, questions,
+  interrupt, compaction, model/effort, context and limit KPIs) in its own way; a session picks one with
+  its model and effort and keeps it.
 - KPIs per session and provider account: context size, session limits, weekly limits, other usage metrics.
 - Model and thinking-effort selection per session.
 - Multiple provider accounts, including several of the same provider; sessions of one project may use the

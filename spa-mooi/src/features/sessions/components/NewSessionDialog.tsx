@@ -84,6 +84,7 @@ export const NewSessionDialog = ({
     void onCreate({
       projectId: project.id,
       provider: choice.provider,
+      adapter: choice.adapter || undefined,
       connectionId: choice.connectionId,
       model: choice.model,
       effort: choice.effort || null,

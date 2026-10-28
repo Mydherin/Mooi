@@ -229,6 +229,8 @@ _PLATFORM_KINDS = frozenset({"production", "backup"})
 class CreateSessionRequest(BaseModel):
     projectId: UUID
     provider: str
+    # The provider's implementation (e.g. Claude through its SDK or its CLI); its default when omitted.
+    adapter: str | None = Field(default=None, max_length=32)
     connectionId: UUID
     branch: str | None = Field(default=None, pattern=_BRANCH_PATTERN)
     model: str | None = None
@@ -515,6 +517,8 @@ class SessionPayload(BaseModel):
     provider: str
     connectionId: UUID
     providerLabel: str
+    adapter: str
+    adapterLabel: str
     branch: str
     baseBranch: str
     status: str
@@ -708,6 +712,8 @@ class Session:
     # Redacted output tail of the latest start, read by the agent that sets the deployment up.
     deployment_output: list[str] = field(default_factory=list)
     config: AgentConfig = field(default_factory=lambda: AgentConfig("", None))
+    # The provider adapter the agent runs on, fixed for the session's lifetime ("" is the default).
+    adapter: str = ""
     usage: dict[str, Any] = field(default_factory=dict)
     closing: bool = False
     turn_id: str | None = None
@@ -729,6 +735,7 @@ class Session:
 
     def to_payload(self) -> SessionPayload:
         descriptor = describe(self.provider)
+        adapter = descriptor.adapter(self.adapter)
         return SessionPayload(
             id=self.id,
             kind=self.kind,
@@ -737,6 +744,8 @@ class Session:
             provider=self.provider,
             connectionId=self.connection_id,
             providerLabel=descriptor.label,
+            adapter=adapter.id,
+            adapterLabel=adapter.label,
             branch=self.branch,
             baseBranch=self.base_branch,
             status=self.status,
@@ -748,7 +757,7 @@ class Session:
             pending=PendingPayload(kind=self.pending.kind, requestId=self.pending.request_id)
             if self.pending is not None
             else None,
-            capabilities=descriptor.capabilities.as_payload(),
+            capabilities=adapter.capabilities.as_payload(),
             model=self.config.model,
             effort=self.config.effort,
             deployment=self.deployment,
@@ -1218,9 +1227,10 @@ async def create_session(
 async def _open_session(body: CreateSessionRequest, caller: Caller) -> Session:
     """Opens any chat, from the UI or handed over by another chat's agent: the same path either way."""
     descriptor = describe(body.provider)
+    adapter = descriptor.adapter(body.adapter)
     registry = get_registry()
-    await descriptor.prepare(caller, str(body.connectionId))
-    config = descriptor.configure(body.model, body.effort)
+    await descriptor.prepare(caller, str(body.connectionId), adapter=adapter.id)
+    config = descriptor.configure(body.model, body.effort, adapter.id)
     if body.kind == "session":
         if body.branch is None:
             raise ApiException.bad_request("A branch is required for a session")
@@ -1244,6 +1254,7 @@ async def _open_session(body: CreateSessionRequest, caller: Caller) -> Session:
     )
 
     session.config = config
+    session.adapter = adapter.id
     session.agent_caller = caller
     project = await mooi.fetch_project(caller, body.projectId)
     session.project_full_name = project.full_name
@@ -1279,7 +1290,7 @@ async def _provision(session: Session, caller: Caller, project: mooi.Project,
         session.base_commit = workspace.base_commit
         _sync_deployment_configured(session)
 
-        _record_status(session, STATUS_PROVISIONING, f"Starting {descriptor.label}")
+        _record_status(session, STATUS_PROVISIONING, f"Starting {descriptor.adapter(session.adapter).label}")
         runtime = create_runtime(
             descriptor.id,
             credential,
@@ -1288,6 +1299,7 @@ async def _provision(session: Session, caller: Caller, project: mooi.Project,
             _emitter(session),
             _asker(session),
             session.config,
+            adapter=session.adapter,
             instructions=_session_instructions(session),
             environment=_session_environment(session),
         )
@@ -1319,10 +1331,12 @@ async def _provision(session: Session, caller: Caller, project: mooi.Project,
 
 @router.get("/sessions/providers/{provider}")
 async def session_provider(provider: str, connectionId: UUID,
-                           caller: Annotated[Caller, Depends(current_caller)], refresh: bool = False) -> dict[str, Any]:
+                           caller: Annotated[Caller, Depends(current_caller)], refresh: bool = False,
+                           adapter: str | None = None) -> dict[str, Any]:
+    """The model catalog of one provider adapter (its default when omitted) and the adapters offered."""
     descriptor = describe(provider)
-    await descriptor.prepare(caller, str(connectionId), refresh=refresh)
-    return descriptor.configuration()
+    await descriptor.prepare(caller, str(connectionId), refresh=refresh, adapter=adapter)
+    return descriptor.configuration(adapter)
 
 
 @router.get("/sessions/workspaces")
@@ -1545,7 +1559,7 @@ async def send_message(
     session.agent_caller = caller
     if not body.text.strip() and not body.images:
         raise ApiException.bad_request("Message cannot be blank")
-    if body.images and not describe(session.provider).capabilities.images:
+    if body.images and not describe(session.provider).adapter(session.adapter).capabilities.images:
         raise ApiException.bad_request("This agent does not accept images")
     async with session.operation_lock:
         if session.status != STATUS_READY or session.closing or session.deployment.state == "starting":
@@ -1646,7 +1660,7 @@ async def update_session_configuration(
 ) -> SessionPayload:
     session = get_registry().get_for(caller, session_id)
     descriptor = describe(session.provider)
-    await descriptor.prepare(caller, str(session.connection_id))
+    await descriptor.prepare(caller, str(session.connection_id), adapter=session.adapter)
     async with session.operation_lock:
         if (session.closing or session.deployment.state == "starting"
                 or session.status not in (STATUS_PROVISIONING, STATUS_READY, STATUS_WORKING, STATUS_WAITING)):
@@ -1662,7 +1676,7 @@ async def update_session_configuration(
         effort = body.effort if "effort" in changed_fields else (
             None if model != session.config.model else session.config.effort
         )
-        candidate = descriptor.configure(model, effort)
+        candidate = descriptor.configure(model, effort, session.adapter)
         # Never touch a running turn or a runtime still being provisioned.
         # send_message applies the latest selection under this same lock.
         _touch(session)
@@ -1855,7 +1869,7 @@ async def _reset_conversation(session: Session, caller: Caller) -> AgentRuntime:
     session.runtime = None
     record(session, EVENT_SESSION_CLEARED, {})
     runtime = create_runtime(session.provider, credential, session.workspace, session.branch,
-                             _emitter(session), _asker(session), session.config,
+                             _emitter(session), _asker(session), session.config, adapter=session.adapter,
                              instructions=_session_instructions(session),
                              environment=_session_environment(session))
     session.runtime = runtime
@@ -2202,8 +2216,8 @@ async def agent_platform_handoff(session_id: UUID, kind: Literal["production", "
     if current is not None and current.status in (STATUS_PROVISIONING, STATUS_WORKING, STATUS_WAITING, STATUS_COMPACTING):
         raise ApiException.conflict(f"The project's {kind} chat is busy: ask the user to continue there")
     chat = await _open_session(CreateSessionRequest(
-        projectId=session.project_id, provider=session.provider, connectionId=session.connection_id,
-        model=session.config.model, effort=session.config.effort, kind=kind, initialMessage=body.request), caller)
+        projectId=session.project_id, provider=session.provider, adapter=session.adapter or None,
+        connectionId=session.connection_id, model=session.config.model, effort=session.config.effort, kind=kind, initialMessage=body.request), caller)
     return {"sessionId": str(chat.id), "location": _PLATFORM_LOCATIONS[kind].format(project=session.project_id)}
 
 

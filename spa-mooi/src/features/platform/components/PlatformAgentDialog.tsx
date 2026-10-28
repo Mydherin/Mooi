@@ -38,7 +38,7 @@ export const PlatformAgentDialog = ({ copy, projectName, connections, busy, erro
   const submit = () => {
     if (!valid || busy) return;
     dictation.finish();
-    onSubmit({ provider: choice.provider, connectionId: choice.connectionId, model: choice.model,
+    onSubmit({ provider: choice.provider, adapter: choice.adapter || undefined, connectionId: choice.connectionId, model: choice.model,
       effort: choice.effort || null, message: buildMessage(prompt) });
   };
 

@@ -111,6 +111,8 @@ class Settings(BaseSettings):
     agent_claude_max_message_bytes: int = Field(default=64 * 1024 * 1024, ge=1024 * 1024)
     # Run the agent's shell commands through RTK (when installed) to compress their output.
     agent_claude_rtk: bool = True
+    # Claude Code CLI the `cli` adapter launches (a name on PATH or a path); the image pins its version.
+    agent_claude_cli: str = "claude"
     # Reconnections tried, with backoff, when a provider stream breaks before the session fails.
     agent_recovery_attempts: int = Field(default=3, ge=0, le=10)
 
