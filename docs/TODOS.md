@@ -1,6 +1,6 @@
 # TODOs
 
-- [ ] Get stt recipe from this project
+- [/] Get stt recipe from this project
 - [ ] Adjust at ui ux level properly the session context and 5 hour limit
 - [ ] Adjust ui/ux pattern with proper number in status in todos view
 - [ ] Say how diff commits from main to previous release
