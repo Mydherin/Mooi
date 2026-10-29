@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
-import { GitCompareArrows, MessagesSquare, Monitor } from 'lucide-react';
+import { FolderTree, GitCompareArrows, MessagesSquare, Monitor } from 'lucide-react';
 import { PreviewPanel } from './preview/PreviewPanel';
 import { Tabs } from '@/shared/components/Tabs';
 import type { TabItem } from '@/shared/types/TabItem';
@@ -9,6 +9,7 @@ import { useSessionsStore } from '@/stores/sessionsStore';
 import { cn } from '@/shared/utils/cn';
 
 const ChangesPanel = lazy(() => import('./changes/ChangesPanel').then((module) => ({ default: module.ChangesPanel })));
+const FilesPanel = lazy(() => import('./files/FilesPanel').then((module) => ({ default: module.FilesPanel })));
 
 interface SessionWorkspaceProps {
   sessionId: string;
@@ -22,6 +23,7 @@ export const SessionWorkspace = ({ sessionId, deployEnabled, children }: Session
   const setPane = useSessionsStore((state) => state.setPane);
   const logOpen = useSessionsStore((state) => state.byId[sessionId]?.deploymentLogOpen ?? false);
   const [visitedOperation, setVisitedOperation] = useState<string | null>(null);
+  const [filesVisited, setFilesVisited] = useState(false);
   const changes = useSessionsStore((state) => state.byId[sessionId]?.changes);
   const session = useSessionsStore((state) => state.sessions.find((item) => item.id === sessionId));
   const deployment = session?.deployment;
@@ -62,17 +64,20 @@ export const SessionWorkspace = ({ sessionId, deployEnabled, children }: Session
   }, [setup, deployment?.state, operationId, sessionId, setPane]);
 
   const selectPane = (id: string) => {
-    if (id !== 'conversation' && id !== 'changes' && id !== 'preview') return;
+    if (id !== 'conversation' && id !== 'changes' && id !== 'files' && id !== 'preview') return;
     setPane(sessionId, id);
+    if (id === 'files') setFilesVisited(true);
     if (id === 'preview' && running && operationId) setVisitedOperation(operationId);
   };
 
   const items: TabItem[] = [
     { id: 'conversation', label: 'Conversation', icon: MessagesSquare },
     { id: 'changes', label: 'Changes', icon: GitCompareArrows, count: changes?.files.length ?? 0 },
+    { id: 'files', label: 'Files', icon: FolderTree },
     ...(hasPreview ? [{ id: 'preview', label: 'Preview', icon: Monitor, dot: running }] : []),
   ];
   const visiblePane = pane === 'preview' && !hasPreview ? 'conversation' : pane;
+  const keepFiles = filesVisited || visiblePane === 'files';
   const keepPreview = visiblePane === 'preview' || (running && visitedOperation === operationId);
 
   return (
@@ -86,6 +91,10 @@ export const SessionWorkspace = ({ sessionId, deployEnabled, children }: Session
           className={cn('min-h-0 min-w-0', visiblePane !== 'conversation' && 'hidden')}>{children}</section>
         {visiblePane === 'changes' ? <section role="tabpanel" id="session-changes" aria-label="Live code changes" className="min-h-0 min-w-0">
           <Suspense fallback={<p className="p-6 text-sm text-ink-muted">Loading changes…</p>}><ChangesPanel sessionId={sessionId} /></Suspense>
+        </section> : null}
+        {keepFiles ? <section role="tabpanel" id="session-files" aria-label="Session files" hidden={visiblePane !== 'files'}
+          className={cn('min-h-0 min-w-0', visiblePane !== 'files' && 'hidden')}>
+          <Suspense fallback={<p className="p-6 text-sm text-ink-muted">Loading files…</p>}><FilesPanel sessionId={sessionId} active={visiblePane === 'files'} /></Suspense>
         </section> : null}
         {keepPreview && deployment ? <section role="tabpanel" aria-label="Application preview" hidden={visiblePane !== 'preview'}
           className={cn('min-h-0 min-w-0', visiblePane !== 'preview' && 'hidden')}>

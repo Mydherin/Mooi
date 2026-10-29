@@ -56,6 +56,11 @@ from it. Where they differ, this context wins over the current implementation (s
   natively; Codex: its SDK). Each adapter supports every session feature (streaming, questions,
   interrupt, compaction, model/effort, context and limit KPIs) in its own way; a session picks one with
   its model and effort and keeps it.
+- A **Files** tab, always visible in a development session: a project view of the session's working tree
+  (folders of folders, search, changed and unsaved markers) beside a plain-text editor. Saving writes into
+  the session's own workspace, so edits show up live in Changes and travel with the merge; a save names the
+  revision it read, so a concurrent agent edit is reported, never overwritten. Desktop shows tree and editor
+  side by side, phones show them one after the other.
 - KPIs per session and provider account: context size, session limits, weekly limits, other usage metrics.
 - Model and thinking-effort selection per session.
 - Multiple provider accounts, including several of the same provider; sessions of one project may use the

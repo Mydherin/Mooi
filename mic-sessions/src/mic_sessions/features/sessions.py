@@ -638,6 +638,27 @@ class FileDiffPayload(BaseModel):
     truncated: bool = False
 
 
+class FilesPayload(BaseModel):
+    paths: list[str]
+    truncated: bool = False
+
+
+class FileContentPayload(BaseModel):
+    path: str
+    # "text", or "binary" / "too_large" when the file has nothing editable to show.
+    preview: Literal["text", "binary", "too_large"] = "text"
+    content: str = ""
+    revision: str = ""
+    size: int = 0
+
+
+class SaveFileRequest(BaseModel):
+    path: str
+    content: str
+    # The revision the editor read; the save is refused when the file moved on since.
+    baseRevision: str
+
+
 MergeState = Literal["clean", "conflicts", "up_to_date", "merged"]
 
 
@@ -1949,6 +1970,45 @@ async def get_file_diff(
         diff = await workspaces.file_diff(session.workspace, session.base_commit, path)
         return FileDiffPayload(path=path, diff=diff.diff, preview=diff.preview, truncated=diff.truncated)
 
+
+
+@router.get("/sessions/{session_id}/files")
+async def get_files(session_id: UUID, caller: Annotated[Caller, Depends(current_caller)]) -> FilesPayload:
+    session = get_registry().get_for(caller, session_id)
+    if session.workspace == _UNSET_PATH:
+        return FilesPayload(paths=[])
+    listing = await workspaces.list_files(session.workspace)
+    return FilesPayload(paths=listing.paths, truncated=listing.truncated)
+
+
+@router.get("/sessions/{session_id}/files/content")
+async def get_file_content(
+    session_id: UUID, path: str, caller: Annotated[Caller, Depends(current_caller)]
+) -> FileContentPayload:
+    session = get_registry().get_for(caller, session_id)
+    if session.workspace == _UNSET_PATH:
+        raise ApiException.conflict("The workspace is still being prepared")
+    file = await workspaces.read_file(session.workspace, path)
+    return FileContentPayload(path=path, preview=file.preview, content=file.content, revision=file.revision,
+                              size=file.size)
+
+
+@router.put("/sessions/{session_id}/files/content")
+async def save_file_content(
+    session_id: UUID, body: SaveFileRequest, caller: Annotated[Caller, Depends(current_caller)]
+) -> FileContentPayload:
+    """Saves an edit straight into the session's working tree, where the Changes tab and the merge
+    pick it up like any change the agent makes."""
+    session = get_registry().get_for(caller, session_id)
+    if session.kind in _PLATFORM_KINDS:
+        raise ApiException.conflict("Platform chats publish their documents after a successful test")
+    if session.workspace == _UNSET_PATH:
+        raise ApiException.conflict("The workspace is still being prepared")
+    async with session.operation_lock:
+        file = await workspaces.write_file(session.workspace, body.path, body.content, body.baseRevision)
+    _schedule_changes_refresh(session, debounce=False)
+    return FileContentPayload(path=body.path, preview=file.preview, content=file.content, revision=file.revision,
+                              size=file.size)
 
 
 # --- merge into the default branch -------------------------------------------------------------

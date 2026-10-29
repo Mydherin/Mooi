@@ -5,6 +5,8 @@ import { sessionsFetch } from '@/features/sessions/lib/sessionsFetch';
 import type { ChangesSummary } from '@/features/sessions/types/ChangesSummary';
 import type { CreateSessionRequest } from '@/features/sessions/types/CreateSessionRequest';
 import type { FileDiffPayload } from '@/features/sessions/types/FileDiffPayload';
+import type { SessionFileContent } from '@/features/sessions/types/SessionFileContent';
+import type { SessionFiles } from '@/features/sessions/types/SessionFiles';
 import type { ImageUpload } from '@/features/sessions/types/ImageUpload';
 import type { MergeResult } from '@/features/sessions/types/MergeResult';
 import type { SendMessageResponse } from '@/features/sessions/types/SendMessageResponse';
@@ -30,6 +32,9 @@ const questionPath = (sessionId: string, requestId: string) => `/sessions/${sess
 const changesPath = (sessionId: string) => `/sessions/${sessionId}/changes`;
 const fileDiffPath = (sessionId: string, path: string) =>
   `/sessions/${sessionId}/changes/file?path=${encodeURIComponent(path)}`;
+const filesPath = (sessionId: string) => `/sessions/${sessionId}/files`;
+const fileContentPath = (sessionId: string, path?: string) =>
+  `/sessions/${sessionId}/files/content${path === undefined ? '' : `?path=${encodeURIComponent(path)}`}`;
 
 const jsonHeaders = { 'Content-Type': 'application/json' };
 
@@ -190,6 +195,33 @@ export const fetchFileDiff = async (sessionId: string, path: string): Promise<Fi
   }
 
   return (await response.json()) as FileDiffPayload;
+};
+
+export const fetchSessionFiles = async (sessionId: string): Promise<SessionFiles> => {
+  const response = await sessionsFetch(filesPath(sessionId));
+  if (!response.ok) throw new Error(await apiErrorMessage(response, 'Could not load the files.'));
+  return (await response.json()) as SessionFiles;
+};
+
+export const fetchSessionFile = async (sessionId: string, path: string): Promise<SessionFileContent> => {
+  const response = await sessionsFetch(fileContentPath(sessionId, path));
+  if (!response.ok) throw new Error(await apiErrorMessage(response, 'Could not open this file.'));
+  return (await response.json()) as SessionFileContent;
+};
+
+export const saveSessionFile = async (
+  sessionId: string,
+  path: string,
+  content: string,
+  baseRevision: string,
+): Promise<SessionFileContent> => {
+  const response = await sessionsFetch(fileContentPath(sessionId), {
+    method: 'PUT',
+    headers: jsonHeaders,
+    body: JSON.stringify({ path, content, baseRevision }),
+  });
+  if (!response.ok) throw new Error(await apiErrorMessage(response, 'Could not save this file.'));
+  return (await response.json()) as SessionFileContent;
 };
 
 export const fetchSessionProvider = async (provider: string, connectionId: string, refresh = false,

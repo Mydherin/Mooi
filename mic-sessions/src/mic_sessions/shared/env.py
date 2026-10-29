@@ -76,6 +76,8 @@ class Settings(BaseSettings):
     ])
     # Largest file shown as a text diff, and largest diff text returned (cut at a line boundary).
     changes_preview_max_bytes: int = Field(default=4 * 1024 * 1024, ge=64 * 1024)
+    # Most files the Files tab lists for one workspace.
+    files_max_listed: int = Field(default=50_000, ge=1_000)
 
     # Session deployments. Docker talks to the host engine, not a nested daemon.
     docker_binary: str = Field(default="docker", min_length=1)
