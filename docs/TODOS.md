@@ -1,6 +1,6 @@
 # TODOs
 
-- [ ] Remove the legacy body refresh token transport (AUTH_LEGACY_BODY_TOKEN_ENABLED, LegacyRefreshRequest, legacyRefreshToken.ts) at least 30 days after the persistent-sessions release
+- [/] Remove the legacy body refresh token transport (AUTH_LEGACY_BODY_TOKEN_ENABLED, LegacyRefreshRequest, legacyRefreshToken.ts) at least 30 days after the persistent-sessions release
 - [/] Do not close session with proper refresh token after 30 days without connection
 - [ ] In changes show file name with extension just and as subtitle the full relative path and if you hover it you could see a tooltip with full path if you could not see entrierly as subtitle cause ellipsis
 - [ ] Files view, allowing editing files with plain text manually
