@@ -7,11 +7,14 @@ import { PipelineShowcase } from '@/features/brand/components/PipelineShowcase';
 import { AuthRequestError, loginWithGoogle } from '@/features/auth/api/authApi';
 import { GoogleSignInButton } from '@/features/auth/components/GoogleSignInButton';
 import { MockSignInButton } from '@/features/auth/components/MockSignInButton';
+import { setAccessSession } from '@/features/auth/lib/accessTokenProvider';
 import { toAuthSession } from '@/features/auth/lib/toAuthSession';
 import { ThemeToggle } from '@/shared/components/ThemeToggle';
 import { Logo } from '@/shared/components/Logo';
 import { LogoMark } from '@/shared/components/LogoMark';
 import { useAuthStore } from '@/stores/authStore';
+
+const SUSPENDED_MESSAGE = 'This account is suspended. Contact an administrator.';
 
 const highlights = [
   'Import the repositories you already own',
@@ -27,9 +30,12 @@ const highlights = [
  */
 export const LoginPage = () => {
   const navigate = useNavigate();
-  const setSession = useAuthStore((state) => state.setSession);
+  const signIn = useAuthStore((state) => state.signIn);
+  const suspended = useAuthStore((state) => state.suspended);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const message = error ?? (suspended ? SUSPENDED_MESSAGE : null);
 
   const handleCredential = useCallback(
     (idToken: string) => {
@@ -38,17 +44,18 @@ export const LoginPage = () => {
 
       loginWithGoogle(idToken)
         .then((response) => {
-          setSession(response.player, toAuthSession(response));
+          setAccessSession(toAuthSession(response));
+          signIn(response.player);
           navigate(ROUTES.projects, { replace: true });
         })
         .catch((failure: unknown) => {
           setBusy(false);
           setError(failure instanceof AuthRequestError && failure.status === 403
-            ? 'This account is suspended. Contact an administrator.'
+            ? SUSPENDED_MESSAGE
             : 'Sign in failed. Please try again.');
         });
     },
-    [navigate, setSession],
+    [navigate, signIn],
   );
 
   return (
@@ -112,9 +119,9 @@ export const LoginPage = () => {
             )}
           </div>
 
-          {error ? (
+          {message ? (
             <p role="alert" className="mt-4 animate-fade-up rounded-control border border-danger/30 bg-danger-soft px-4 py-2.5 text-sm text-danger">
-              {error}
+              {message}
             </p>
           ) : null}
 

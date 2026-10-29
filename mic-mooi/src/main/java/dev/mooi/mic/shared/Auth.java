@@ -40,6 +40,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.MethodParameter;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseCookie;
 import org.springframework.stereotype.Component;
 import org.springframework.web.bind.support.WebDataBinderFactory;
 import org.springframework.web.context.request.NativeWebRequest;
@@ -101,6 +102,7 @@ public class Auth {
     public static final String SESSION_ID_KEY = "sessionId";
 
     private static final Pattern DURATION_PATTERN = Pattern.compile("^(\\d+)([smhd])$");
+    private static final Pattern COOKIE_NAME_PATTERN = Pattern.compile("^[A-Za-z0-9_-]+$");
     private static final String BEARER_PREFIX = "Bearer ";
     private static final int MAX_USER_AGENT_LENGTH = 512;
     private static final int MAX_IP_ADDRESS_LENGTH = 64;
@@ -230,13 +232,20 @@ public class Auth {
         private final Duration accessTokenTtl;
         private final Duration refreshTokenTtl;
         /**
-         * The ceiling a sliding refresh token cannot slide past. Rotation re-issues the deadline on
-         * every renewal, which is what keeps an active player signed in — and would also let a
-         * single stolen token be renewed forever. Measured from the session's own creation, this is
-         * the date on which the sign-in ends no matter how faithfully it was renewed.
+         * Optional ceiling a sliding refresh token cannot slide past, measured from the session's own
+         * creation. Empty (the default) means none: an active player never signs in again, and
+         * rotation, replay detection and the HttpOnly cookie are what bound a stolen token.
          */
-        private final Duration sessionMaxLifetime;
+        private final Optional<Duration> sessionMaxLifetime;
         private final Duration replayGrace;
+        /** Name, path and flags of the HttpOnly cookie carrying the refresh token. */
+        private final String refreshCookieName;
+        private final String refreshCookiePath;
+        private final boolean refreshCookieSecure;
+        /** Transition only: pre-cookie clients send and receive the refresh token in JSON bodies. */
+        private final boolean legacyBodyTokenEnabled;
+        /** Origins allowed to call the cookie-authenticated endpoints (same list as CORS). */
+        private final Set<String> allowedOrigins;
         private final Set<String> adminEmails;
         /**
          * Shared secret required of any {@link ServiceCall} handler. Left unvalidated here on
@@ -256,8 +265,13 @@ public class Auth {
                  @Value("${app.auth.jwt-secret:}") String jwtSecret,
                  @Value("${app.auth.access-token-expires-in}") String accessTokenExpiresIn,
                  @Value("${app.auth.refresh-token-expires-in}") String refreshTokenExpiresIn,
-                 @Value("${app.auth.session-max-lifetime}") String sessionMaxLifetime,
+                 @Value("${app.auth.session-max-lifetime:}") String sessionMaxLifetime,
                  @Value("${app.auth.replay-grace-seconds}") long replayGraceSeconds,
+                 @Value("${app.auth.refresh-cookie.name}") String refreshCookieName,
+                 @Value("${app.auth.refresh-cookie.path}") String refreshCookiePath,
+                 @Value("${app.auth.refresh-cookie.secure}") boolean refreshCookieSecure,
+                 @Value("${app.auth.legacy-body-token-enabled}") boolean legacyBodyTokenEnabled,
+                 @Value("${app.cors.allowed-origins}") String allowedOrigins,
                  @Value("${app.auth.admin-emails:}") String adminEmails,
                  @Value("${app.service.token:}") String serviceToken,
                  @Value("${app.auth.google-mock.enabled:false}") boolean googleMockEnabled,
@@ -274,13 +288,32 @@ public class Auth {
             if (replayGraceSeconds < 0) {
                 throw new IllegalStateException("REPLAY_GRACE_SECONDS must not be negative");
             }
+            if (refreshCookieName == null || !COOKIE_NAME_PATTERN.matcher(refreshCookieName).matches()) {
+                throw new IllegalStateException("AUTH_REFRESH_COOKIE_NAME must match [A-Za-z0-9_-]+");
+            }
+            if (refreshCookiePath == null || !refreshCookiePath.startsWith("/")) {
+                throw new IllegalStateException("AUTH_REFRESH_COOKIE_PATH must start with /");
+            }
             this.googleClientId = googleClientId.strip();
             this.googleJwksUri = toUrl(googleJwksUri);
             this.jwtSecret = jwtSecret;
             this.accessTokenTtl = parseDuration(accessTokenExpiresIn, "ACCESS_TOKEN_EXPIRES_IN");
             this.refreshTokenTtl = parseDuration(refreshTokenExpiresIn, "REFRESH_TOKEN_EXPIRES_IN");
-            this.sessionMaxLifetime = parseDuration(sessionMaxLifetime, "SESSION_MAX_LIFETIME");
+            this.sessionMaxLifetime = sessionMaxLifetime == null || sessionMaxLifetime.isBlank()
+                    ? Optional.empty()
+                    : Optional.of(parseDuration(sessionMaxLifetime, "SESSION_MAX_LIFETIME"));
+            if (this.sessionMaxLifetime.isPresent() && this.sessionMaxLifetime.get().compareTo(this.refreshTokenTtl) < 0) {
+                throw new IllegalStateException("SESSION_MAX_LIFETIME must not be shorter than REFRESH_TOKEN_EXPIRES_IN");
+            }
             this.replayGrace = Duration.ofSeconds(replayGraceSeconds);
+            this.refreshCookieName = refreshCookieName;
+            this.refreshCookiePath = refreshCookiePath;
+            this.refreshCookieSecure = refreshCookieSecure;
+            this.legacyBodyTokenEnabled = legacyBodyTokenEnabled;
+            this.allowedOrigins = Arrays.stream(allowedOrigins == null ? new String[0] : allowedOrigins.split(","))
+                    .map(String::strip)
+                    .filter(origin -> !origin.isEmpty())
+                    .collect(Collectors.toUnmodifiableSet());
             this.adminEmails = Arrays.stream(adminEmails == null ? new String[0] : adminEmails.split(","))
                     .map(email -> email.strip().toLowerCase(Locale.ROOT))
                     .filter(email -> !email.isEmpty())
@@ -323,6 +356,72 @@ public class Auth {
             case "h" -> Duration.ofHours(amount);
             default -> Duration.ofDays(amount);
         };
+    }
+
+    // --- refresh cookie ---
+
+    /**
+     * Transport of the refresh token: an {@code HttpOnly} cookie scoped to the auth endpoints, so
+     * page scripts never read it and no other request carries it. Mechanics only; the flows that
+     * rotate and revoke belong to the feature.
+     */
+    @Component
+    @RequiredArgsConstructor
+    public static class RefreshCookies {
+
+        /** Header every SPA auth call sends: a cross-origin page cannot add it without a preflight. */
+        public static final String TRANSPORT_HEADER = "X-Mooi-Auth";
+        public static final String COOKIE_TRANSPORT = "cookie";
+
+        private final Settings settings;
+
+        /** The refresh secret the browser sent, if any. */
+        public Optional<String> read(HttpServletRequest request) {
+            if (request.getCookies() == null) {
+                return Optional.empty();
+            }
+            return Arrays.stream(request.getCookies())
+                    .filter(cookie -> settings.getRefreshCookieName().equals(cookie.getName()))
+                    .map(jakarta.servlet.http.Cookie::getValue)
+                    .filter(value -> value != null && !value.isBlank())
+                    .findFirst();
+        }
+
+        /** True when the caller is a cookie-transport client (the current SPA). */
+        public boolean cookieTransport(HttpServletRequest request) {
+            return COOKIE_TRANSPORT.equals(request.getHeader(TRANSPORT_HEADER));
+        }
+
+        public void write(HttpServletResponse response, String secret) {
+            add(response, secret, settings.getRefreshTokenTtl());
+        }
+
+        public void clear(HttpServletResponse response) {
+            add(response, "", Duration.ZERO);
+        }
+
+        private void add(HttpServletResponse response, String value, Duration maxAge) {
+            ResponseCookie cookie = ResponseCookie.from(settings.getRefreshCookieName(), value)
+                    .httpOnly(true)
+                    .secure(settings.isRefreshCookieSecure())
+                    .sameSite("Strict")
+                    .path(settings.getRefreshCookiePath())
+                    .maxAge(maxAge)
+                    .build();
+            response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
+        }
+
+        /**
+         * CSRF guard for cookie-authenticated endpoints: a browser {@code Origin} must be an allowed
+         * one. Requests without it are non-browser clients and carry no cookie of the player.
+         */
+        public void requireTrustedOrigin(HttpServletRequest request) {
+            String origin = request.getHeader(HttpHeaders.ORIGIN);
+            if (origin != null && !settings.getAllowedOrigins().contains(origin)) {
+                Auth.LOG.warn("Refused auth call from untrusted origin {}", origin);
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Origin not allowed");
+            }
+        }
     }
 
     // --- tokens ---

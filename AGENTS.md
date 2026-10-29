@@ -41,6 +41,8 @@ from it. Where they differ, this context wins over the current implementation (s
 ## Identity and projects
 
 - Sign in with Google. Link a GitHub account to list public and private repositories.
+- Signed-in devices stay signed in while used: a 30-day sliding refresh token in an `HttpOnly` cookie is
+  renewed on every use; 30 days without use requires signing in again.
 - Add repositories to Mooi as projects; iterate on them from there.
 
 ## Development sessions

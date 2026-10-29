@@ -10,6 +10,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -24,6 +26,8 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
 import dev.mooi.mic.shared.Auth;
 import dev.mooi.mic.shared.Auth.GoogleIdentityProvider.GoogleIdentity;
 import jakarta.persistence.AttributeConverter;
@@ -35,6 +39,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -51,6 +56,11 @@ import lombok.Setter;
  * downstream of that — session opening, refresh token rotation, replay detection and revocation —
  * lives here too.
  *
+ * <p>A sign-in stays alive while it is used: the refresh token travels in an {@code HttpOnly}
+ * cookie, is single-use and is re-issued on every renewal with a fresh 30-day deadline, so only 30
+ * days without use (or an explicit revocation, or a detected replay) ends it. A response lost on
+ * the way is recovered instead of being mistaken for a replay.
+ *
  * <p>Self-contained by architecture: API, application logic, persistence and contracts live in this
  * single file and may only import transversal aspects from {@code shared}. This feature also adapts
  * the {@link Auth.SessionGuard} port, which is how the auth aspect reaches these tables without
@@ -61,17 +71,29 @@ import lombok.Setter;
 public class AuthFeature {
 
     private final AuthService authService;
+    private final Auth.RefreshCookies refreshCookies;
+    private final Auth.Settings settings;
 
     @PostMapping("/auth/google")
     public SessionPayload loginOrSignup(@Valid @RequestBody GoogleLoginRequest request,
-                                        HttpServletRequest httpRequest) {
-        return authService.loginOrSignupWithGoogle(request.idToken(), Auth.readUserAgent(httpRequest),
+                                        HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
+        refreshCookies.requireTrustedOrigin(httpRequest);
+        IssuedSession issued = authService.loginOrSignupWithGoogle(request.idToken(), Auth.readUserAgent(httpRequest),
                 Auth.readIpAddress(httpRequest));
+        return respond(issued, httpRequest, httpResponse);
     }
 
+    /**
+     * Renews the sign-in. The token comes from the cookie; the body is read only for clients that
+     * predate the cookie (the migration of a stored token, and old bundles still open).
+     */
     @PostMapping("/auth/refresh")
-    public SessionPayload refresh(@Valid @RequestBody RefreshRequest request) {
-        return authService.refreshSession(request.refreshToken());
+    public SessionPayload refresh(@RequestBody(required = false) LegacyRefreshRequest body,
+                                  HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
+        refreshCookies.requireTrustedOrigin(httpRequest);
+        String presented = presentedToken(body, httpRequest)
+                .orElseThrow(() -> new Auth.AuthenticationException("Invalid refresh token"));
+        return respond(authService.refreshSession(presented), httpRequest, httpResponse);
     }
 
     /**
@@ -80,13 +102,19 @@ public class AuthFeature {
      */
     @PostMapping("/auth/logout")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void logout(@Valid @RequestBody RefreshRequest request) {
-        authService.revokeSession(request.refreshToken());
+    public void logout(@RequestBody(required = false) LegacyRefreshRequest body,
+                       HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
+        refreshCookies.requireTrustedOrigin(httpRequest);
+        presentedToken(body, httpRequest).ifPresent(authService::revokeSession);
+        refreshCookies.clear(httpResponse);
     }
 
     @PostMapping("/auth/logout-all")
     @Auth.Authenticated
-    public RevokedSessionsPayload logoutEverywhere(Auth.Principal principal) {
+    public RevokedSessionsPayload logoutEverywhere(Auth.Principal principal, HttpServletRequest httpRequest,
+                                                   HttpServletResponse httpResponse) {
+        refreshCookies.requireTrustedOrigin(httpRequest);
+        refreshCookies.clear(httpResponse);
         return new RevokedSessionsPayload(authService.revokePlayerSessions(principal.player().id()));
     }
 
@@ -134,6 +162,33 @@ public class AuthFeature {
         return authService.unbanPlayer(principal.player().id(), playerId);
     }
 
+    /** Cookie first, legacy body second (only while the transition flag is on). */
+    private Optional<String> presentedToken(LegacyRefreshRequest body, HttpServletRequest request) {
+        Optional<String> fromCookie = refreshCookies.read(request);
+        if (fromCookie.isPresent()) {
+            return fromCookie;
+        }
+        if (settings.isLegacyBodyTokenEnabled() && body != null && body.refreshToken() != null
+                && !body.refreshToken().isBlank()) {
+            return Optional.of(body.refreshToken());
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * Sets the cookie when a refresh token was issued and keeps every cookie-carrying answer out of
+     * caches. The body repeats the token only for clients that predate the cookie.
+     */
+    private SessionPayload respond(IssuedSession issued, HttpServletRequest request, HttpServletResponse response) {
+        response.setHeader(HttpHeaders.CACHE_CONTROL, CacheControl.noStore().getHeaderValue());
+        if (issued.refreshSecret() != null) {
+            refreshCookies.write(response, issued.refreshSecret());
+        }
+        boolean legacyClient = settings.isLegacyBodyTokenEnabled() && !refreshCookies.cookieTransport(request);
+        return new SessionPayload(issued.accessToken(), issued.expiresIn(),
+                legacyClient ? issued.refreshSecret() : null, issued.player());
+    }
+
     // --- application ---
 
     @Service
@@ -175,7 +230,7 @@ public class AuthFeature {
          * them apart and does not need to; the branch only decides what is written and what is logged.
          */
         @Transactional
-        public SessionPayload loginOrSignupWithGoogle(String idToken, String userAgent, String ipAddress) {
+        public IssuedSession loginOrSignupWithGoogle(String idToken, String userAgent, String ipAddress) {
             GoogleIdentity identity = googleIdentityProvider.verify(idToken);
             OffsetDateTime now = OffsetDateTime.now(clock);
 
@@ -200,77 +255,112 @@ public class AuthFeature {
             session.setIpAddress(ipAddress);
             AuthSession openedSession = authSessionRepository.save(session);
 
-            SessionPayload payload = issueSessionTokens(player, openedSession.getId(), now);
+            IssuedSession payload = issueSessionTokens(player, openedSession.getId(), null, now);
             Auth.LOG.info(isNewPlayer ? "Player signed up {}" : "Player signed in {}", player.getId());
             return payload;
         }
 
         /**
-         * Rotation and replay detection.
+         * Rotation, replay detection and recovery.
          *
-         * <p>Every renewal spends the presented token and issues a new one. Presenting an already
-         * spent token is judged by <em>when</em> it was spent: inside the grace window two tabs simply
-         * raced, so the session is left alone; after it, a copy of a retired token is the only
-         * explanation left and the whole session goes.
+         * <p>Every renewal spends the presented token and issues its successor, with a fresh
+         * deadline: a player who keeps using the application never signs in again. A spent token
+         * presented again is judged by what happened since:
+         * <ul>
+         *   <li>inside the grace window two tabs simply raced: an access token is returned and no
+         *       refresh token, because the browser already holds the winner's;</li>
+         *   <li>after it, if the successor is still unspent the response carrying it was lost on the
+         *       way: the chain is resumed from the successor;</li>
+         *   <li>otherwise a copy of a retired token is the only explanation left and the whole session
+         *       goes.</li>
+         * </ul>
          *
-         * <p>Renewal also extends the token's own deadline, so a player who keeps using the
-         * application never signs in again. The session's maximum lifetime is what stops that from
-         * being unbounded.
+         * <p>The revocations commit even though the call ends in a 401, hence {@code noRollbackFor}.
          */
-        @Transactional
-        public SessionPayload refreshSession(String presentedToken) {
+        @Transactional(noRollbackFor = ResponseStatusException.class)
+        public IssuedSession refreshSession(String presentedToken) {
             OffsetDateTime now = OffsetDateTime.now(clock);
             RefreshToken row = refreshTokenRepository.findByTokenHash(tokens.hashRefreshToken(presentedToken))
                     .orElseThrow(() -> new Auth.AuthenticationException(INVALID_REFRESH_TOKEN));
-
-            if (row.getUsedAt() != null) {
-                if (now.isAfter(row.getUsedAt().plus(settings.getReplayGrace()))) {
-                    authSessionRepository.revoke(row.getSessionId(), now);
-                    Auth.LOG.warn("Refresh token replayed {} after it was spent; session {} revoked",
-                            settings.getReplayGrace(), row.getSessionId());
-                }
-                throw new Auth.AuthenticationException(INVALID_REFRESH_TOKEN);
-            }
-            if (row.getExpiresAt().isBefore(now)) {
-                throw new Auth.AuthenticationException(INVALID_REFRESH_TOKEN);
-            }
-
-            AuthSession session = authSessionRepository.findByIdAndRevokedAtIsNull(row.getSessionId())
+            AuthSession session = liveSession(row.getSessionId(), now);
+            Player player = playerRepository.findById(session.getPlayerId())
                     .orElseThrow(() -> new Auth.AuthenticationException(SESSION_NOT_ACTIVE));
+            if (!allowed(player)) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, ACCOUNT_SUSPENDED);
+            }
 
-            // The sliding token has no deadline of its own, so the ceiling comes from the session it
-            // renews. Past it the sign-in is simply over: the row is closed here rather than merely
-            // refused, so every token still outstanding under it dies with it.
-            if (session.getCreatedAt().plus(settings.getSessionMaxLifetime()).isBefore(now)) {
+            if (row.getUsedAt() == null) {
+                if (row.getExpiresAt().isBefore(now)) {
+                    throw new Auth.AuthenticationException(INVALID_REFRESH_TOKEN);
+                }
+                // The claim is one conditional statement, so Postgres serialises concurrent attempts
+                // and exactly one of them wins; the loser carries on as a replay of a just-spent token.
+                if (refreshTokenRepository.spend(row.getId(), now) == 1) {
+                    authSessionRepository.touch(session.getId(), now);
+                    return issueSessionTokens(player, session.getId(), row, now);
+                }
+                row = refreshTokenRepository.findById(row.getId())
+                        .orElseThrow(() -> new Auth.AuthenticationException(INVALID_REFRESH_TOKEN));
+            }
+
+            if (!now.isAfter(row.getUsedAt().plus(settings.getReplayGrace()))) {
+                return accessOnly(player, session.getId());
+            }
+            Optional<RefreshToken> successor = Optional.ofNullable(row.getReplacedById())
+                    .flatMap(refreshTokenRepository::findById)
+                    .filter(next -> next.getUsedAt() == null && next.getExpiresAt().isAfter(now));
+            if (successor.isPresent() && refreshTokenRepository.spend(successor.get().getId(), now) == 1) {
+                authSessionRepository.touch(session.getId(), now);
+                Auth.LOG.info("Refresh response lost for session {}; recovered", session.getId());
+                return issueSessionTokens(player, session.getId(), successor.get(), now);
+            }
+            authSessionRepository.revoke(session.getId(), now);
+            Auth.LOG.warn("Refresh token replayed {} after it was spent; session {} revoked",
+                    settings.getReplayGrace(), session.getId());
+            throw new Auth.AuthenticationException(INVALID_REFRESH_TOKEN);
+        }
+
+        /**
+         * The session behind a refresh token, if the sign-in is still alive. A sign-in unused for the
+         * refresh token's lifetime (or past the optional ceiling) is closed here rather than merely
+         * refused, so every token still outstanding under it dies with it.
+         */
+        private AuthSession liveSession(UUID sessionId, OffsetDateTime now) {
+            AuthSession session = authSessionRepository.findByIdAndRevokedAtIsNull(sessionId)
+                    .orElseThrow(() -> new Auth.AuthenticationException(SESSION_NOT_ACTIVE));
+            if (expired(session, now)) {
                 authSessionRepository.revoke(session.getId(), now);
-                Auth.LOG.info("Session {} reached its maximum lifetime and was revoked", session.getId());
+                Auth.LOG.info("Session {} expired after {} without use or reached its ceiling", session.getId(),
+                        settings.getRefreshTokenTtl());
                 throw new Auth.AuthenticationException(SESSION_NOT_ACTIVE);
             }
+            return session;
+        }
 
-            // The claim is one conditional statement, so Postgres serialises concurrent attempts and
-            // exactly one of them wins. Losing it means another tab spent the token a moment ago,
-            // which is the grace window's case: refuse, and leave the session alone.
-            if (refreshTokenRepository.spend(row.getId(), now) == 0) {
-                throw new Auth.AuthenticationException(INVALID_REFRESH_TOKEN);
-            }
-            authSessionRepository.touch(row.getSessionId(), now);
+        private boolean expired(AuthSession session, OffsetDateTime now) {
+            return session.getLastUsedAt().plus(settings.getRefreshTokenTtl()).isBefore(now)
+                    || settings.getSessionMaxLifetime()
+                            .map(ceiling -> session.getCreatedAt().plus(ceiling).isBefore(now)).orElse(false);
+        }
 
-            Player player = playerRepository.findById(session.getPlayerId()).filter(AuthService::allowed)
-                    .orElseThrow(() -> new Auth.AuthenticationException(SESSION_NOT_ACTIVE));
-            return issueSessionTokens(player, row.getSessionId(), now);
+        /** A grace-window renewal: a fresh access token, and no refresh token to hand out. */
+        private IssuedSession accessOnly(Player player, UUID sessionId) {
+            return new IssuedSession(tokens.signAccessToken(player.getId(), player.getRole(), sessionId),
+                    tokens.accessTokenExpiresInSeconds(), null, toPayload(player));
         }
 
         /**
          * Mints an access token under a live session without touching its refresh tokens. Revocation,
-         * the subject binding and the session's maximum lifetime apply exactly as they do to a refresh,
-         * so a player who signs out stops every agent acting for them at its next renewal.
+         * the subject binding, the idle deadline and the optional ceiling apply exactly as they do to a
+         * refresh, so a player who signs out stops every agent acting for them at its next renewal. It is
+         * not player activity, so it never extends the sign-in.
          */
         @Transactional(readOnly = true)
         public AccessTokenPayload renewAccessToken(UUID sessionId, UUID playerId) {
             OffsetDateTime now = OffsetDateTime.now(clock);
             AuthSession session = authSessionRepository.findByIdAndRevokedAtIsNull(sessionId)
                     .filter(found -> found.getPlayerId().equals(playerId))
-                    .filter(found -> !found.getCreatedAt().plus(settings.getSessionMaxLifetime()).isBefore(now))
+                    .filter(found -> !expired(found, now))
                     .orElseThrow(() -> new Auth.AuthenticationException(SESSION_NOT_ACTIVE));
             Player player = playerRepository.findById(session.getPlayerId()).filter(AuthService::allowed)
                     .orElseThrow(() -> new Auth.AuthenticationException(SESSION_NOT_ACTIVE));
@@ -354,7 +444,8 @@ public class AuthFeature {
         }
 
         /**
-         * Keeps the rotation ledger bounded.
+         * Keeps the rotation ledger bounded, and closes the sign-ins nobody used for the refresh
+         * token's lifetime so the admin console only lists live ones.
          *
          * <p>A sliding token leaves a spent row behind on every renewal — tens of thousands a year
          * for a single daily-active session. Only <em>expired</em> rows are deleted: a spent but
@@ -363,29 +454,37 @@ public class AuthFeature {
          */
         @Transactional
         @Scheduled(cron = "${app.auth.refresh-token-purge-cron}")
-        public void purgeExpiredRefreshTokens() {
-            int purged = refreshTokenRepository.purgeExpired(OffsetDateTime.now(clock));
-            if (purged > 0) {
-                Auth.LOG.info("Purged {} expired refresh tokens", purged);
+        public void purgeExpiredAuthState() {
+            OffsetDateTime now = OffsetDateTime.now(clock);
+            int idle = authSessionRepository.revokeIdle(now.minus(settings.getRefreshTokenTtl()), now);
+            int purged = refreshTokenRepository.purgeExpired(now);
+            if (idle > 0 || purged > 0) {
+                Auth.LOG.info("Revoked {} idle sessions, purged {} expired refresh tokens", idle, purged);
             }
         }
 
         /**
          * Issues the token pair, shared by login and refresh. Rotation is unconditional: a refresh
          * token is minted here and nowhere else, and the client never keeps the one it presented.
+         * The spent {@code parent} is linked to its successor, which is what lets a lost response be
+         * recovered.
          */
-        private SessionPayload issueSessionTokens(Player player, UUID sessionId, OffsetDateTime now) {
+        private IssuedSession issueSessionTokens(Player player, UUID sessionId, RefreshToken parent,
+                                                 OffsetDateTime now) {
             String refreshSecret = tokens.generateRefreshToken();
             RefreshToken refreshToken = new RefreshToken();
             refreshToken.setSessionId(sessionId);
             refreshToken.setTokenHash(tokens.hashRefreshToken(refreshSecret));
             refreshToken.setCreatedAt(now);
             refreshToken.setExpiresAt(now.plus(settings.getRefreshTokenTtl()));
-            refreshTokenRepository.save(refreshToken);
+            RefreshToken saved = refreshTokenRepository.save(refreshToken);
+            if (parent != null) {
+                refreshTokenRepository.linkSuccessor(parent.getId(), saved.getId());
+            }
 
             String accessToken = tokens.signAccessToken(player.getId(), player.getRole(), sessionId);
             // expiresIn is relative seconds, so a client with a skewed clock still renews in time.
-            return new SessionPayload(accessToken, tokens.accessTokenExpiresInSeconds(), refreshSecret,
+            return new IssuedSession(accessToken, tokens.accessTokenExpiresInSeconds(), refreshSecret,
                     toPayload(player));
         }
 
@@ -546,6 +645,10 @@ public class AuthFeature {
         /** NULL means unspent. Set once, atomically — the rotation and replay signal. */
         @Column(name = "used_at")
         private OffsetDateTime usedAt;
+
+        /** The token this one was rotated into; NULL until rotated. Lets a lost response be recovered. */
+        @Column(name = "replaced_by_id")
+        private UUID replacedById;
     }
 
     public interface PlayerRepository extends JpaRepository<Player, UUID> {
@@ -569,6 +672,11 @@ public class AuthFeature {
         @Modifying(clearAutomatically = true, flushAutomatically = true)
         @Query("update AuthSession s set s.lastUsedAt = :now where s.id = :id")
         int touch(@Param("id") UUID id, @Param("now") OffsetDateTime now);
+
+        /** Closes the live sign-ins not used since {@code cutoff}. */
+        @Modifying(clearAutomatically = true, flushAutomatically = true)
+        @Query("update AuthSession s set s.revokedAt = :now where s.revokedAt is null and s.lastUsedAt < :cutoff")
+        int revokeIdle(@Param("cutoff") OffsetDateTime cutoff, @Param("now") OffsetDateTime now);
     }
 
     public interface RefreshTokenRepository extends JpaRepository<RefreshToken, UUID> {
@@ -583,6 +691,10 @@ public class AuthFeature {
         @Query("update RefreshToken t set t.usedAt = :now where t.id = :id and t.usedAt is null")
         int spend(@Param("id") UUID id, @Param("now") OffsetDateTime now);
 
+        @Modifying(clearAutomatically = true, flushAutomatically = true)
+        @Query("update RefreshToken t set t.replacedById = :successor where t.id = :id")
+        int linkSuccessor(@Param("id") UUID id, @Param("successor") UUID successor);
+
         /** Expiry is the only condition: spent rows stay until then, because replay detection reads them. */
         @Modifying(clearAutomatically = true, flushAutomatically = true)
         @Query("delete from RefreshToken t where t.expiresAt < :now")
@@ -594,7 +706,12 @@ public class AuthFeature {
     public record GoogleLoginRequest(@NotBlank String idToken) {
     }
 
-    public record RefreshRequest(@NotBlank String refreshToken) {
+    /** Transition only: pre-cookie clients send the refresh token in the body. */
+    public record LegacyRefreshRequest(String refreshToken) {
+    }
+
+    /** Internal result of login and refresh; {@code refreshSecret} is null when none was issued. */
+    record IssuedSession(String accessToken, long expiresIn, String refreshSecret, PlayerPayload player) {
     }
 
     /** {@code googleId} is deliberately absent: it never leaves the server. */
@@ -608,7 +725,10 @@ public class AuthFeature {
     public record AccessTokenPayload(String accessToken, long expiresIn) {
     }
 
-    public record SessionPayload(String accessToken, long expiresIn, String refreshToken, PlayerPayload player) {
+    /** {@code refreshToken} is present only for clients that predate the cookie transport. */
+    public record SessionPayload(String accessToken, long expiresIn,
+                                 @JsonInclude(JsonInclude.Include.NON_NULL) String refreshToken,
+                                 PlayerPayload player) {
     }
 
     public record CurrentPlayerPayload(PlayerPayload player) {
