@@ -211,6 +211,10 @@ public class Github {
             this.clientId = require(clientId, "GITHUB_CLIENT_ID");
             this.clientSecret = require(clientSecret, "GITHUB_CLIENT_SECRET");
             this.appSlug = appSlug == null ? "" : appSlug.strip();
+            if (this.appSlug.isEmpty()) {
+                LOG.warn("GITHUB_APP_SLUG is not set: players cannot install the GitHub App, so only its owner "
+                        + "can grant Mooi access to repositories");
+            }
             this.redirectUri = validUrl(require(redirectUri, "GITHUB_REDIRECT_URI"), "GITHUB_REDIRECT_URI");
             this.authorizeUri = validUrl(authorizeUri, "GITHUB_AUTHORIZE_URI");
             this.tokenUri = validUrl(tokenUri, "GITHUB_TOKEN_URI");

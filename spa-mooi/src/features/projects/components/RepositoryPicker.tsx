@@ -75,14 +75,18 @@ export const RepositoryPicker = ({
       {!loading && !failure && publicOnly ? (
         <div className="mb-4 flex flex-col gap-3 rounded-control border border-warning/25 bg-warning-soft px-4 py-3 sm:flex-row sm:items-center">
           <p className="min-w-0 flex-1 text-sm leading-relaxed text-ink">
-            <span className="font-medium">Only public repositories are listed.</span>
+            <span className="font-medium">
+              {repositories.length === 0
+                ? 'Mooi cannot reach your repositories yet.'
+                : 'Only public repositories are listed.'}
+            </span>
             <span className="text-ink-muted">
-              {' '}Mooi has not been granted access to any repository on GitHub yet.
+              {' '}Install the Mooi GitHub App on the repositories you want to work on, then reload.
             </span>
           </p>
           <span className="shrink-0">
             <Button variant="primary" size="sm" onClick={onManageAccess}>
-              Manage access
+              Grant access
             </Button>
           </span>
         </div>
