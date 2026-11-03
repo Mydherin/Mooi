@@ -1,5 +1,6 @@
 # TODOs
 
+- [ ] Microphone expiration
 - [ ] So times when I make production deployment it says fetching but it do not show more logs until I reload
 - [ ] Apply dnd in todos list with better pattern, about grabbing 1.5 secs in any place to enable in the row
 - [ ] The user admin dialog sucks in mobile since dialog allow scrolling with no sense and actions buttons are together
