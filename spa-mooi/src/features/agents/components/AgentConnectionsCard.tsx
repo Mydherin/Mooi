@@ -3,6 +3,7 @@ import { Bot, Pencil, Plus, RefreshCw, Star, TriangleAlert, Unlink } from 'lucid
 import { AddAgentAccountDialog } from '@/features/agents/components/AddAgentAccountDialog';
 import { useAgentConnections } from '@/features/agents/hooks/useAgentConnections';
 import type { AgentConnection } from '@/features/agents/types/AgentConnection';
+import type { AgentProvider } from '@/features/agents/types/AgentProvider';
 import { Button } from '@/shared/components/Button';
 import { Card } from '@/shared/components/Card';
 import { Modal } from '@/shared/components/Modal';
@@ -10,6 +11,10 @@ import { iconAction } from '@/shared/styles/iconAction';
 import { cn } from '@/shared/utils/cn';
 
 const accountTitle = (connection: AgentConnection) => connection.name || connection.accountLabel || connection.label;
+
+/** A pasted `claude setup-token` token is deprecated wherever the provider's sign-in is offered. */
+const usesLegacyToken = (connection: AgentConnection, providers: AgentProvider[]) =>
+  connection.mode === 'setup_token' && providers.some((provider) => provider.id === connection.provider && provider.oauthEnabled);
 
 export const AgentConnectionsCard = () => {
   const { providers, connections, status, error, busy, actionError, connectToken,
@@ -54,7 +59,12 @@ export const AgentConnectionsCard = () => {
             {connection.label}
             {connection.defaultAccount && <span className="font-semibold text-brand">Default</span>}
             {connection.stale && <span className="inline-flex items-center gap-1 text-warning"><TriangleAlert className="size-3" /> Needs attention</span>}
+            {usesLegacyToken(connection, providers) && <span className="inline-flex items-center gap-1 text-warning"><TriangleAlert className="size-3" /> Deprecated</span>}
           </p>
+          {usesLegacyToken(connection, providers) && <p className="mt-1 text-xs text-ink-muted">
+            Linked with a setup token, a deprecated method: it expires and cannot be renewed. Add this account
+            again with {connection.label} sign-in, then disconnect this one.
+          </p>}
         </div>
         {/* Icon actions keep the account name readable on phones; the labels live in title and aria-label. */}
         <div className="flex shrink-0 items-center gap-1.5">
