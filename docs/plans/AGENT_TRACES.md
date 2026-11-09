@@ -116,7 +116,7 @@ Public API:
   reset detection, partial last line kept), `_ClaudeParser`, `_CodexParser`, `_build`, `_summary`.
 
 Settings added in `shared/env.py` (DONE): `trace_max_spans=5000`, `trace_detail_chars=8000`
-(env `TRACE_MAX_SPANS`, `TRACE_DETAIL_CHARS`). Add both to `mic-sessions/.env.example` (task B1).
+(env `TRACE_MAX_SPANS`, `TRACE_DETAIL_CHARS`). Added to `mic-sessions/.env.example` (B1, DONE).
 
 Wire contract — `GET /sessions/{id}/trace?revision=<str>`:
 - `204` when `revision` equals the current one; else `200`:
@@ -220,7 +220,7 @@ Status: `todo` · `doing` · `done`. Exactly one `doing` at a time.
 | # | Task | Status |
 |---|------|--------|
 | B0 | `shared/traces.py` + settings in `env.py` | done |
-| B1 | Add `TRACE_MAX_SPANS` / `TRACE_DETAIL_CHARS` to `mic-sessions/.env.example` | todo |
+| B1 | Add `TRACE_MAX_SPANS` / `TRACE_DETAIL_CHARS` to `mic-sessions/.env.example` | done |
 | B2 | `trace_sources()` on the protocol and the 3 runtimes (`agents.py`) | todo |
 | B3 | Session wiring + 2 endpoints (`features/sessions.py`) | todo |
 | B4 | Backend checks: `uvx ruff check src` (only new findings matter; `env.py` has a pre-existing I001), import check `python -c "import mic_sessions.main"` with 32-byte `SERVICE_TOKEN`/`JWT_SECRET` env | todo |
@@ -242,3 +242,5 @@ Status: `todo` · `doing` · `done`. Exactly one `doing` at a time.
   5 skills, 3 compactions). Sub-agent nesting not yet confirmed on a real sub-agent log (V1 must check it:
   use `~/.claude/projects/-Users-mydherin-projects-mydherin-MyBank/02f0db88-575b-424e-b869-98f76a631140*`,
   which has one sub-agent). Nothing else wired; not committed.
+- B1: `TRACE_MAX_SPANS=5000` / `TRACE_DETAIL_CHARS=8000` added to `mic-sessions/.env.example` under
+  *Sessions* (after `SSE_HEARTBEAT_SECONDS`, same order as `env.py`). Next: B2.
