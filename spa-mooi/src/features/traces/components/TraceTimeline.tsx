@@ -81,10 +81,10 @@ export const TraceTimeline = ({ rows, scale, now, selectedId, collapsed, onSelec
                 return (
                   <span
                     key={tick}
-                    className="absolute inset-y-0 flex items-center border-l border-line pl-1 font-mono text-[10.5px] text-ink-subtle tabular-nums"
+                    className="absolute inset-y-0 flex items-center border-l border-line pl-1 font-mono text-[10.5px] whitespace-nowrap text-ink-subtle tabular-nums"
                     style={{ left: `${left}%` }}
                   >
-                    {left > 90 ? null : formatSpanDuration(tick)}
+                    {left > 80 ? null : formatSpanDuration(tick)}
                   </span>
                 );
               })}

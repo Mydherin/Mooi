@@ -256,7 +256,7 @@ Status: `todo` · `doing` · `done`. Exactly one `doing` at a time.
 | F5 | Insights view (context chart, models, tools) | done |
 | F6 | Tab integration: session workspace, production page, backup page | done |
 | F7 | `cd spa-mooi && bun run build` (tsc + vite) passes | done |
-| V1 | Temporary harness (see D8): JSON from real logs → DEV page; check desktop + mobile, light + dark, gestures, overflow; fix issues | todo |
+| V1 | Temporary harness (see D8): JSON from real logs → DEV page; check desktop + mobile, light + dark, gestures, overflow; fix issues | done |
 | V2 | Remove harness, final build/lint, update `AGENTS.md` Context, remove *Current work* pointer, report | todo |
 
 ## Progress log
@@ -337,3 +337,21 @@ Status: `todo` · `doing` · `done`. Exactly one `doing` at a time.
   `chat` exists, lazy `<TracePanel key={chat.id} sessionId={chat.id} active />` rendered only while that tab is open
   (same pattern as their Changes tab). `bunx tsc -b` passes. Next: F7.
 - F7: `bun run build` (tsc -b + vite) passes unchanged (`TracePanel` lazy chunk ~48 kB; only the pre-existing >500 kB main-chunk warning). The SPA has no linter configured. Reviewed traces hooks/API and the F6 integration (no hidden pane whitelists): no fixes needed. `dist/` is git-ignored. Next: V1.
+- V1: harness ran the real `traces.py` on real logs → Claude MyBank `02f0db88…` (564 spans; **sub-agent nesting
+  confirmed**: the `Explore` agent span holds its 11 child spans, shown indented in the timeline), Codex rollouts
+  `2026-10-26T11-17-00` (18 spans) and `2026-10-26T10-38-50` (263 spans). Checked in the browser pane via the SPA dev
+  server: desktop 1440×900 + phone 375×812, dark + light; timeline (windowing, search with ancestors, chips, keyboard
+  ↓/Enter/Esc), desktop inspector, phone sheet (open, swipe left/right = next/prev, swipe down = close, body lock
+  released), Insights (context chart, Main/With sub-agents switch 239→243 requests, model table, tools, "Open in
+  timeline" → timeline + sheet), no horizontal page overflow (only the summary strip / chips scroll sideways by design).
+  **Fixed (real code)**: `shared/traces.py` — Codex `additional_tools` response items became input of the next call
+  instead of opening a model-less "Model call" span before `turn_context`; `<external_codex_apps_…>` / `<codex_apps_…>`
+  user messages are context, not the turn prompt (ruff clean). `TraceTimeline.tsx` — axis tick labels `whitespace-nowrap`,
+  labels hidden past 80% (last tick wrapped to two lines). `TraceInsights.tsx` — scope switch `whitespace-nowrap`
+  ("With sub-agents" wrapped). `TraceModelTable.tsx` — legend columns by container (`@container` + `@lg:grid-cols-4`)
+  instead of viewport `sm:`, so it no longer truncates in the half-width card. Not changed (judged fine): phone header
+  truncates the trace title beside the Timeline/Insights switch; on long traces waterfall bars are thin ticks.
+  `bunx tsc -b` passes. **Harness paths for V2 to delete** (no existing file edited; untracked, never stage):
+  `spa-mooi/trace-harness.local.html`, `spa-mooi/src/traceHarness.local.tsx`, `spa-mooi/public/trace-harness.local/`
+  (JSON copies; git-ignored by `*.local`); outside the repo: `.claude/launch.json` entry `spa-vite`
+  (pre-existing, untracked, reused) and the scratchpad generator. Next: V2.

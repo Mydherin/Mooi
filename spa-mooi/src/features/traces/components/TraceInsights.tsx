@@ -63,7 +63,7 @@ export const TraceInsights = ({ trace, onOpenSpan }: TraceInsightsProps) => {
           hint={requests > 0 ? `${requests.toLocaleString('en')} requests` : undefined}
           action={
             hasSubAgents ? (
-              <SegmentedControl items={SCOPES} value={scope} onChange={(id) => setScope(id as 'main' | 'all')} className="flex-nowrap" />
+              <SegmentedControl items={SCOPES} value={scope} onChange={(id) => setScope(id as 'main' | 'all')} className="flex-nowrap whitespace-nowrap" />
             ) : null
           }
           className="xl:col-span-2"

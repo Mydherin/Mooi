@@ -77,7 +77,8 @@ _CLAUDE_CONTEXT_ATTACHMENTS = {
 }
 # Codex injects these as user messages; they are context, not the user's prompt.
 _CODEX_CONTEXT_PREFIXES = ("<environment_context>", "<user_instructions>", "<permissions instructions>",
-                           "# AGENTS.md", "<turn_aborted>", "<subagent_notification>", "<user_shell_command>")
+                           "# AGENTS.md", "<turn_aborted>", "<subagent_notification>", "<user_shell_command>",
+                           "<external_codex_apps_", "<codex_apps_")
 
 
 @dataclass(frozen=True)
@@ -624,6 +625,10 @@ class _CodexParser(_Parser):
             return
         if kind in self._TOOL_OUTPUTS:
             self._tool_output(item, at)
+            return
+        if kind == "additional_tools":
+            # Tools offered to the next request: its input, not model output (it precedes `turn_context`).
+            self.pending_input.append(_render({key: value for key, value in item.items() if key not in ("type", "id")}))
             return
         call = self._open_call(at)
         parts = [call.output] if call.output else []

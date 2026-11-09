@@ -30,7 +30,7 @@ export const TraceModelTable = ({ models }: TraceModelTableProps) => {
   const grand = rows.reduce((sum, model) => sum + total(model), 0);
 
   return (
-    <ul className="flex min-w-0 flex-col divide-y divide-line">
+    <ul className="@container flex min-w-0 flex-col divide-y divide-line">
       {rows.map((model) => {
         const tokens = total(model);
         return (
@@ -59,7 +59,7 @@ export const TraceModelTable = ({ models }: TraceModelTableProps) => {
                 ) : null,
               )}
             </div>
-            <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-ink-muted sm:grid-cols-4">
+            <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-ink-muted @lg:grid-cols-4">
               {PARTS.map((part) => (
                 <div key={part.key} className="flex min-w-0 items-center gap-1.5" title={`${part.label}: ${exact(model[part.key])}`}>
                   <span aria-hidden className={cn('size-2 shrink-0 rounded-[2px]', part.dot)} />
