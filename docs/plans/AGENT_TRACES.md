@@ -47,6 +47,8 @@ compactions and errors. It works with every adapter: Claude SDK, Claude CLI and 
 - FR8 A cleared conversation's trace stays visible (conversations are listed oldest first); the trace
   lives as long as the session.
 - FR9 Empty / unavailable states: no steps yet; adapter without a log; trace truncated (limit reached).
+- FR10 **Download log**: the Trace header downloads the raw agent session logs the trace was built from (one
+  `.jsonl` as-is, several in one `.zip` keeping relative paths), for every adapter and every conversation shown.
 
 ## Non-functional requirements
 
@@ -147,6 +149,18 @@ compactions and errors. It works with every adapter: Claude SDK, Claude CLI and 
   in the same `sessions/` tree and read like Claude's sub-agent transcripts: its copy of the parent's history is
   skipped up to its first `task_started` carrying `turn_attribution.parent_turn_id`, and its turns nest under the
   spawn span, named after the `agent_path` leaf.
+- D17 Raw log download (FR10): `GET /sessions/{id}/trace/logs` (owner-checked like the other trace endpoints; the
+  SPA calls `mic-sessions` directly through `sessionsFetch`, so there is no `mic-mooi` proxy). A `TraceReader` records
+  every file its `_discover` found (`TraceLog(root, path)`: Claude main + sub-agent `.jsonl` and `.meta.json` relative
+  to the `projects` dir, Codex rollouts relative to `sessions/`); only regular, non-symlink files resolving under their
+  root are served. Clearing a chat hard-links (copies across file systems) the frozen conversation's logs to
+  `<session dir>/trace-logs/conversation-<n>/` before the runtime deletes them, so they are removed with the
+  workspace. One file streams as-is (`application/x-ndjson`), several as one deflated `.zip` built while sent
+  (`conversation-<n>/` prefixes when the session held several); each file is read up to its size when opened (live
+  logs grow). Name `mooi-trace-<session id 8>-<UTC yyyymmdd-hhmmss>.<ext>`; `Content-Disposition` is exposed by CORS.
+  The SPA fetches it as a blob (token never in a URL): header button icon + "Download log" from `sm`, icon only on
+  phones, spinner while downloading, dismissible error banner. Reason: study the exact source, no new storage beyond
+  the session's own directory.
 
 ## Technical specification
 
@@ -401,3 +415,8 @@ Status: `todo` · `doing` · `done`. Exactly one `doing` at a time.
   sub-agent → Prompt 1 › 5 turns, `readme_summary` sub-agent nested with its own 2 turns (= its 2 usage records).
   Claude could not be rerun live (temporary token removed); checked offline on a real Claude Agent SDK (`sdk-py`)
   log: a failed `<synthetic>` call → one errored turn, counted once.
+- FR10/D17 raw log download: `GET /sessions/{id}/trace/logs` in `features/sessions.py` (`TraceLog`, reader `logs`,
+  `freeze(keep)`, `SessionTrace.log_files` in `shared/traces.py`; `Content-Disposition` exposed in `shared/web.py`),
+  SPA `downloadTraceLogs` + `useTraceLogDownload` + `saveBlob`, header button in `TracePanel` (session, production and
+  backup Trace tabs share it). Checked: scratch smoke run (live listing, planted symlink excluded, archive copies,
+  valid zip), ruff 25 (baseline), `import mic_sessions.main` OK, `bun run build` OK. Not checked in the running app.

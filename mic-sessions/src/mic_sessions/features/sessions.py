@@ -33,7 +33,8 @@ import secrets
 import signal
 import tempfile
 import time
-from collections.abc import Awaitable, Callable, Coroutine, Iterable
+import zipfile
+from collections.abc import Awaitable, Callable, Coroutine, Iterable, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -1987,6 +1988,105 @@ async def get_trace_span(
     return detail
 
 
+# Bytes read per chunk when streaming raw trace logs.
+_TRACE_LOG_CHUNK = 256 * 1024
+
+
+def _trace_log_directory(session: Session) -> Path | None:
+    """Where an archived conversation keeps its raw logs: inside the owned session directory, so they are
+    removed with the workspace and never reach the checkout."""
+    return None if session.workspace == _UNSET_PATH else session.workspace.parent / "trace-logs"
+
+
+class _ZipStream:
+    """A write-only sink for `zipfile` (which supports unseekable output) whose bytes are drained per chunk."""
+
+    def __init__(self) -> None:
+        self._chunks: list[bytes] = []
+        self._written = 0
+
+    def writable(self) -> bool:
+        return True
+
+    def write(self, data: bytes) -> int:
+        self._chunks.append(bytes(data))
+        self._written += len(data)
+        return len(data)
+
+    def tell(self) -> int:
+        return self._written
+
+    def flush(self) -> None:
+        pass
+
+    def drain(self) -> bytes:
+        data, self._chunks = b"".join(self._chunks), []
+        return data
+
+
+def _read_snapshot(handle: Any) -> Iterable[bytes]:
+    """The open file up to its size now: a live log keeps growing, a download stops at a whole snapshot."""
+    remaining = os.fstat(handle.fileno()).st_size
+    while remaining > 0:
+        chunk = handle.read(min(_TRACE_LOG_CHUNK, remaining))
+        if not chunk:
+            break
+        remaining -= len(chunk)
+        yield chunk
+
+
+def _stream_file(path: Path) -> Iterable[bytes]:
+    with path.open("rb") as handle:
+        yield from _read_snapshot(handle)
+
+
+def _stream_zip(files: Sequence[tuple[str, Path]]) -> Iterable[bytes]:
+    """One `.zip` built while it is sent (deflated, relative names kept): memory stays about one chunk."""
+    sink = _ZipStream()
+    with zipfile.ZipFile(sink, "w", compression=zipfile.ZIP_DEFLATED) as archive:  # type: ignore[arg-type]
+        for name, path in files:
+            try:
+                handle = path.open("rb")
+            except OSError:
+                LOG.warning("Trace log %s disappeared before its download", name)
+                continue
+            with handle, archive.open(name, "w", force_zip64=True) as entry:
+                for chunk in _read_snapshot(handle):
+                    entry.write(chunk)
+                    if data := sink.drain():
+                        yield data
+            if data := sink.drain():
+                yield data
+    if data := sink.drain():
+        yield data
+
+
+@router.get("/sessions/{session_id}/trace/logs", response_model=None)
+async def download_trace_logs(
+    session_id: UUID, caller: Annotated[Caller, Depends(current_caller)]
+) -> StreamingResponse:
+    """The raw agent session logs the trace is built from (Claude Code transcripts with their sub-agent
+    files, Codex rollouts): the one file as-is, or every file in one `.zip` keeping relative paths."""
+    session = get_registry().get_for(caller, session_id)
+    files = await session.trace.log_files()
+    if not files:
+        raise ApiException.not_found("This conversation has no agent log to download yet")
+    stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+    stem = f"mooi-trace-{str(session.id)[:8]}-{stamp}"
+    if len(files) == 1:
+        name, path = files[0]
+        suffix = Path(name).suffix or ".log"
+        filename = f"{stem}{suffix}"
+        media_type = "application/x-ndjson" if suffix == ".jsonl" else "application/json"
+        body: Iterable[bytes] = _stream_file(path)
+    else:
+        filename, media_type, body = f"{stem}.zip", "application/zip", _stream_zip(files)
+    return StreamingResponse(
+        body, media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"', "Cache-Control": "no-store"},
+    )
+
+
 @router.get("/sessions/{session_id}/changes/file")
 async def get_file_diff(
     session_id: UUID, path: str, caller: Annotated[Caller, Depends(current_caller)]
@@ -2085,7 +2185,7 @@ async def _reset_conversation(session: Session, caller: Caller) -> AgentRuntime:
     credential = await mooi.fetch_agent_credential(caller, str(session.connection_id))
     # The runtime deletes its logs on close: keep the finished conversation in the trace first.
     try:
-        await session.trace.archive()
+        await session.trace.archive(_trace_log_directory(session))
     except Exception:
         LOG.warning("Session %s could not archive its trace", session.id, exc_info=True)
     await previous.close()

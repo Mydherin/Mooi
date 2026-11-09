@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
-import { BarChart3, ListTree, RotateCw, TriangleAlert } from 'lucide-react';
+import { BarChart3, Download, ListTree, LoaderCircle, RotateCw, TriangleAlert, X } from 'lucide-react';
 import { TraceInsights } from '@/features/traces/components/TraceInsights';
 import { TraceInspector } from '@/features/traces/components/TraceInspector';
 import { TraceEmptyState } from '@/features/traces/components/TraceEmptyState';
@@ -9,6 +9,7 @@ import { TraceToolbar } from '@/features/traces/components/TraceToolbar';
 import { useAgentTrace } from '@/features/traces/hooks/useAgentTrace';
 import { useTraceClock } from '@/features/traces/hooks/useTraceClock';
 import { useTraceKeyboard } from '@/features/traces/hooks/useTraceKeyboard';
+import { useTraceLogDownload } from '@/features/traces/hooks/useTraceLogDownload';
 import { buildTraceTree } from '@/features/traces/lib/buildTraceTree';
 import { collectParentIds } from '@/features/traces/lib/collectParentIds';
 import { flattenTraceTree } from '@/features/traces/lib/flattenTraceTree';
@@ -46,6 +47,7 @@ export const TracePanel = (props: TracePanelProps) => <TracePanelBody key={props
 
 const TracePanelBody = ({ sessionId, active }: TracePanelProps) => {
   const { trace, error, loading, live, refresh } = useAgentTrace(sessionId, active);
+  const logs = useTraceLogDownload(sessionId);
   const [view, setView] = useState<TraceView>('timeline');
   const [filter, setFilter] = useState<TraceFilter>(EMPTY_FILTER);
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(NO_COLLAPSE);
@@ -173,6 +175,16 @@ const TracePanelBody = ({ sessionId, active }: TracePanelProps) => {
           ) : null}
         </div>
         <SegmentedControl items={VIEWS} value={view} onChange={(id) => setView(id as TraceView)} className="shrink-0 flex-nowrap" />
+        <Button
+          variant="ghost"
+          onClick={logs.download}
+          disabled={logs.downloading}
+          ariaLabel={trace.conversations > 1 ? `Download the agent logs of ${trace.conversations} conversations` : 'Download the agent log'}
+          className="w-10 shrink-0 px-0 font-medium sm:w-auto sm:px-3"
+        >
+          {logs.downloading ? <LoaderCircle aria-hidden className="size-4.5 animate-spin" /> : <Download aria-hidden className="size-4.5" />}
+          <span className="hidden sm:inline">{logs.downloading ? 'Downloading…' : 'Download log'}</span>
+        </Button>
         <IconButton icon={RotateCw} label="Refresh trace" onClick={refresh} className={cn('hidden sm:inline-flex', loading && '[&>svg]:animate-spin')} />
       </header>
 
@@ -185,6 +197,13 @@ const TracePanelBody = ({ sessionId, active }: TracePanelProps) => {
           <TriangleAlert className="size-3.5 shrink-0" />
           <span className="min-w-0">The trace reached its step limit: the oldest steps are not shown.</span>
         </p>
+      ) : null}
+
+      {logs.error ? (
+        <div role="alert" className="flex shrink-0 items-center gap-3 border-b border-danger/30 bg-danger-soft px-4 py-2 text-[12px] text-danger">
+          <span className="min-w-0 flex-1 break-words">{logs.error}</span>
+          <IconButton icon={X} label="Dismiss" onClick={logs.dismissError} className="text-danger hover:bg-danger/10 hover:text-danger" />
+        </div>
       ) : null}
 
       {error ? (

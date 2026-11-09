@@ -15,6 +15,10 @@ inspectable after its provider files are gone (a cleared chat, a replaced runtim
 
 Adding a provider: its runtime returns `TraceSource`s from `trace_sources()` and a parser for that
 `format` is registered in `_PARSERS`. Nothing else changes.
+
+The raw logs a trace was built from stay downloadable (`SessionTrace.log_files`): a reader records every
+file it discovered under its sources, and archiving a conversation keeps a hard link (or copy) of them in
+the session directory, since the runtime deletes the originals on close.
 """
 
 from __future__ import annotations
@@ -23,6 +27,7 @@ import asyncio
 import json
 import os
 import re
+import shutil
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -90,6 +95,29 @@ class TraceSource:
 
     format: TraceFormat
     path: Path
+
+
+@dataclass(frozen=True)
+class TraceLog:
+    """One raw log file of a conversation, offered for download under `name` (relative to `root`)."""
+
+    root: Path
+    path: Path
+
+    @property
+    def name(self) -> str:
+        return self.path.relative_to(self.root).as_posix()
+
+    def resolved(self) -> Path | None:
+        """The file to read, or None when it is gone, not a regular file or (through a symlink the
+        agent could have planted) outside its root: a download never reads anything else."""
+        try:
+            if self.path.is_symlink() or not self.path.is_file():
+                return None
+            path = self.path.resolve(strict=True)
+            return path if path.is_relative_to(self.root.resolve(strict=True)) else None
+        except OSError:
+            return None
 
 
 @dataclass
@@ -807,6 +835,8 @@ class TraceReader:
         self.metadata: dict[str, Any] = {}
         self.title: str | None = None
         self.files: dict[Path, _File] = {}
+        # Raw log files discovered so far (`TraceLog`s by path): what a log download streams.
+        self.logs: dict[Path, TraceLog] = {}
         self.revision = 0
         self.prompts = 0
         self.truncated = False
@@ -862,23 +892,27 @@ class TraceReader:
             return False
         changed = False
         for source in self.sources():
-            for path, parser in self._discover(source):
+            for path, root, parser in self._discover(source):
+                self.logs.setdefault(path, TraceLog(root, path))
                 changed |= self._read(path, parser)
         if changed:
             self.revision += 1
         return changed
 
-    def _discover(self, source: TraceSource) -> Iterable[tuple[Path, Callable[[], _Parser]]]:
+    def _discover(self, source: TraceSource) -> Iterable[tuple[Path, Path, Callable[[], _Parser]]]:
+        """Each log file under `source` with the root its download name is relative to, and its parser."""
         if source.format == "codex":
-            yield source.path, lambda: _CodexParser(self, source.path, "codex")
-            # Threads spawned by the ones read so far (deeper spawns are found on the following reads).
+            # `<CODEX_HOME>/sessions/YYYY/MM/DD/rollout-….jsonl`: names keep the date folders.
             sessions = source.path.parents[3]
+            yield source.path, sessions, lambda: _CodexParser(self, source.path, "codex")
+            # Threads spawned by the ones read so far (deeper spawns are found on the following reads).
             for thread, path in list(self.codex_threads.items()):
                 if path is None:
                     path = next(iter(sorted(sessions.glob(f"*/*/*/rollout-*{thread}.jsonl"))), None)
                     self.codex_threads[thread] = path
                 if path is not None:
-                    yield path, lambda path=path, thread=thread: _CodexParser(self, path, f"x{thread[-8:]}", thread)
+                    yield path, sessions, lambda path=path, thread=thread: _CodexParser(
+                        self, path, f"x{thread[-8:]}", thread)
             return
         if not source.path.is_dir():
             return
@@ -890,16 +924,18 @@ class TraceReader:
             mains.extend(sorted(project.glob("*.jsonl")))
             agents.extend(sorted(project.glob("*/subagents/agent-*.jsonl")))
         for path in mains:
-            yield path, lambda path=path: _ClaudeParser(self, path, path.stem[:8], None)
+            yield path, source.path, lambda path=path: _ClaudeParser(self, path, path.stem[:8], None)
         for path in agents:
             agent = path.stem.removeprefix("agent-")
+            meta_path = path.with_name(f"{path.stem}.meta.json")
+            self.logs.setdefault(meta_path, TraceLog(source.path, meta_path))
             if agent not in self.agent_meta:
-                meta_path = path.with_name(f"{path.stem}.meta.json")
                 try:
                     self.agent_meta[agent] = json.loads(meta_path.read_text())
                 except (OSError, ValueError):
                     pass
-            yield path, lambda path=path, agent=agent: _ClaudeParser(self, path, f"a{agent[:8]}", agent)
+            yield path, source.path, lambda path=path, agent=agent: _ClaudeParser(
+                self, path, f"a{agent[:8]}", agent)
 
     def _read(self, path: Path, make: Callable[[], _Parser]) -> bool:
         try:
@@ -929,10 +965,29 @@ class TraceReader:
                 tracked.parser.feed(entry)
         return True
 
-    def freeze(self) -> None:
-        """Keeps what was parsed and stops reading: the provider files may be deleted from now on."""
+    def freeze(self, keep: Path | None = None) -> None:
+        """Keeps what was parsed and stops reading: the provider files may be deleted from now on.
+        With `keep`, the raw logs are hard-linked (copied across file systems) there first, so they
+        stay downloadable; without it they are no longer offered."""
         self.sources = None
         self.files.clear()
+        logs, self.logs = self.logs, {}
+        if keep is None:
+            return
+        for log in logs.values():
+            source = log.resolved()
+            if source is None:
+                continue
+            target = keep / log.name
+            try:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    os.link(source, target)
+                except OSError:
+                    shutil.copyfile(source, target)
+            except OSError:
+                continue
+            self.logs[target] = TraceLog(keep, target)
 
 
 class SessionTrace:
@@ -947,14 +1002,38 @@ class SessionTrace:
     def follow(self, sources: Callable[[], Sequence[TraceSource]]) -> None:
         self._readers.append(TraceReader(sources, len(self._readers) + 1))
 
-    async def archive(self) -> None:
+    async def archive(self, keep: Path | None = None) -> None:
+        """Freezes the current conversation before its runtime deletes its logs; `keep` is a directory the
+        session owns (removed with it) where the raw logs stay downloadable."""
         async with self._lock:
             if self._readers and self._readers[-1].sources is not None:
                 reader = self._readers[-1]
+                target = keep / f"conversation-{len(self._readers)}" if keep is not None else None
                 try:
                     await asyncio.to_thread(reader.sync)
                 finally:
-                    reader.freeze()
+                    await asyncio.to_thread(reader.freeze, target)
+
+    async def log_files(self) -> list[tuple[str, Path]]:
+        """Every raw log the trace was built from as `(download name, file)`, oldest conversation first,
+        names prefixed with `conversation-<n>/` when the session held several. Only regular files under the
+        roots `trace_sources()` returned (or the archive copies made from them) are listed."""
+        async with self._lock:
+            readers = list(self._readers)
+            if readers and readers[-1].sources is not None:
+                await asyncio.to_thread(readers[-1].sync)
+            entries = [(index, log) for index, reader in enumerate(readers, start=1)
+                       for log in list(reader.logs.values())]
+
+        def resolve() -> list[tuple[str, Path]]:
+            files: list[tuple[str, Path]] = []
+            for index, log in entries:
+                path = log.resolved()
+                if path is not None:
+                    files.append((f"conversation-{index}/{log.name}" if len(readers) > 1 else log.name, path))
+            return files
+
+        return await asyncio.to_thread(resolve)
 
     async def snapshot(self, *, live: bool) -> dict[str, Any]:
         async with self._lock:
