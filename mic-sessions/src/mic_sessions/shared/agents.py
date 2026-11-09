@@ -19,7 +19,9 @@ Adding a provider:
 4. `interrupt()` may be a no-op when the `interrupt` capability is `False`.
 5. A broken transport costs at most the running turn: `recover()` reconnects keeping the
    conversation, and a long-lived stream recovers itself before it reports `failed`.
-6. Register a `ProviderDescriptor` in `PROVIDERS`.
+6. `trace_sources()` names where the provider's native session log lives (`traces.TraceSource`), so
+   the Trace tab reads it; it is cheap and may return `[]` before the conversation exists.
+7. Register a `ProviderDescriptor` in `PROVIDERS`.
 
 A provider may have several adapters (`AdapterDescriptor`): implementations of the same contract
 with a different integration technology, e.g. Claude through its SDK or through its CLI. Each one
@@ -85,6 +87,7 @@ from mic_sessions.shared.env import get_settings
 from mic_sessions.shared import images as session_images
 from mic_sessions.shared.images import Image
 from mic_sessions.shared.mooi import Credential
+from mic_sessions.shared.traces import TraceSource, codex_rollout
 from mic_sessions.shared.web import ApiException
 
 LOG = logging.getLogger("sessions")
@@ -314,6 +317,11 @@ class AgentRuntime(Protocol):
     async def compact(self, instructions: str | None = None) -> None: ...
 
     async def close(self) -> None: ...
+
+    def trace_sources(self) -> Sequence[TraceSource]:
+        """Where this conversation's native session log lives, for the Trace tab. Cheap: called on every
+        trace sync. May return `[]` before the conversation exists or after `close()` (which deletes it)."""
+        ...
 
     async def recover(self) -> None:
         """Reconnect after a broken provider transport, keeping the conversation and the workspace:
@@ -824,6 +832,10 @@ class ClaudeAgentRuntime:
                 raise
             self._config_dir = None
         self._transcript_store = _InMemoryTranscriptStore()
+
+    def trace_sources(self) -> Sequence[TraceSource]:
+        """The CLI writes its session logs (and sub-agent logs) under the private config dir."""
+        return [TraceSource("claude", self._config_dir / "projects")] if self._config_dir else []
 
     async def recover(self) -> None:
         """Reconnects resuming the SDK conversation from this runtime's transcript store. Serialized:
@@ -1529,6 +1541,10 @@ class ClaudeCliAgentRuntime:
                 raise
             self._config_dir = None
 
+    def trace_sources(self) -> Sequence[TraceSource]:
+        """The CLI writes its session logs (and sub-agent logs) under the private config dir."""
+        return [TraceSource("claude", self._config_dir / "projects")] if self._config_dir else []
+
     async def recover(self) -> None:
         """Relaunches the CLI resuming its saved conversation. Serialized: the failed pump and a
         failed delivery may both try at once."""
@@ -2047,6 +2063,8 @@ class CodexAgentRuntime:
         self._thread_loaded = False
         self._connect_lock = asyncio.Lock()
         self._thread_id = None
+        # The thread's rollout file as the app-server reported it, or as found by `trace_sources`.
+        self._thread_path: str | None = None
         self._turn_id = None
         self._task = None
         self._pending = {}
@@ -2115,10 +2133,22 @@ class CodexAgentRuntime:
     async def _load_thread(self, client):
         params = self._thread_params()
         if self._thread_id is None:
-            self._thread_id = (await client.call("thread_start", params)).thread.id
+            thread = (await client.call("thread_start", params)).thread
+            self._thread_id = thread.id
+            self._thread_path = getattr(thread, "path", None)
         elif not self._thread_loaded:
             await client.call("thread_resume", self._thread_id, params)
         self._thread_loaded = True
+
+    def trace_sources(self) -> Sequence[TraceSource]:
+        """The thread's rollout file in the account's `CODEX_HOME`; `[]` until the thread exists."""
+        if self._account is None or self._thread_id is None:
+            return []
+        path = codex_rollout(self._account.home, self._thread_id, self._thread_path)
+        if path is None:
+            return []
+        self._thread_path = str(path)
+        return [TraceSource("codex", path)]
 
     async def refresh_usage(self):
         """Reads the account limits on the live connection; never starts an app-server just for them."""

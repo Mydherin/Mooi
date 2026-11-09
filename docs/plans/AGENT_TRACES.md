@@ -221,7 +221,7 @@ Status: `todo` · `doing` · `done`. Exactly one `doing` at a time.
 |---|------|--------|
 | B0 | `shared/traces.py` + settings in `env.py` | done |
 | B1 | Add `TRACE_MAX_SPANS` / `TRACE_DETAIL_CHARS` to `mic-sessions/.env.example` | done |
-| B2 | `trace_sources()` on the protocol and the 3 runtimes (`agents.py`) | todo |
+| B2 | `trace_sources()` on the protocol and the 3 runtimes (`agents.py`) | done |
 | B3 | Session wiring + 2 endpoints (`features/sessions.py`) | todo |
 | B4 | Backend checks: `uvx ruff check src` (only new findings matter; `env.py` has a pre-existing I001), import check `python -c "import mic_sessions.main"` with 32-byte `SERVICE_TOKEN`/`JWT_SECRET` env | todo |
 | F1 | Traces types + API + `lib/` helpers | todo |
@@ -244,3 +244,9 @@ Status: `todo` · `doing` · `done`. Exactly one `doing` at a time.
   which has one sub-agent). Nothing else wired; not committed.
 - B1: `TRACE_MAX_SPANS=5000` / `TRACE_DETAIL_CHARS=8000` added to `mic-sessions/.env.example` under
   *Sessions* (after `SSE_HEARTBEAT_SECONDS`, same order as `env.py`). Next: B2.
+- B2: `agents.py` — `AgentRuntime.trace_sources()` (docstring + step 6 of "Adding a provider"),
+  top-level `from mic_sessions.shared.traces import TraceSource, codex_rollout` (no cycle: traces imports
+  only `env`). Claude SDK/CLI return `[TraceSource("claude", _config_dir / "projects")]` or `[]` (after
+  `close()` `_config_dir` is `None`, so archive must run before close — D4). Codex keeps `_thread_path`
+  from `thread_start` (`getattr(thread, "path", None)`), `trace_sources()` caches the found path as str;
+  `[]` without account/thread. Ruff: same 9 pre-existing findings as HEAD; module imports. Next: B3.
