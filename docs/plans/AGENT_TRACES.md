@@ -104,6 +104,11 @@ compactions and errors. It works with every adapter: Claude SDK, Claude CLI and 
 - D9 Filter semantics (F1): an active filter (kinds / errors / search) shows matches plus their ancestors and
   ignores the collapsed set on that path, so a match is never hidden; without a filter, collapse applies.
   Orphan spans (parent cut by the span cap) become roots. Reason: search must always reveal its hits.
+- D10 Hooks (F2): span detail is cached per `spanId@revision`; callers pass the trace revision only while the
+  span runs and `null` once finished (read once, never on every trace refresh). The swipe hook needs
+  `touch-action: pan-y` on the sheet (`none` on the grabber) or the browser cancels horizontal swipes to
+  scroll. A `useTraceClock(running)` hook ticks `now` each second for running spans (FR7) without
+  re-rendering finished traces. Reason: light payloads and smooth gestures (NFR efficiency / UX).
 
 ## Technical specification
 
@@ -228,7 +233,7 @@ Status: `todo` · `doing` · `done`. Exactly one `doing` at a time.
 | B3 | Session wiring + 2 endpoints (`features/sessions.py`) | done |
 | B4 | Backend checks: `uvx ruff check src` (only new findings matter; `env.py` has a pre-existing I001), import check `python -c "import mic_sessions.main"` with 32-byte `SERVICE_TOKEN`/`JWT_SECRET` env | done |
 | F1 | Traces types + API + `lib/` helpers | done |
-| F2 | `useAgentTrace`, `useTraceSpanDetail`, keyboard + swipe hooks | todo |
+| F2 | `useAgentTrace`, `useTraceSpanDetail`, keyboard + swipe hooks | done |
 | F3 | `TracePanel`, summary strip, toolbar, timeline + rows (windowed) | todo |
 | F4 | Inspector (desktop pane + phone bottom sheet with gestures) + detail sections | todo |
 | F5 | Insights view (context chart, models, tools) | todo |
@@ -275,3 +280,11 @@ Status: `todo` · `doing` · `done`. Exactly one `doing` at a time.
   {icon, label, text, chip, bar}`, `formatTokens(n|null)`, `formatSpanDuration(ms)`, `spanDuration(span, now)`,
   `traceTimeScale(startMs, endMs, tickCount=5) → {startMs, endMs, durationMs, percent(ms), ticks}` (ticks = offsets
   from start). `bunx tsc -b` passes (no ESLint config in `spa-mooi`). Next: F2.
+- F2: `spa-mooi/src/features/traces/hooks/` — `useAgentTrace(sessionId, active) → {trace, error, loading, live,
+  refresh}` (fetch on show, throttled 1.2 s refetch with `revision` on `lastSeq` / live↔idle change, last data
+  kept on error, reset per session, nothing while hidden); `useTraceSpanDetail(sessionId, spanId|null,
+  revision|null) → {detail, loading, error, retry}` (D10); `useTraceClock(running, intervalMs=1000) → now`;
+  `useTraceKeyboard({enabled, rows, selectedId, collapsed, onSelect, onCollapsedChange(id, collapsed), onOpen,
+  onClose})` (window keydown, skips fields/modifiers); `useSwipeGestures(element|null, {onSwipeLeft,
+  onSwipeRight, onSwipeDown, onDrag(axis, offset), onDragEnd, canSwipeDown, threshold=60})` (axis lock at
+  10px, pointer capture only once locked). `bunx tsc -b` passes. Next: F3.
