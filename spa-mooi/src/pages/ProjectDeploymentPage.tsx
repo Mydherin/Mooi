@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { Compass, FileCode2, GitCompareArrows, LayoutDashboard, MessagesSquare, Rocket, Terminal, X } from 'lucide-react';
+import { Activity, Compass, FileCode2, GitCompareArrows, LayoutDashboard, MessagesSquare, Rocket, Terminal, X } from 'lucide-react';
 import { ROUTES } from '@/app/routes';
 import { useAgentConnections } from '@/features/agents/hooks/useAgentConnections';
 import { useProjects } from '@/features/projects/hooks/useProjects';
@@ -45,6 +45,7 @@ import { cn } from '@/shared/utils/cn';
 import { useSessionsStore } from '@/stores/sessionsStore';
 
 const ChangesPanel = lazy(() => import('@/features/sessions/components/changes/ChangesPanel').then((module) => ({ default: module.ChangesPanel })));
+const TracePanel = lazy(() => import('@/features/traces/components/TracePanel').then((module) => ({ default: module.TracePanel })));
 
 /**
  * One project's production: an overview first, then — like a session — tabs for the deployment
@@ -94,6 +95,7 @@ export const ProjectDeploymentPage = () => {
     ...(snapshot?.operationId ? [{ id: 'console', label: 'Console', icon: Terminal, dot: snapshot.state === 'running' }] : []),
     ...(configured || chat || files.documents?.draft ? [{ id: 'files', label: 'Platform files', icon: FileCode2, count: files.summary?.files.length || undefined }] : []),
     ...(chat ? [{ id: 'changes', label: 'Changes', icon: GitCompareArrows, count: repositoryChanges || undefined }] : []),
+    ...(chat ? [{ id: 'trace', label: 'Trace', icon: Activity }] : []),
   ];
   const requested = searchParams.get('tab');
   const tab = (tabs.some((item) => item.id === requested) ? requested : 'overview') as ProductionTab;
@@ -187,6 +189,10 @@ export const ProjectDeploymentPage = () => {
         {tab === 'changes' && chat ? <Suspense fallback={<p className="p-6 text-sm text-ink-muted">Loading changes…</p>}>
           <ChangesPanel sessionId={chat.id} showMerge={false}
             emptyDescription={`Production Compose and other repository changes appear here. The agent asks before committing them to ${project.defaultBranch}.`} />
+        </Suspense> : null}
+
+        {tab === 'trace' && chat ? <Suspense fallback={<p className="p-6 text-sm text-ink-muted">Loading trace…</p>}>
+          <TracePanel key={chat.id} sessionId={chat.id} active />
         </Suspense> : null}
       </div>
 

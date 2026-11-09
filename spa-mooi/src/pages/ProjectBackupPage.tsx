@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { Compass, FileCode2, GitCompareArrows, LayoutDashboard, MessagesSquare, Terminal, X } from 'lucide-react';
+import { Activity, Compass, FileCode2, GitCompareArrows, LayoutDashboard, MessagesSquare, Terminal, X } from 'lucide-react';
 import { ROUTES } from '@/app/routes';
 import { useAgentConnections } from '@/features/agents/hooks/useAgentConnections';
 import {
@@ -45,6 +45,7 @@ import { cn } from '@/shared/utils/cn';
 import { useSessionsStore } from '@/stores/sessionsStore';
 
 const ChangesPanel = lazy(() => import('@/features/sessions/components/changes/ChangesPanel').then((module) => ({ default: module.ChangesPanel })));
+const TracePanel = lazy(() => import('@/features/traces/components/TracePanel').then((module) => ({ default: module.TracePanel })));
 
 /**
  * One project's backups, shaped like its deployment view: an overview first, then tabs for the backup
@@ -92,6 +93,7 @@ export const ProjectBackupPage = () => {
     ...(snapshot?.operationId ? [{ id: 'console', label: 'Console', icon: Terminal, dot: running }] : []),
     ...(configured || chat || files.documents?.draft ? [{ id: 'files', label: 'Platform files', icon: FileCode2, count: files.summary?.files.length || undefined }] : []),
     ...(chat ? [{ id: 'changes', label: 'Changes', icon: GitCompareArrows, count: repositoryChanges || undefined }] : []),
+    ...(chat ? [{ id: 'trace', label: 'Trace', icon: Activity }] : []),
   ];
   const requested = searchParams.get('tab');
   const tab = (tabs.some((item) => item.id === requested) ? requested : 'overview') as BackupTab;
@@ -184,6 +186,10 @@ export const ProjectBackupPage = () => {
         {tab === 'changes' && chat ? <Suspense fallback={<p className="p-6 text-sm text-ink-muted">Loading changes…</p>}>
           <ChangesPanel sessionId={chat.id} showMerge={false}
             emptyDescription={`Backups rarely need repository changes. When they do, the agent asks before committing them to ${project.defaultBranch}.`} />
+        </Suspense> : null}
+
+        {tab === 'trace' && chat ? <Suspense fallback={<p className="p-6 text-sm text-ink-muted">Loading trace…</p>}>
+          <TracePanel key={chat.id} sessionId={chat.id} active />
         </Suspense> : null}
       </div>
 

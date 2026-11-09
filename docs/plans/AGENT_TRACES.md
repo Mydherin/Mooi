@@ -254,7 +254,7 @@ Status: `todo` · `doing` · `done`. Exactly one `doing` at a time.
 | F3 | `TracePanel`, summary strip, toolbar, timeline + rows (windowed) | done |
 | F4 | Inspector (desktop pane + phone bottom sheet with gestures) + detail sections | done |
 | F5 | Insights view (context chart, models, tools) | done |
-| F6 | Tab integration: session workspace, production page, backup page | todo |
+| F6 | Tab integration: session workspace, production page, backup page | done |
 | F7 | `cd spa-mooi && bun run build` (tsc + vite) passes | todo |
 | V1 | Temporary harness (see D8): JSON from real logs → DEV page; check desktop + mobile, light + dark, gestures, overflow; fix issues | todo |
 | V2 | Remove harness, final build/lint, update `AGENTS.md` Context, remove *Current work* pointer, report | todo |
@@ -331,3 +331,8 @@ Status: `todo` · `doing` · `done`. Exactly one `doing` at a time.
   onOpenSpan, limit=50})`; new `types/TraceContextBar.ts`, `lib/traceContextBars.ts` (D13), `lib/formatTokenShare.ts`.
   `TracePanel` renders it in the F5 slot (`openFromInsights` = expand ancestors + Timeline + inspector; placeholder and
   `EmptyState` import removed). `bunx tsc -b` passes. Next: F6.
+- F6: `WorkspacePane` += `'trace'`; `SessionWorkspace` — Trace tab (`Activity`) last (after Preview), lazy `TracePanel`
+  section mounted once visited and kept hidden (`active` = visible, like Files), `selectPane` guard extended.
+  `ProductionTab` / `BackupTab` += `'trace'`; `ProjectDeploymentPage` / `ProjectBackupPage` — tab after Changes when
+  `chat` exists, lazy `<TracePanel key={chat.id} sessionId={chat.id} active />` rendered only while that tab is open
+  (same pattern as their Changes tab). `bunx tsc -b` passes. Next: F7.
