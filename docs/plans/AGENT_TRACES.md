@@ -223,7 +223,7 @@ Status: `todo` · `doing` · `done`. Exactly one `doing` at a time.
 | B1 | Add `TRACE_MAX_SPANS` / `TRACE_DETAIL_CHARS` to `mic-sessions/.env.example` | done |
 | B2 | `trace_sources()` on the protocol and the 3 runtimes (`agents.py`) | done |
 | B3 | Session wiring + 2 endpoints (`features/sessions.py`) | done |
-| B4 | Backend checks: `uvx ruff check src` (only new findings matter; `env.py` has a pre-existing I001), import check `python -c "import mic_sessions.main"` with 32-byte `SERVICE_TOKEN`/`JWT_SECRET` env | todo |
+| B4 | Backend checks: `uvx ruff check src` (only new findings matter; `env.py` has a pre-existing I001), import check `python -c "import mic_sessions.main"` with 32-byte `SERVICE_TOKEN`/`JWT_SECRET` env | done |
 | F1 | Traces types + API + `lib/` helpers | todo |
 | F2 | `useAgentTrace`, `useTraceSpanDetail`, keyboard + swipe hooks | todo |
 | F3 | `TracePanel`, summary strip, toolbar, timeline + rows (windowed) | todo |
@@ -258,3 +258,7 @@ Status: `todo` · `doing` · `done`. Exactly one `doing` at a time.
   matches; `GET /sessions/{id}/trace/spans/{span_id:path}` → `{"id","input","output","metadata"}` or `404
   "Span not found"`. SPA calls them through the same sessions API base as `…/changes` (F1). Ruff: no new
   findings in `sessions.py` (6 before, 6 after); `import mic_sessions.main` OK. Next: B4.
+- B4: `uvx ruff check src` → 25 findings, identical (file + rule + message) to the pre-B0 baseline `aeb37ab`;
+  `shared/traces.py` clean. `import mic_sessions.main` (+ `shared.traces`) OK with 32-byte env. Review of
+  B0–B3 diffs: signatures match (`follow`/`archive`/`snapshot(live=)`/`detail`, `codex_rollout`,
+  `codex.Account.home`), file I/O runs in `asyncio.to_thread`; no fixes needed, no code changed. Next: F1.
