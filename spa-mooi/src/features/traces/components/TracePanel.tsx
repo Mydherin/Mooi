@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { BarChart3, ListTree, RotateCw, TriangleAlert } from 'lucide-react';
+import { TraceInspector } from '@/features/traces/components/TraceInspector';
 import { TraceEmptyState } from '@/features/traces/components/TraceEmptyState';
 import { TraceSummaryStrip } from '@/features/traces/components/TraceSummaryStrip';
 import { TraceTimeline } from '@/features/traces/components/TraceTimeline';
@@ -13,7 +14,6 @@ import { flattenTraceTree } from '@/features/traces/lib/flattenTraceTree';
 import { isTraceFilterActive } from '@/features/traces/lib/isTraceFilterActive';
 import { traceTimeScale } from '@/features/traces/lib/traceTimeScale';
 import type { TraceFilter } from '@/features/traces/types/TraceFilter';
-import type { TraceSpan } from '@/features/traces/types/TraceSpan';
 import type { TraceView } from '@/features/traces/types/TraceView';
 import { Button } from '@/shared/components/Button';
 import { EmptyState } from '@/shared/components/EmptyState';
@@ -31,9 +31,6 @@ interface TracePanelProps {
 
 const EMPTY_FILTER: TraceFilter = { kinds: [], errorsOnly: false, query: '' };
 const NO_COLLAPSE: ReadonlySet<string> = new Set();
-
-/** Placeholder of the F4 inspector slot (see `inspector` below): renders nothing until F4 lands. */
-const inspectorSlot = (_span: TraceSpan): ReactNode => null;
 
 const VIEWS = [
   { id: 'timeline', label: 'Timeline', icon: ListTree },
@@ -107,14 +104,19 @@ const TracePanelBody = ({ sessionId, active }: TracePanelProps) => {
     onClose: closeInspector,
   });
 
-  /*
-   * F4 slot — the inspector. Render it here when `inspectorOpen && selectedSpan`:
-   *   <TraceInspector sessionId={sessionId} span={selectedSpan} revision={trace.revision} live={live} now={now}
-   *     rows={rows} onSelect={setSelectedId} onClose={closeInspector} />
-   * (desktop: it fills the 420px column below from `lg`; phones: a portal bottom sheet, prev/next = the
-   * neighbouring entries of `rows`). Until then nothing renders and the timeline keeps the full width.
-   */
-  const inspector: ReactNode = inspectorOpen && selectedSpan ? inspectorSlot(selectedSpan) : null;
+  // The inspector: the 420px column below from `lg`, a portal bottom sheet on phones.
+  const inspector: ReactNode = trace && inspectorOpen && selectedSpan ? (
+    <TraceInspector
+      sessionId={sessionId}
+      span={selectedSpan}
+      revision={trace.revision}
+      traceStartMs={trace.summary.startMs}
+      now={now}
+      rows={rows}
+      onSelect={setSelectedId}
+      onClose={closeInspector}
+    />
+  ) : null;
 
   /*
    * F5 slot — the Insights view: replace this placeholder with

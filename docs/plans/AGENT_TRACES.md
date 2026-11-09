@@ -114,6 +114,11 @@ compactions and errors. It works with every adapter: Claude SDK, Claude CLI and 
   (they show as parents of matches). While a filter is active rows render expanded and chevrons/←/→ do nothing
   (D9 ignores the collapsed set). Rows stay 40px on every screen (fixed height keeps windowing exact; the whole
   full-width row is the touch target). Reason: one predictable model for pointer, touch and keyboard.
+- D12 Inspector (F4): pane vs sheet is chosen in JS (`useWideLayout`, `lg` = 64rem), not CSS, so only one copy
+  mounts and the span detail is read once. Previous/next = neighbouring `rows` (buttons ↑/↓ in the header + swipe
+  right/left on phones). The sheet's header is `touch-none` (swipe down always works there); its content is
+  `touch-pan-y` and closes on swipe down only when scrolled to the top. Metadata starts collapsed. Reason: one
+  mounted inspector, predictable gestures that never fight scrolling.
 
 ## Technical specification
 
@@ -240,7 +245,7 @@ Status: `todo` · `doing` · `done`. Exactly one `doing` at a time.
 | F1 | Traces types + API + `lib/` helpers | done |
 | F2 | `useAgentTrace`, `useTraceSpanDetail`, keyboard + swipe hooks | done |
 | F3 | `TracePanel`, summary strip, toolbar, timeline + rows (windowed) | done |
-| F4 | Inspector (desktop pane + phone bottom sheet with gestures) + detail sections | todo |
+| F4 | Inspector (desktop pane + phone bottom sheet with gestures) + detail sections | done |
 | F5 | Insights view (context chart, models, tools) | todo |
 | F6 | Tab integration: session workspace, production page, backup page | todo |
 | F7 | `cd spa-mooi && bun run build` (tsc + vite) passes | todo |
@@ -305,3 +310,11 @@ Status: `todo` · `doing` · `done`. Exactly one `doing` at a time.
   `closeInspector`); when it renders non-null the body grid gets the `lg:` 420px column; the phone sheet is a portal.
   **F5 slot**: replace the `insights` placeholder (an `EmptyState`) with `<TraceInsights trace={trace} … />`
   (`openSpan(id)` + `setView('timeline')` to jump to a span). `bunx tsc -b` passes. Next: F4.
+- F4: `components/TraceInspector({sessionId, span, revision, traceStartMs, now, rows, onSelect, onClose})` — header
+  (kind + status chips, name, title, start offset `+4.2s`, duration, `n / total`, prev/next/close), metrics grid
+  (model, stop reason, context/input/cache read/cache write/output/reasoning via `formatTokens`, exact in titles),
+  detail error banner with retry, then `TraceDetailSection({title, value, loading, emptyLabel, defaultOpen})`
+  (collapsible, copy, pretty JSON, wrapped, max 22rem scroll) for Input / Output / Metadata. Desktop: `<aside>` in the
+  420px column; phones: portal sheet (backdrop, grabber, body scroll lock, focus, drag follow, D12). New
+  `hooks/useWideLayout.ts`, `lib/prettyTraceText.ts`, `lib/formatSpanOffset.ts`; `TracePanel` renders the inspector
+  in the F4 slot (placeholder removed). `bunx tsc -b` passes. Next: F5.
