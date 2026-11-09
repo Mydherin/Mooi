@@ -4,6 +4,7 @@ import {
   Layers,
   MessageSquare,
   Minimize2,
+  Repeat,
   Sparkles,
   Webhook,
   Wrench,
@@ -15,7 +16,8 @@ import type { TraceSpanKind } from '@/features/traces/types/TraceSpanKind';
 import type { TraceSpanStatus } from '@/features/traces/types/TraceSpanStatus';
 
 const styles: Record<TraceSpanKind, TraceKindStyle> = {
-  turn: { icon: MessageSquare, label: 'Turn', text: 'text-ink', chip: 'bg-surface-2 text-ink', bar: 'bg-ink-muted' },
+  prompt: { icon: MessageSquare, label: 'Prompt', text: 'text-ink', chip: 'bg-surface-2 text-ink', bar: 'bg-ink-muted' },
+  turn: { icon: Repeat, label: 'Turn', text: 'text-ink-muted', chip: 'bg-surface-2 text-ink-muted', bar: 'bg-line-strong' },
   llm: { icon: Sparkles, label: 'LLM call', text: 'text-info', chip: 'bg-info-soft text-info', bar: 'bg-info-dot' },
   tool: { icon: Wrench, label: 'Tool', text: 'text-success', chip: 'bg-success-soft text-success', bar: 'bg-success-dot' },
   agent: { icon: Bot, label: 'Sub-agent', text: 'text-accent', chip: 'bg-accent-soft text-accent', bar: 'bg-accent-dot' },

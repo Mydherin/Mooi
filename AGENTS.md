@@ -63,10 +63,11 @@ from it. Where they differ, this context wins over the current implementation (s
   side by side, phones show them one after the other.
 - KPIs per session and provider account: context size, session limits, weekly limits, other usage metrics.
 - Model and thinking-effort selection per session.
-- A **Trace** tab, like Langfuse / LangSmith, shows every internal step of the agent: turns, LLM calls with
-  tokens, cache and context size per request, tool calls, nested sub-agents, skills, hooks, injected context,
-  compactions and errors, as a live timeline with an inspector and usage insights. Available in development
-  sessions (including the first dev deployment setup), production and backup chats, for every adapter.
+- A **Trace** tab, like Langfuse / LangSmith, shows every internal step of the agent: prompts, turns (one
+  agent-loop iteration each: an LLM call with tokens, cache and context size, then the tools it requested),
+  nested sub-agents, skills, hooks, injected context, compactions and errors, as a live timeline with an
+  inspector and usage insights. Available in development sessions (including the first dev deployment setup),
+  production and backup chats, for every adapter.
 - Multiple provider accounts, including several of the same provider; sessions of one project may use the
   same or different accounts.
 - **Agentic merge**: merging an outdated branch with conflicts makes the agent resolve them, preserving

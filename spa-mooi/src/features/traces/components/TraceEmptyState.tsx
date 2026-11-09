@@ -17,7 +17,7 @@ const COPY: Record<TraceEmptyKind, { icon: typeof Activity; title: string; descr
   empty: {
     icon: Activity,
     title: 'No steps yet',
-    description: "Send a message: every turn, model request, tool call and sub-agent of the agent shows up here as it runs.",
+    description: "Send a message: every prompt, turn (model call), tool call and sub-agent of the agent shows up here as it runs.",
   },
   error: { icon: CircleAlert, title: 'Could not load the trace', description: 'The session log could not be read.' },
   noMatch: { icon: SearchX, title: 'No matching steps', description: 'Nothing in this trace matches the filters.' },

@@ -51,7 +51,7 @@ export const TraceInsights = ({ trace, onOpenSpan }: TraceInsightsProps) => {
   const hasSubAgents = trace.summary.counts.agent > 0;
   const includeSubAgents = hasSubAgents && scope === 'all';
   const bars = useMemo(() => traceContextBars(trace.spans, includeSubAgents), [trace.spans, includeSubAgents]);
-  const errors = useMemo(() => trace.spans.filter((span) => span.status === 'error'), [trace.spans]);
+  const errors = useMemo(() => trace.spans.filter((span) => span.status === 'error' && span.kind !== 'turn'), [trace.spans]);
   const requests = bars.reduce((sum, bar) => sum + bar.calls, 0);
 
   return (

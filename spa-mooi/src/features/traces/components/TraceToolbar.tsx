@@ -17,7 +17,7 @@ interface TraceToolbarProps {
   onCollapseAll: () => void;
 }
 
-/** Kind chips (FR4); turns are always shown as the parents of what matches. */
+/** Kind chips (FR4); prompts and turns are always shown as the parents of what matches. */
 const CHIPS: { id: string; label: string; kinds: TraceSpanKind[] }[] = [
   { id: 'llm', label: 'LLM', kinds: ['llm'] },
   { id: 'tool', label: 'Tools', kinds: ['tool'] },

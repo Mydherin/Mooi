@@ -30,10 +30,10 @@ compactions and errors. It works with every adapter: Claude SDK, Claude CLI and 
 - FR1 **Trace tab** next to the existing tabs:
   - Development session (`SessionWorkspace`): tabs Conversation · Changes · Files · Preview → add **Trace**.
   - Production page and Backup page: add **Trace** whenever their chat exists (same rule as the Chat tab).
-- FR2 **Summary strip** (KPIs): duration, turns, LLM calls, tool calls, sub-agents, errors, total tokens
+- FR2 **Summary strip** (KPIs): duration, prompts, turns, tool calls, sub-agents, errors, total tokens
   (input / cache read / cache write / output / reasoning), cache-hit rate, peak context.
-- FR3 **Timeline** (default view): an expandable tree of spans (turn → LLM calls, tools, hooks, context;
-  sub-agent → its own LLM calls and tools) with a waterfall bar per row on a shared time axis, kind icon
+- FR3 **Timeline** (default view): an expandable tree of spans (prompt → turns, hooks, context, events; turn →
+  its one LLM call and the tools / sub-agents / skills it requested; sub-agent → its own turns) with a waterfall bar per row on a shared time axis, kind icon
   and colour, status (running spinner / ok / error / interrupted / incomplete), duration, token badge
   on LLM rows, model badge.
 - FR4 **Filters**: chips per kind (LLM, Tools, Sub-agents, Skills, Hooks, Context, Events), "Errors only",
@@ -127,10 +127,26 @@ compactions and errors. It works with every adapter: Claude SDK, Claude CLI and 
   Timeline, expands the span's ancestors and opens the inspector. Reason: sub-agent prompts would distort the main
   context curve; bucketing by peak keeps thousands of calls light without hiding spikes.
 - D14 Claude background tasks (E2E): a `<task-notification>` user entry (`origin.kind = task-notification`,
-  e.g. a background sub-agent finishing) is an `event` span "Background task finished" inside the current turn,
-  not a new turn; its text feeds the next model call's input. A model call starts at Claude Code's `api-request`
+  e.g. a background sub-agent finishing) is an `event` span "Background task finished" inside the current prompt,
+  not a new prompt; its text feeds the next model call's input. A model call starts at Claude Code's `api-request`
   entry when the log has one (after context is attached), else at the previous user/tool-result entry. Reason: the
-  user typed one prompt, so the trace shows one turn; model latency excludes context assembly.
+  user typed one prompt, so the trace shows one prompt; model latency excludes context assembly.
+- D15 Prompt / turn model (user decision, supersedes "turn = user message"): a **prompt** (`kind: prompt`) is one
+  user request (Langfuse trace); a **turn** (`kind: turn`) is one agent-loop iteration, the unit agent SDKs count in
+  `max_turns`: exactly one LLM call (Langfuse generation) plus the tool, sub-agent and skill calls it requested,
+  nested under the turn. Turns are numbered per prompt (per sub-agent inside a sub-agent); hooks, context and
+  events stay at prompt level, tool hooks under their tool. A turn has no data of its own: it lasts from its call's
+  start to its last child's end, is running / interrupted / incomplete when a child is, else errors only when its
+  model call failed. Claude: one turn per assistant `message.id`; Codex: one per response (closed by its
+  `token_usage_record`, or `token_count` before records exist). The LLM call's output lists each tool call with its
+  arguments. Summary strip: Prompts and Turns (= LLM calls, so no separate LLM KPI); error totals skip turns (a
+  failed turn is its failed call). Reason: the user's definition, matching OpenAI / Claude Agent SDK turns and
+  Langfuse observation types.
+- D16 Codex sub-agents: `spawn_agent` starts a thread with its own rollout. The parent's `SubAgentActivity`
+  (`kind: started`, `id` = the spawn call id, `agent_thread_id`) links them; the child rollout is found by thread id
+  in the same `sessions/` tree and read like Claude's sub-agent transcripts: its copy of the parent's history is
+  skipped up to its first `task_started` carrying `turn_attribution.parent_turn_id`, and its turns nest under the
+  spawn span, named after the `agent_path` leaf.
 
 ## Technical specification
 
@@ -374,3 +390,14 @@ Status: `todo` · `doing` · `done`. Exactly one `doing` at a time.
   dark; no page overflow. Fixed in `shared/traces.py` (D14): background sub-agent notification showed as a raw-XML
   "Turn 2"; model calls started before their context attachments. Not checked: Codex adapter, production/backup
   Trace tabs (no production chat locally), compaction and interrupted turns. ruff 25 (baseline), `bun run build` OK.
+- D15 prompt/turn model: `traces.py` (kind `prompt` + loop `turn` spans in both parsers, turn status/stretch in
+  `_build`), SPA kind/style/strip/empty-state labels, `AGENTS.md`. Checked on real logs: a Claude Code CLI log with a
+  sub-agent (122 assistant message ids → 122 turns = 122 LLM calls, 134 tool_use → 134 tool/agent/skill spans, 0
+  structure violations) and a Codex rollout (136 calls = 135 `token_usage_record` + 1 aborted call with only
+  `token_count`, 129 function calls → 129 tools). Provider differences are native: Claude logs context attachments,
+  hooks and sub-agent transcripts; Codex logs reasoning items and no hooks/context; SDK and CLI share Claude Code's
+  log. ruff 25 (baseline), `bun run build` OK.
+- D16 + live check (stack via `make up`, project Leffi): Codex session (MyCodex, GPT-6.1-Sol low) with a spawned
+  sub-agent → Prompt 1 › 5 turns, `readme_summary` sub-agent nested with its own 2 turns (= its 2 usage records).
+  Claude could not be rerun live (temporary token removed); checked offline on a real Claude Agent SDK (`sdk-py`)
+  log: a failed `<synthetic>` call → one errored turn, counted once.

@@ -3,8 +3,9 @@
 Each provider already writes a complete, timestamped log of its conversation: Claude Code a JSONL
 transcript per conversation under its config directory (plus one per sub-agent), Codex one rollout
 JSONL per thread. This module turns those native logs into one provider-neutral trace, the shape
-observability platforms use: turns, model calls with their exact token usage, tool calls, sub-agents,
-skills, hooks, context events and compactions, each a timed span in one tree.
+observability platforms use: prompts (one user request each), turns (one agent-loop iteration: a model
+call with its exact token usage, then the tools, sub-agents and skills it requested), hooks, context
+events and compactions, each a timed span in one tree.
 
 Reading the log instead of instrumenting the agent keeps the trace complete (the log holds what the
 event stream never forwards: per-request usage, sub-agent work, hooks, injected context) and free while
@@ -32,6 +33,7 @@ from mic_sessions.shared.env import get_settings
 
 TraceFormat = Literal["claude", "codex"]
 
+KIND_PROMPT = "prompt"
 KIND_TURN = "turn"
 KIND_LLM = "llm"
 KIND_TOOL = "tool"
@@ -187,9 +189,25 @@ class _Parser:
         self.reader = reader
         self.path = path
         self.key = key
+        # Turns of the current prompt (or sub-agent): one per model call, as agent SDKs count `max_turns`.
+        self.loop = 0
 
     def feed(self, entry: dict[str, Any]) -> None:
         raise NotImplementedError
+
+    def _open_turn(self, span_id: str, start: float, parent: str | None) -> Span:
+        """One iteration of the agent loop: a model call, then the tools it requested (its children)."""
+        self.loop += 1
+        return self.reader.add(Span(id=span_id, kind=KIND_TURN, name=f"Turn {self.loop}", start=start, parent=parent))
+
+    def _describe_turn(self, call: Span) -> None:
+        """A turn reads as what its model call did: the tools it requested, else its answer."""
+        turn = self.reader.get(call.parent or "")
+        if turn is None or turn.kind != KIND_TURN:
+            return
+        tools = call.metadata.get("tools") or []
+        turn.title = _line(", ".join(tools), _TITLE_CHARS) if tools else call.preview
+        turn.preview = turn.title
 
 
 class _ClaudeParser(_Parser):
@@ -201,8 +219,8 @@ class _ClaudeParser(_Parser):
         # A sub-agent transcript nests under the tool call that spawned it, resolved when the trace is built.
         self.agent = agent
         self.root: str | None = f"agent:{agent}" if agent else None
-        self.turn: str | None = None
-        self.turns = 0
+        self.prompt: str | None = None
+        self.prompts = 0
         self.forked = False
         self.calls: dict[str, Span] = {}
         self.ready_at: float | None = None
@@ -210,7 +228,7 @@ class _ClaudeParser(_Parser):
         self.open_tools: set[str] = set()
 
     def _parent(self) -> str | None:
-        return self.turn or self.root
+        return self.prompt or self.root
 
     def feed(self, entry: dict[str, Any]) -> None:
         if entry.get("forkedFrom"):
@@ -263,21 +281,22 @@ class _ClaudeParser(_Parser):
                                or text.startswith(_TASK_NOTIFICATION_PREFIX)):
             self._notification(entry, text, at)
             return
-        if self.agent and self.turns == 0:
+        if self.agent and self.prompts == 0:
             # A sub-agent's first message is the prompt it was given.
-            self.turns = 1
+            self.prompts = 1
             self.reader.agent_prompts[self.agent] = text
             self.ready_at = at
             self.pending_input = [text]
             return
-        self._close_turn(at)
-        self.turns += 1
-        name = "Compaction summary" if self.forked else f"Turn {self.reader.next_turn()}"
-        span = self.reader.add(Span(id=f"{self.key}:turn:{self.turns}", kind=KIND_TURN, name=name,
+        self._close_prompt(at)
+        self.prompts += 1
+        self.loop = 0
+        name = "Compaction summary" if self.forked else f"Prompt {self.reader.next_prompt()}"
+        span = self.reader.add(Span(id=f"{self.key}:prompt:{self.prompts}", kind=KIND_PROMPT, name=name,
                                     title=_line(text, _TITLE_CHARS), start=at, parent=self.root,
                                     input=self.reader.clip(text), preview=_line(text)))
         span.metadata = {key: entry[key] for key in ("permissionMode", "version", "gitBranch", "cwd") if entry.get(key)}
-        self.turn = span.id
+        self.prompt = span.id
         self.ready_at = at
         self.pending_input = [text]
 
@@ -312,10 +331,11 @@ class _ClaudeParser(_Parser):
         call = self.calls.get(message_id)
         model = message.get("model")
         if call is None:
-            started = self.ready_at if self.ready_at is not None else at
+            started = min(self.ready_at if self.ready_at is not None else at, at)
+            turn = self._open_turn(f"{self.key}:turn:{message_id}", started, self._parent())
             call = self.reader.add(Span(id=f"{self.key}:llm:{message_id}", kind=KIND_LLM,
-                                        name=str(model or "Model call"), start=min(started, at),
-                                        parent=self._parent(), model=model if model != "<synthetic>" else None,
+                                        name=str(model or "Model call"), start=started,
+                                        parent=turn.id, model=model if model != "<synthetic>" else None,
                                         input=self.reader.clip("\n\n".join(part for part in self.pending_input if part))))
             call.metadata = {key: entry[key] for key in ("requestId", "effort") if entry.get(key)}
             call.metadata["messageId"] = message.get("id")
@@ -345,8 +365,9 @@ class _ClaudeParser(_Parser):
                 parts.append("[redacted thinking]")
             elif kind in ("tool_use", "server_tool_use"):
                 self._tool_use(block, call, at)
-                parts.append(f"[tool call] {block.get('name')}")
+                parts.append(f"[tool call] {block.get('name')}\n{_render(block.get('input') or {})}")
         call.output = self.reader.clip("\n\n".join(parts))
+        self._describe_turn(call)
         failed = entry.get("isApiErrorMessage") or entry.get("error")
         if failed:
             call.status = STATUS_ERROR
@@ -366,9 +387,10 @@ class _ClaudeParser(_Parser):
         label = (str(payload.get("subagent_type") or "Sub-agent") if kind == KIND_AGENT
                  else str(payload.get("skill") or "Skill") if kind == KIND_SKILL else name)
         span = self.reader.add(Span(id=tool_id, kind=kind, name=label, title=title, start=at,
-                                    parent=self._parent(), input=self.reader.clip(_render(payload)),
+                                    parent=call.parent, input=self.reader.clip(_render(payload)),
                                     preview=title))
         span.metadata = {"tool": name, "call": call.id}
+        call.metadata.setdefault("tools", []).append(label)
         if block.get("type") == "server_tool_use":
             span.metadata["server"] = True
         self.open_tools.add(tool_id)
@@ -419,8 +441,8 @@ class _ClaudeParser(_Parser):
                                         preview=f"{_int(meta.get('preTokens')):,} tokens before compaction"))
             span.metadata = {key: meta[key] for key in ("trigger", "preTokens", "durationMs") if key in meta}
             span.close(at)
-            self._close_turn(at)
-            self.turn = None
+            self._close_prompt(at)
+            self.prompt = None
         elif subtype == "stop_hook_summary":
             infos = entry.get("hookInfos") or []
             duration = sum(_int(info.get("durationMs")) for info in infos if isinstance(info, dict)) / 1000
@@ -431,9 +453,9 @@ class _ClaudeParser(_Parser):
             span.metadata = {"hookCount": entry.get("hookCount"), "preventedContinuation": entry.get("preventedContinuation")}
             span.close(at, STATUS_ERROR if errors else STATUS_OK)
         elif subtype == "turn_duration":
-            turn = self.reader.get(self.turn or "")
-            if turn is not None:
-                turn.metadata["durationMs"] = entry.get("durationMs")
+            prompt = self.reader.get(self.prompt or "")
+            if prompt is not None:
+                prompt.metadata["durationMs"] = entry.get("durationMs")
         elif subtype:
             text = _blocks_text(entry.get("content")) or str(subtype)
             level = entry.get("level")
@@ -445,7 +467,7 @@ class _ClaudeParser(_Parser):
 
     def _notification(self, entry: dict[str, Any], text: str, at: float) -> None:
         """A background task (sub-agent, shell) reporting back: the platform wakes the agent with it, so it is
-        an event of the turn that started the task, not a prompt of the user's."""
+        an event of the prompt that started the task, not a prompt of the user's."""
         summary = re.search(r"<summary>(.*?)</summary>", text, re.DOTALL)
         status = re.search(r"<status>(.*?)</status>", text, re.DOTALL)
         state = status.group(1).strip() if status else ""
@@ -464,15 +486,15 @@ class _ClaudeParser(_Parser):
             if span is not None and span.end is None:
                 span.close(at, STATUS_INTERRUPTED)
         self.open_tools.clear()
-        turn = self.reader.get(self.turn or "")
-        if turn is not None:
-            turn.status = STATUS_INTERRUPTED
-            turn.end = at
+        prompt = self.reader.get(self.prompt or "")
+        if prompt is not None:
+            prompt.status = STATUS_INTERRUPTED
+            prompt.end = at
 
-    def _close_turn(self, at: float) -> None:
-        turn = self.reader.get(self.turn or "")
-        if turn is not None and turn.status == STATUS_RUNNING:
-            turn.status = STATUS_OK
+    def _close_prompt(self, at: float) -> None:
+        prompt = self.reader.get(self.prompt or "")
+        if prompt is not None and prompt.status == STATUS_RUNNING:
+            prompt.status = STATUS_OK
 
 
 def _claude_usage(usage: dict[str, Any]) -> dict[str, int]:
@@ -499,11 +521,15 @@ class _CodexParser(_Parser):
     _TOOL_OUTPUTS: ClassVar[frozenset[str]] = frozenset({"function_call_output", "custom_tool_call_output", "local_shell_call_output",
                      "tool_search_output"})
 
-    def __init__(self, reader: TraceReader, path: Path, key: str) -> None:
+    def __init__(self, reader: TraceReader, path: Path, key: str, agent: str | None = None) -> None:
         super().__init__(reader, path, key)
-        self.turn: str | None = None
+        # A sub-agent thread nests under the `spawn_agent` call that started it, resolved when the trace is built.
+        self.agent = agent
+        self.root: str | None = f"agent:{agent}" if agent else None
+        # A spawned thread's rollout starts with a copy of its parent's history: skipped up to its own first task.
+        self.inherited = agent is not None
+        self.prompt: str | None = None
         self.call: Span | None = None
-        self.calls = 0
         self.records = False
         self.ready_at: float | None = None
         self.pending_input: list[str] = []
@@ -517,15 +543,22 @@ class _CodexParser(_Parser):
         if at is None or not isinstance(payload, dict):
             return
         kind = entry.get("type")
+        if self.inherited:
+            attribution = payload.get("turn_attribution") or {}
+            if kind != "event_msg" or payload.get("type") != "task_started" or not attribution.get("parent_turn_id"):
+                return
+            self.inherited = False
         if kind == "session_meta":
+            if self.agent:
+                return
             self.reader.metadata.update({key: payload[key] for key in ("cli_version", "originator", "model_provider",
                                                                       "source") if payload.get(key)})
         elif kind == "turn_context":
             self.model = payload.get("model") or self.model
             settings = (payload.get("collaboration_mode") or {}).get("settings") or {}
             self.effort = payload.get("effort") or settings.get("reasoning_effort") or self.effort
-            if self.turn is None:
-                self._start_turn(str(payload.get("turn_id") or ""), at)
+            if self.prompt is None:
+                self._start_prompt(str(payload.get("turn_id") or ""), at)
         elif kind == "response_item":
             self._item(payload, at)
         elif kind == "event_msg":
@@ -536,53 +569,61 @@ class _CodexParser(_Parser):
         elif kind == "compacted":
             self._compaction(at, str(payload.get("message") or ""))
 
-    def _start_turn(self, turn_id: str, at: float) -> None:
-        self._end_turn(at, STATUS_OK)
-        self.calls = 0
-        span = self.reader.add(Span(id=f"{self.key}:turn:{turn_id or at}", kind=KIND_TURN,
-                                    name=f"Turn {self.reader.next_turn()}", start=at))
+    def _start_prompt(self, turn_id: str, at: float) -> None:
+        self._end_prompt(at, STATUS_OK)
+        self.loop = 0
+        if self.root:
+            # A sub-agent's task is the prompt it was given: its turns sit directly under the sub-agent.
+            self.prompt = self.root
+            self.ready_at = at
+            self.pending_input = []
+            return
+        span = self.reader.add(Span(id=f"{self.key}:prompt:{turn_id or at}", kind=KIND_PROMPT,
+                                    name=f"Prompt {self.reader.next_prompt()}", start=at))
         if turn_id:
             span.metadata["turnId"] = turn_id
-        self.turn = span.id
+        self.prompt = span.id
         self.ready_at = at
         self.pending_input = []
 
-    def _end_turn(self, at: float, status: str) -> None:
-        turn = self.reader.get(self.turn or "")
-        if turn is not None and turn.end is None:
-            turn.close(at, status)
-        self.turn = None
+    def _end_prompt(self, at: float, status: str) -> None:
+        prompt = self.reader.get(self.prompt or "")
+        if prompt is not None and prompt.end is None:
+            prompt.close(at, status)
+        self.prompt = None
         self.call = None
 
     def _event(self, payload: dict[str, Any], at: float) -> None:
         kind = payload.get("type")
         if kind == "task_started":
-            self._start_turn(str(payload.get("turn_id") or ""), at)
-            turn = self.reader.get(self.turn or "")
-            if turn is not None and payload.get("model_context_window"):
-                turn.metadata["contextWindow"] = payload["model_context_window"]
+            self._start_prompt(str(payload.get("turn_id") or ""), at)
+            prompt = self.reader.get(self.prompt or "")
+            if prompt is not None and payload.get("model_context_window"):
+                prompt.metadata["contextWindow"] = payload["model_context_window"]
         elif kind == "task_complete":
-            turn = self.reader.get(self.turn or "")
-            if turn is not None:
-                turn.metadata.update({key: payload[key] for key in ("duration_ms", "time_to_first_token_ms")
+            prompt = self.reader.get(self.prompt or "")
+            if prompt is not None:
+                prompt.metadata.update({key: payload[key] for key in ("duration_ms", "time_to_first_token_ms")
                                       if payload.get(key) is not None})
                 if payload.get("last_agent_message"):
-                    turn.output = self.reader.clip(str(payload["last_agent_message"]))
-            self._end_turn(at, STATUS_OK)
+                    prompt.output = self.reader.clip(str(payload["last_agent_message"]))
+            self._end_prompt(at, STATUS_OK)
         elif kind == "turn_aborted":
             for span in self.tools.values():
                 if span.end is None:
                     span.close(at, STATUS_INTERRUPTED)
-            turn = self.reader.get(self.turn or "")
-            if turn is not None:
-                turn.close(at, STATUS_INTERRUPTED)
-            self.turn = None
+            prompt = self.reader.get(self.prompt or "")
+            if prompt is not None:
+                prompt.close(at, STATUS_INTERRUPTED)
+            self.prompt = None
         elif kind == "user_message":
             self._prompt(str(payload.get("message") or ""), at)
         elif kind == "item_completed":
             item = payload.get("item") or {}
             if item.get("type") == "UserMessage":
                 self._prompt(_blocks_text(item.get("content")), at)
+            elif item.get("type") == "SubAgentActivity" and item.get("kind") == "started":
+                self._spawned(item)
         elif kind == "token_count" and not self.records:
             info = payload.get("info") or {}
             if isinstance(info.get("last_token_usage"), dict):
@@ -592,31 +633,45 @@ class _CodexParser(_Parser):
         elif kind in ("error", "stream_error", "warning"):
             message = str(payload.get("message") or kind)
             span = self.reader.add(Span(id=f"{self.key}:evt:{at}:{kind}", kind=KIND_EVENT,
-                                        name=str(kind).replace("_", " ").capitalize(), start=at, parent=self.turn,
+                                        name=str(kind).replace("_", " ").capitalize(), start=at, parent=self.prompt,
                                         output=self.reader.clip(message), preview=_line(message)))
             span.close(at, STATUS_OK if kind == "warning" else STATUS_ERROR)
+
+    def _spawned(self, item: dict[str, Any]) -> None:
+        """Links a spawned thread to its `spawn_agent` call, so its rollout is read and nested there."""
+        thread = str(item.get("agent_thread_id") or "")
+        span = self.reader.get(f"{self.key}:tool:{item.get('id')}")
+        if not thread or span is None:
+            return
+        path = str(item.get("agent_path") or "")
+        self.reader.agent_tools[thread] = span.id
+        self.reader.agent_meta[thread] = {"agentType": path.rsplit("/", 1)[-1] or span.name}
+        self.reader.codex_threads.setdefault(thread, None)
+        span.model = item.get("model") or span.model
+        span.metadata.update({"agentThreadId": thread, "agentPath": path or None,
+                              "effort": item.get("reasoning_effort")})
 
     def _prompt(self, text: str, at: float) -> None:
         if not text or text.startswith(_CODEX_CONTEXT_PREFIXES):
             return
-        if self.turn is None:
-            self._start_turn("", at)
-        turn = self.reader.get(self.turn or "")
-        if turn is not None and turn.input is None:
-            turn.title = _line(text, _TITLE_CHARS)
-            turn.preview = _line(text)
-            turn.input = self.reader.clip(text)
+        if self.prompt is None:
+            self._start_prompt("", at)
+        prompt = self.reader.get(self.prompt or "")
+        if prompt is not None and prompt.input is None:
+            prompt.title = _line(text, _TITLE_CHARS)
+            prompt.preview = _line(text)
+            prompt.input = self.reader.clip(text)
         self.pending_input.append(text)
 
     def _open_call(self, at: float) -> Span:
         if self.call is None:
-            if self.turn is None:
-                self._start_turn("", at)
-            self.calls += 1
-            started = self.ready_at if self.ready_at is not None else at
-            self.call = self.reader.add(Span(id=f"{self.turn}:llm:{self.calls}", kind=KIND_LLM,
-                                             name=str(self.model or "Model call"), start=min(started, at),
-                                             parent=self.turn, model=self.model,
+            if self.prompt is None:
+                self._start_prompt("", at)
+            started = min(self.ready_at if self.ready_at is not None else at, at)
+            turn = self._open_turn(f"{self.prompt}:turn:{self.loop + 1}", started, self.prompt)
+            self.call = self.reader.add(Span(id=f"{self.prompt}:llm:{self.loop}", kind=KIND_LLM,
+                                             name=str(self.model or "Model call"), start=started,
+                                             parent=turn.id, model=self.model,
                                              input=self.reader.clip("\n\n".join(p for p in self.pending_input if p))))
             if self.effort:
                 self.call.metadata["effort"] = self.effort
@@ -667,13 +722,14 @@ class _CodexParser(_Parser):
             parts.append(f"[reasoning]\n{summary}" if summary else "[encrypted reasoning]")
             call.metadata["reasoning"] = True
         elif kind in self._TOOL_CALLS:
-            self._tool_call(item, call, at)
-            parts.append(f"[tool call] {item.get('name') or kind}")
+            span = self._tool_call(item, call, at)
+            parts.append(f"[tool call] {span.name}\n{span.input or ''}")
         else:
             return
         call.output = self.reader.clip("\n\n".join(part for part in parts if part))
+        self._describe_turn(call)
 
-    def _tool_call(self, item: dict[str, Any], call: Span, at: float) -> None:
+    def _tool_call(self, item: dict[str, Any], call: Span, at: float) -> Span:
         call_id = str(item.get("call_id") or item.get("id") or f"{at}")
         name = str(item.get("name") or {"local_shell_call": "shell", "web_search_call": "web_search",
                                          "image_generation_call": "image_generation"}.get(item.get("type"), "tool"))
@@ -690,8 +746,9 @@ class _CodexParser(_Parser):
         agent = "spawn_agent" in name or name in ("delegate", "subagent")
         span = self.reader.add(Span(id=f"{self.key}:tool:{call_id}", kind=KIND_AGENT if agent else KIND_TOOL,
                                     name=f"{namespace}.{name}" if namespace else name, title=title, start=at,
-                                    parent=self.turn, input=self.reader.clip(_render(arguments)), preview=title))
+                                    parent=call.parent, input=self.reader.clip(_render(arguments)), preview=title))
         span.metadata = {"call": call.id, "callId": call_id}
+        call.metadata.setdefault("tools", []).append(span.name)
         if item.get("status") in ("failed", "incomplete") and item.get("type") == "web_search_call":
             span.close(at, STATUS_ERROR)
         elif item.get("type") in ("web_search_call", "image_generation_call"):
@@ -699,6 +756,7 @@ class _CodexParser(_Parser):
         self.tools[call_id] = span
         if len(self.tools) > 256:
             self.tools.pop(next(iter(self.tools)))
+        return span
 
     def _tool_output(self, item: dict[str, Any], at: float) -> None:
         span = self.tools.pop(str(item.get("call_id") or ""), None)
@@ -718,7 +776,7 @@ class _CodexParser(_Parser):
 
     def _compaction(self, at: float, summary: str) -> None:
         span = self.reader.add(Span(id=f"{self.key}:compact:{at}", kind=KIND_COMPACTION, name="Compaction",
-                                    start=at, parent=self.turn, output=self.reader.clip(summary) if summary else None,
+                                    start=at, parent=self.prompt, output=self.reader.clip(summary) if summary else None,
                                     preview="The conversation history was compacted"))
         span.close(at)
 
@@ -742,13 +800,15 @@ class TraceReader:
         self.prefix = f"c{index}"
         self.spans: dict[str, Span] = {}
         self.agent_tools: dict[str, str] = {}
+        # Codex threads spawned by this conversation and their rollout, once it exists.
+        self.codex_threads: dict[str, Path | None] = {}
         self.agent_meta: dict[str, dict[str, Any]] = {}
         self.agent_prompts: dict[str, str] = {}
         self.metadata: dict[str, Any] = {}
         self.title: str | None = None
         self.files: dict[Path, _File] = {}
         self.revision = 0
-        self.turns = 0
+        self.prompts = 0
         self.truncated = False
         settings = get_settings()
         self._limit = settings.trace_max_spans
@@ -787,9 +847,9 @@ class TraceReader:
         return next((span for span in reversed(self.spans.values())
                      if span.kind == kind and span.id.startswith(marker)), None)
 
-    def next_turn(self) -> int:
-        self.turns += 1
-        return self.turns
+    def next_prompt(self) -> int:
+        self.prompts += 1
+        return self.prompts
 
     def clip(self, text: str | None) -> str | None:
         return _clip(text, self._clip) if text else None
@@ -811,6 +871,14 @@ class TraceReader:
     def _discover(self, source: TraceSource) -> Iterable[tuple[Path, Callable[[], _Parser]]]:
         if source.format == "codex":
             yield source.path, lambda: _CodexParser(self, source.path, "codex")
+            # Threads spawned by the ones read so far (deeper spawns are found on the following reads).
+            sessions = source.path.parents[3]
+            for thread, path in list(self.codex_threads.items()):
+                if path is None:
+                    path = next(iter(sorted(sessions.glob(f"*/*/*/rollout-*{thread}.jsonl"))), None)
+                    self.codex_threads[thread] = path
+                if path is not None:
+                    yield path, lambda path=path, thread=thread: _CodexParser(self, path, f"x{thread[-8:]}", thread)
             return
         if not source.path.is_dir():
             return
@@ -937,37 +1005,49 @@ def _build(readers: Sequence[TraceReader], *, live: bool, revision: str) -> dict
 
     parents = {span.id: parent_of(span) for span in spans}
     reach: dict[str, float] = {}
-    turn_of: dict[str, str | None] = {}
+    prompt_of: dict[str, str | None] = {}
     for span in spans:
         point = span.end if span.end is not None else span.start
-        ancestor, turn = parents[span.id], span.id if span.kind == KIND_TURN else None
+        ancestor, prompt = parents[span.id], span.id if span.kind == KIND_PROMPT else None
         while ancestor is not None:
             if reach.get(ancestor, 0) < point:
                 reach[ancestor] = point
-            if by_id[ancestor].kind == KIND_TURN:
-                turn = ancestor
+            if by_id[ancestor].kind == KIND_PROMPT:
+                prompt = ancestor
             ancestor = parents.get(ancestor)
-        turn_of[span.id] = turn
-    last_turn = max((span for span in spans if span.kind == KIND_TURN and parents[span.id] is None),
+        prompt_of[span.id] = prompt
+    last_prompt = max((span for span in spans if span.kind == KIND_PROMPT and parents[span.id] is None),
                     key=lambda span: (span.start, span.sequence), default=None)
-    current_turn = last_turn.id if last_turn is not None and live else None
+    current_prompt = last_prompt.id if last_prompt is not None and live else None
+    children: dict[str, list[Span]] = {}
+    for span in spans:
+        if parents[span.id] is not None:
+            children.setdefault(parents[span.id], []).append(span)
 
     def status(span: Span) -> str:
+        if span.kind == KIND_TURN:
+            # A turn lasts while its model call or any tool it requested does; a failed tool stays its own error.
+            states = {status(child) for child in children.get(span.id, ())}
+            for state in (STATUS_RUNNING, STATUS_INTERRUPTED, STATUS_INCOMPLETE):
+                if state in states:
+                    return state
+            failed = any(child.kind == KIND_LLM and child.status == STATUS_ERROR for child in children.get(span.id, ()))
+            return STATUS_ERROR if failed else STATUS_OK
         if span.status != STATUS_RUNNING:
             return span.status
-        if span.kind == KIND_TURN:
-            return STATUS_RUNNING if span.id == current_turn else STATUS_OK
+        if span.kind == KIND_PROMPT:
+            return STATUS_RUNNING if span.id == current_prompt else STATUS_OK
         if span.end is not None:
             return STATUS_OK
-        return STATUS_RUNNING if current_turn and turn_of.get(span.id) == current_turn else STATUS_INCOMPLETE
+        return STATUS_RUNNING if current_prompt and prompt_of.get(span.id) == current_prompt else STATUS_INCOMPLETE
 
     rows: list[dict[str, Any]] = []
     for span in sorted(spans, key=lambda item: (item.start, item.sequence)):
         current = status(span)
         end = span.end
-        if span.id in reach and (span.kind in (KIND_TURN, KIND_AGENT, KIND_SKILL) or end is None):
+        if span.id in reach and (span.kind in (KIND_PROMPT, KIND_TURN, KIND_AGENT, KIND_SKILL) or end is None):
             end = max(end or span.start, reach[span.id])
-        if span.kind == KIND_TURN and end is None:
+        if span.kind in (KIND_PROMPT, KIND_TURN) and end is None:
             end = span.start
         row: dict[str, Any] = {"id": span.id, "parentId": parents[span.id], "kind": span.kind, "name": span.name,
                                "status": current, "startMs": round(span.start * 1000),
@@ -991,7 +1071,7 @@ def _summary(rows: Sequence[dict[str, Any]]) -> dict[str, Any]:
     totals = {"input": 0, "cacheRead": 0, "cacheWrite": 0, "output": 0, "reasoning": 0}
     models: dict[str, dict[str, Any]] = {}
     tools: dict[str, dict[str, Any]] = {}
-    counts = {kind: 0 for kind in (KIND_TURN, KIND_LLM, KIND_TOOL, KIND_AGENT, KIND_SKILL, KIND_HOOK,
+    counts = {kind: 0 for kind in (KIND_PROMPT, KIND_TURN, KIND_LLM, KIND_TOOL, KIND_AGENT, KIND_SKILL, KIND_HOOK,
                                    KIND_CONTEXT, KIND_COMPACTION, KIND_EVENT)}
     errors = 0
     peak = 0
@@ -1013,7 +1093,7 @@ def _summary(rows: Sequence[dict[str, Any]]) -> dict[str, Any]:
     for row in rows:
         kind = row["kind"]
         counts[kind] = counts.get(kind, 0) + 1
-        if row["status"] == STATUS_ERROR:
+        if row["status"] == STATUS_ERROR and kind != KIND_TURN:  # A failed turn is its failed model call.
             errors += 1
         usage = row.get("usage")
         if kind == KIND_LLM and usage:
