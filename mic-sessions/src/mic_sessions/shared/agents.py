@@ -720,6 +720,24 @@ class ClaudeAgentRuntime:
         self._awaiting_first_event_at = time.perf_counter()
         LOG.info("Claude turn submitted in %.0f ms", (time.perf_counter() - started_at) * 1000)
 
+    async def refresh_credential(self, credential: Credential) -> None:
+        """The platform renews a Claude sign-in token before it expires; a running client keeps the
+        token it was launched with, so a renewed one reconnects it, resuming the conversation."""
+        if credential.connection_id != self._credential.connection_id:
+            raise ApiException.conflict("The Claude account changed. Create a new session.")
+        if credential.token == self._credential.token or self._turn_active:
+            # Mid-turn the current token still has the renewal margin left; the next message swaps it.
+            return
+        previous, self._credential = self._credential, credential
+        if self._client is None:
+            return
+        try:
+            replacement = await self._connect_client(self._config, resume=self._conversation_id)
+        except BaseException:
+            self._credential = previous
+            raise
+        await self._replace_client(replacement)
+
     async def set_configuration(self, config: AgentConfig) -> AgentConfig:
         """Apply a validated configuration without inventing a successful state.
 
@@ -930,8 +948,8 @@ class ClaudeAgentRuntime:
         return self._client
 
     def _credential_env(self) -> dict[str, str]:
-        """Both credential modes carry a Claude PAT, so there is no branch on `mode` here.
-        Never log the returned dict."""
+        """Every Claude mode carries an OAuth access token (sign-in or setup-token), so there is no
+        branch on `mode` here: renewal belongs to the platform. Never log the returned dict."""
         return {"CLAUDE_CODE_OAUTH_TOKEN": self._credential.token}
 
     def _validate_workspace(self) -> Path:
@@ -1474,6 +1492,24 @@ class ClaudeCliAgentRuntime:
             raise
         self._awaiting_first_event_at = time.perf_counter()
         LOG.info("Claude CLI turn submitted in %.0f ms", (time.perf_counter() - started_at) * 1000)
+
+    async def refresh_credential(self, credential: Credential) -> None:
+        """The platform renews a Claude sign-in token before it expires; a running CLI keeps the token
+        it was launched with, so a renewed one relaunches it, resuming its saved conversation."""
+        if credential.connection_id != self._credential.connection_id:
+            raise ApiException.conflict("The Claude account changed. Create a new session.")
+        if credential.token == self._credential.token or self._turn_active:
+            # Mid-turn the current token still has the renewal margin left; the next message swaps it.
+            return
+        previous, self._credential = self._credential, credential
+        if self._cli is None:
+            return
+        try:
+            replacement = await self._connect(self._config)
+        except BaseException:
+            self._credential = previous
+            raise
+        await self._replace(replacement)
 
     async def set_configuration(self, config: AgentConfig) -> AgentConfig:
         """A model change is applied live (`set_model`); an effort is a launch flag, so the CLI is

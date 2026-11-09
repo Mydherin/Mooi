@@ -98,12 +98,9 @@ app:
     request-timeout-ms: ${GITHUB_REQUEST_TIMEOUT_MS:10000}
   agents:
     state-expires-in: ${AGENT_STATE_EXPIRES_IN:10m}
-    token-refresh-skew: ${AGENT_TOKEN_REFRESH_SKEW:5m}
+    # Claude sign-in tokens live 8h; renewing 1h early lets a turn started on one finish on it.
+    token-refresh-skew: ${AGENT_TOKEN_REFRESH_SKEW:1h}
     request-timeout-ms: ${AGENT_REQUEST_TIMEOUT_MS:10000}
     claude:
+      # Offers the Claude Code sign-in; false falls back to pasting a `claude setup-token` token.
       enabled: ${AGENT_CLAUDE_ENABLED:true}
-      client-id: ${AGENT_CLAUDE_CLIENT_ID:}
-      authorize-uri: ${AGENT_CLAUDE_AUTHORIZE_URI:}
-      token-uri: ${AGENT_CLAUDE_TOKEN_URI:}
-      scopes: ${AGENT_CLAUDE_SCOPES:}
-      redirect-uri: ${AGENT_CLAUDE_REDIRECT_URI:}

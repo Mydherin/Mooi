@@ -71,6 +71,11 @@ from it. Where they differ, this context wins over the current implementation (s
   development sessions (including the first dev deployment setup), production and backup chats, for every adapter.
 - Multiple provider accounts, including several of the same provider; sessions of one project may use the
   same or different accounts.
+- Provider accounts link by each provider's own sign-in: Claude like the Claude Code app (OAuth2 + PKCE,
+  the code Anthropic shows pasted back; a `claude setup-token` token only when operators turn sign-in
+  off, and for existing links), Codex by device code. The platform alone
+  renews sign-in tokens, so concurrent sessions of one account never race, and live sessions pick up a
+  renewed token on their next message.
 - **Agentic merge**: merging an outdated branch with conflicts makes the agent resolve them, preserving
   both sides' features.
 

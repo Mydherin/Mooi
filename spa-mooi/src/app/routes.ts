@@ -16,7 +16,6 @@ export const ROUTES = {
   backup: '/backups/:projectId',
   account: '/account',
   githubCallback: '/account/github/callback',
-  agentCallback: '/account/agents/:provider/callback',
   admin: '/admin',
   notFound: '*',
 } as const;

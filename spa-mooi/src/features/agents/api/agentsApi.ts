@@ -39,9 +39,9 @@ export const fetchAgentConnections = async (): Promise<AgentConnection[]> => {
 };
 
 /**
- * Opens the flow. The API answers with a ready-made URL carrying a state it signed for this
- * caller and provider, so nothing here has to know a client id or protect the round trip itself.
- * `409` means OAuth is not configured for this provider — the caller falls back to a pasted token.
+ * Opens the sign-in. The API answers with a ready-made URL and the state it signed for this caller
+ * and provider (it carries the PKCE verifier), so nothing here has to know a client id or protect the
+ * round trip itself. `409` means OAuth is turned off for this provider.
  */
 export const startAgentAuthorization = async (provider: string): Promise<AgentAuthorizationResponse> => {
   const response = await authenticatedFetch(authorizationPath(provider), { method: 'POST' });
@@ -53,7 +53,10 @@ export const startAgentAuthorization = async (provider: string): Promise<AgentAu
   return (await response.json()) as AgentAuthorizationResponse;
 };
 
-/** Redeems the authorization code. Sent with the caller's own token, which is what binds the link. */
+/**
+ * Redeems the code the provider showed (Claude shows `code#state`, sent as pasted). Sent with the
+ * caller's own token, which is what binds the link.
+ */
 export const completeAgentAuthorization = async (
   provider: string,
   code: string,

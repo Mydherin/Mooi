@@ -6,7 +6,6 @@ import { ProtectedRoute } from '@/shared/router/ProtectedRoute';
 import { RoleRoute } from '@/shared/router/RoleRoute';
 import { AccountPage } from '@/pages/AccountPage';
 import { AdminPage } from '@/pages/AdminPage';
-import { AgentCallbackPage } from '@/pages/AgentCallbackPage';
 import { GithubCallbackPage } from '@/pages/GithubCallbackPage';
 import { LoginPage } from '@/pages/LoginPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
@@ -52,7 +51,6 @@ export const router = createBrowserRouter([
           { path: ROUTES.backup, element: <ProjectBackupPage />, handle: immersive },
           { path: ROUTES.account, element: <AccountPage /> },
           { path: ROUTES.githubCallback, element: <GithubCallbackPage /> },
-          { path: ROUTES.agentCallback, element: <AgentCallbackPage /> },
           {
             element: <RoleRoute role="admin" />,
             children: [{ path: ROUTES.admin, element: <AdminPage /> }],

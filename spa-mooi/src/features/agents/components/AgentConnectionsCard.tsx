@@ -12,7 +12,7 @@ import { cn } from '@/shared/utils/cn';
 const accountTitle = (connection: AgentConnection) => connection.name || connection.accountLabel || connection.label;
 
 export const AgentConnectionsCard = () => {
-  const { providers, connections, status, error, busy, actionError, startOauth, connectToken,
+  const { providers, connections, status, error, busy, actionError, connectToken,
     disconnect, rename, setDefaultAccount, reload, clearActionError } = useAgentConnections();
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<AgentConnection | null>(null);
@@ -80,7 +80,7 @@ export const AgentConnectionsCard = () => {
     {actionError && !adding && !editing && <p role="alert" className="mt-4 text-sm text-danger">{actionError}</p>}
 
     {adding && <AddAgentAccountDialog providers={providers} busy={busy} actionError={actionError}
-      onClose={() => setAdding(false)} onConnected={reload} onConnectToken={connectToken} onStartOauth={startOauth} />}
+      onClose={() => setAdding(false)} onConnected={reload} onConnectToken={connectToken} />}
 
     <Modal open={editing !== null} onClose={() => setEditing(null)} title="Rename account"
       description="Choose a title to recognize this account."
