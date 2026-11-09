@@ -101,6 +101,9 @@ compactions and errors. It works with every adapter: Claude SDK, Claude CLI and 
   needs `MOOI_DEVELOPMENT_CLAUDE_TOKEN` (from `claude setup-token`) in `.env.local` + `make up`; offer it
   to the user, never invent it. Point the harness at **one session file's directory copy**, not a whole
   projects folder (a whole folder hits `TRACE_MAX_SPANS`).
+- D9 Filter semantics (F1): an active filter (kinds / errors / search) shows matches plus their ancestors and
+  ignores the collapsed set on that path, so a match is never hidden; without a filter, collapse applies.
+  Orphan spans (parent cut by the span cap) become roots. Reason: search must always reveal its hits.
 
 ## Technical specification
 
@@ -224,7 +227,7 @@ Status: `todo` · `doing` · `done`. Exactly one `doing` at a time.
 | B2 | `trace_sources()` on the protocol and the 3 runtimes (`agents.py`) | done |
 | B3 | Session wiring + 2 endpoints (`features/sessions.py`) | done |
 | B4 | Backend checks: `uvx ruff check src` (only new findings matter; `env.py` has a pre-existing I001), import check `python -c "import mic_sessions.main"` with 32-byte `SERVICE_TOKEN`/`JWT_SECRET` env | done |
-| F1 | Traces types + API + `lib/` helpers | todo |
+| F1 | Traces types + API + `lib/` helpers | done |
 | F2 | `useAgentTrace`, `useTraceSpanDetail`, keyboard + swipe hooks | todo |
 | F3 | `TracePanel`, summary strip, toolbar, timeline + rows (windowed) | todo |
 | F4 | Inspector (desktop pane + phone bottom sheet with gestures) + detail sections | todo |
@@ -262,3 +265,13 @@ Status: `todo` · `doing` · `done`. Exactly one `doing` at a time.
   `shared/traces.py` clean. `import mic_sessions.main` (+ `shared.traces`) OK with 32-byte env. Review of
   B0–B3 diffs: signatures match (`follow`/`archive`/`snapshot(live=)`/`detail`, `codex_rollout`,
   `codex.Account.home`), file I/O runs in `asyncio.to_thread`; no fixes needed, no code changed. Next: F1.
+- F1: `spa-mooi/src/features/traces/` — `types/` (one per file): `AgentTrace`, `TraceSpan`, `TraceSpanKind`,
+  `TraceSpanStatus`, `TraceUsage`, `TraceSummary` (startMs/endMs/cacheHitRate/peakContext nullable),
+  `TraceModelStat`, `TraceToolStat`, `TraceSpanDetail`, `TraceFilter` `{kinds, errorsOnly, query}`, `TraceNode`
+  `{span, depth, children, descendants}`, + `TraceTimeScale`, `TraceKindStyle`. `api/tracesApi.ts`:
+  `fetchTrace(sessionId, revision?) → AgentTrace | null` (204 → null), `fetchTraceSpan(sessionId, spanId)`.
+  `lib/`: `buildTraceTree(spans) → TraceNode[]` (roots), `flattenTraceTree(roots, collapsed: ReadonlySet<string>,
+  filter) → TraceNode[]` (D9), `spanMatchesFilter`, `isTraceFilterActive`, `traceKindStyle(kind, status?) →
+  {icon, label, text, chip, bar}`, `formatTokens(n|null)`, `formatSpanDuration(ms)`, `spanDuration(span, now)`,
+  `traceTimeScale(startMs, endMs, tickCount=5) → {startMs, endMs, durationMs, percent(ms), ticks}` (ticks = offsets
+  from start). `bunx tsc -b` passes (no ESLint config in `spa-mooi`). Next: F2.
