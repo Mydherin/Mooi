@@ -67,6 +67,9 @@ class Settings(BaseSettings):
     event_log_limit: int = Field(default=5000, gt=0)
     event_log_bytes: int = Field(default=8 * 1024 * 1024, gt=0)
     sse_heartbeat_seconds: int = Field(default=15, gt=0)
+    # Agent traces: spans kept per conversation, and characters kept of each span's input and output.
+    trace_max_spans: int = Field(default=5000, gt=0)
+    trace_detail_chars: int = Field(default=8000, ge=256)
     changes_debounce_seconds: float = Field(default=1.5, ge=0)
     # Dependency and cache directories hidden from Changes even when no .gitignore lists them.
     changes_excluded_directories: Annotated[list[str], NoDecode] = Field(default_factory=lambda: [

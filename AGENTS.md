@@ -159,6 +159,15 @@ from it. Where they differ, this context wins over the current implementation (s
 
 # Guidelines
 
+## Current work (temporary)
+
+- Active plan: [`docs/plans/AGENT_TRACES.md`](docs/plans/AGENT_TRACES.md) (agent traces / **Trace** tab).
+- Current task: the first task of its *Task board* not marked `done` (next: **B1**).
+- On a fresh session: read only that plan and continue from its current task; trust its decisions and
+  anchors, do not re-analyze. Update its task board and progress log after every task.
+- Before the session stops: update the plan (statuses, progress log, this pointer), then commit the work.
+- Remove this section once every task of the plan is done.
+
 ## Source of truth
 
 - Priority: **1.** the user's new request → **2.** *Context* → **3.** current implementation.
