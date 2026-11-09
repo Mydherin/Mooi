@@ -222,7 +222,7 @@ Status: `todo` · `doing` · `done`. Exactly one `doing` at a time.
 | B0 | `shared/traces.py` + settings in `env.py` | done |
 | B1 | Add `TRACE_MAX_SPANS` / `TRACE_DETAIL_CHARS` to `mic-sessions/.env.example` | done |
 | B2 | `trace_sources()` on the protocol and the 3 runtimes (`agents.py`) | done |
-| B3 | Session wiring + 2 endpoints (`features/sessions.py`) | todo |
+| B3 | Session wiring + 2 endpoints (`features/sessions.py`) | done |
 | B4 | Backend checks: `uvx ruff check src` (only new findings matter; `env.py` has a pre-existing I001), import check `python -c "import mic_sessions.main"` with 32-byte `SERVICE_TOKEN`/`JWT_SECRET` env | todo |
 | F1 | Traces types + API + `lib/` helpers | todo |
 | F2 | `useAgentTrace`, `useTraceSpanDetail`, keyboard + swipe hooks | todo |
@@ -250,3 +250,11 @@ Status: `todo` · `doing` · `done`. Exactly one `doing` at a time.
   `close()` `_config_dir` is `None`, so archive must run before close — D4). Codex keeps `_thread_path`
   from `thread_start` (`getattr(thread, "path", None)`), `trace_sources()` caches the found path as str;
   `[]` without account/thread. Ruff: same 9 pre-existing findings as HEAD; module imports. Next: B3.
+- B3: `features/sessions.py` — `traces` imported; `Session.trace` (default `SessionTrace`); `_provision` and
+  `_reset_conversation` call `session.trace.follow(runtime.trace_sources)` after `session.runtime = runtime`;
+  `_reset_conversation` archives before `previous.close()` (archive errors logged, never block the clear).
+  Endpoints (after `get_changes`, both owner-checked via `get_registry().get_for(caller, id)`):
+  `GET /sessions/{id}/trace?revision=` → `200` snapshot dict (wire contract above) or `204` when `revision`
+  matches; `GET /sessions/{id}/trace/spans/{span_id:path}` → `{"id","input","output","metadata"}` or `404
+  "Span not found"`. SPA calls them through the same sessions API base as `…/changes` (F1). Ruff: no new
+  findings in `sessions.py` (6 before, 6 after); `import mic_sessions.main` OK. Next: B4.

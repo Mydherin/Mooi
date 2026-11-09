@@ -55,7 +55,7 @@ from pydantic import (
     model_validator,
 )
 
-from mic_sessions.shared import images, mooi, previews, workspaces
+from mic_sessions.shared import images, mooi, previews, traces, workspaces
 from mic_sessions.shared.agents import (
     PROVIDERS,
     RECOVERABLE_DETAIL,
@@ -711,6 +711,8 @@ class Session:
     log: EventLog
     runtime: AgentRuntime | None
     deployment: DeploymentSnapshot
+    # Observability over the provider's native logs, one entry per conversation (Trace tab).
+    trace: traces.SessionTrace = field(default_factory=traces.SessionTrace, repr=False)
     agent_token: str = field(default_factory=lambda: secrets.token_urlsafe(32), repr=False)
     # The agent acts for its session's latest caller on the token-guarded agent endpoints.
     agent_caller: Caller | None = field(default=None, repr=False)
@@ -1326,6 +1328,7 @@ async def _provision(session: Session, caller: Caller, project: mooi.Project,
             environment=_session_environment(session),
         )
         session.runtime = runtime
+        session.trace.follow(runtime.trace_sources)
         await runtime.start()
 
         if session.closing:
@@ -1959,6 +1962,31 @@ async def get_changes(session_id: UUID, caller: Annotated[Caller, Depends(curren
             return _changes_error_payload(session)
 
 
+@router.get("/sessions/{session_id}/trace", response_model=None)
+async def get_trace(
+    session_id: UUID, caller: Annotated[Caller, Depends(current_caller)], revision: str | None = None
+) -> dict[str, Any] | Response:
+    """The session's agent trace; `204` while `revision` is still the current one."""
+    session = get_registry().get_for(caller, session_id)
+    live = session.status in (STATUS_WORKING, STATUS_WAITING, STATUS_COMPACTING)
+    snapshot = await session.trace.snapshot(live=live)
+    if revision is not None and snapshot.get("revision") == revision:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    return snapshot
+
+
+@router.get("/sessions/{session_id}/trace/spans/{span_id:path}")
+async def get_trace_span(
+    session_id: UUID, span_id: str, caller: Annotated[Caller, Depends(current_caller)]
+) -> dict[str, Any]:
+    """Full input, output and metadata of one trace span."""
+    session = get_registry().get_for(caller, session_id)
+    detail = await session.trace.detail(span_id)
+    if detail is None:
+        raise ApiException.not_found("Span not found")
+    return detail
+
+
 @router.get("/sessions/{session_id}/changes/file")
 async def get_file_diff(
     session_id: UUID, path: str, caller: Annotated[Caller, Depends(current_caller)]
@@ -2055,6 +2083,11 @@ async def _reset_conversation(session: Session, caller: Caller) -> AgentRuntime:
     context from the previous one, for every provider alike."""
     previous = _runtime(session)
     credential = await mooi.fetch_agent_credential(caller, str(session.connection_id))
+    # The runtime deletes its logs on close: keep the finished conversation in the trace first.
+    try:
+        await session.trace.archive()
+    except Exception:
+        LOG.warning("Session %s could not archive its trace", session.id, exc_info=True)
     await previous.close()
     session.runtime = None
     record(session, EVENT_SESSION_CLEARED, {})
@@ -2063,6 +2096,7 @@ async def _reset_conversation(session: Session, caller: Caller) -> AgentRuntime:
                              instructions=_session_instructions(session),
                              environment=_session_environment(session))
     session.runtime = runtime
+    session.trace.follow(runtime.trace_sources)
     try:
         await runtime.start()
     except Exception:
