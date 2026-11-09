@@ -109,6 +109,11 @@ compactions and errors. It works with every adapter: Claude SDK, Claude CLI and 
   `touch-action: pan-y` on the sheet (`none` on the grabber) or the browser cancels horizontal swipes to
   scroll. A `useTraceClock(running)` hook ticks `now` each second for running spans (FR7) without
   re-rendering finished traces. Reason: light payloads and smooth gestures (NFR efficiency / UX).
+- D11 Timeline interaction (F3): clicking a row selects it **and** opens the inspector; ↑/↓ only move the
+  selection (an open inspector follows it). The **Events** chip filters `event` + `compaction`; turns have no chip
+  (they show as parents of matches). While a filter is active rows render expanded and chevrons/←/→ do nothing
+  (D9 ignores the collapsed set). Rows stay 40px on every screen (fixed height keeps windowing exact; the whole
+  full-width row is the touch target). Reason: one predictable model for pointer, touch and keyboard.
 
 ## Technical specification
 
@@ -234,7 +239,7 @@ Status: `todo` · `doing` · `done`. Exactly one `doing` at a time.
 | B4 | Backend checks: `uvx ruff check src` (only new findings matter; `env.py` has a pre-existing I001), import check `python -c "import mic_sessions.main"` with 32-byte `SERVICE_TOKEN`/`JWT_SECRET` env | done |
 | F1 | Traces types + API + `lib/` helpers | done |
 | F2 | `useAgentTrace`, `useTraceSpanDetail`, keyboard + swipe hooks | done |
-| F3 | `TracePanel`, summary strip, toolbar, timeline + rows (windowed) | todo |
+| F3 | `TracePanel`, summary strip, toolbar, timeline + rows (windowed) | done |
 | F4 | Inspector (desktop pane + phone bottom sheet with gestures) + detail sections | todo |
 | F5 | Insights view (context chart, models, tools) | todo |
 | F6 | Tab integration: session workspace, production page, backup page | todo |
@@ -288,3 +293,15 @@ Status: `todo` · `doing` · `done`. Exactly one `doing` at a time.
   onClose})` (window keydown, skips fields/modifiers); `useSwipeGestures(element|null, {onSwipeLeft,
   onSwipeRight, onSwipeDown, onDrag(axis, offset), onDragEnd, canSwipeDown, threshold=60})` (axis lock at
   10px, pointer capture only once locked). `bunx tsc -b` passes. Next: F3.
+- F3: `components/` — `TracePanel({sessionId, active})` (named export only; F6 lazy-loads it with
+  `lazy(() => import(…).then((m) => ({ default: m.TracePanel })))`; keyed by session so state resets) = header (title,
+  live dot, conversations, `SegmentedControl` Timeline/Insights, refresh) → `TraceSummaryStrip({summary, live, now})`
+  → truncated / error banners → body grid. `TraceToolbar({filter, onFilterChange, counts, errors, onExpandAll,
+  onCollapseAll})`, `TraceTimeline({rows, scale, now, selectedId, collapsed, onSelect, onToggle})` (windowed, 40px,
+  overscan 8, sticky axis from `lg`, keeps selection in view), `TraceRow` (+ `TRACE_ROW_HEIGHT`), `TraceEmptyState({kind:
+  'loading'|'empty'|'error'|'noMatch', message?, onAction?})`; new `types/TraceView.ts`, `lib/collectParentIds.ts`.
+  **F4 slot**: in `TracePanel`, replace the module-level `inspectorSlot(span)` placeholder by `<TraceInspector …/>`
+  (state available: `sessionId`, `selectedSpan`, `trace.revision`, `live`, `now`, `rows`, `setSelectedId`,
+  `closeInspector`); when it renders non-null the body grid gets the `lg:` 420px column; the phone sheet is a portal.
+  **F5 slot**: replace the `insights` placeholder (an `EmptyState`) with `<TraceInsights trace={trace} … />`
+  (`openSpan(id)` + `setView('timeline')` to jump to a span). `bunx tsc -b` passes. Next: F4.
