@@ -53,6 +53,7 @@ _TITLE_CHARS = 120
 _AGENT_TOOLS = {"Agent", "Task"}
 _SKILL_TOOLS = {"Skill"}
 _INTERRUPTED_PREFIX = "[Request interrupted by user"
+_TASK_NOTIFICATION_PREFIX = "<task-notification>"
 # Claude Code attachments that tell the model something new; the rest is bookkeeping.
 _CLAUDE_CONTEXT_ATTACHMENTS = {
     "file": "Attached file",
@@ -230,6 +231,9 @@ class _ClaudeParser(_Parser):
             self._attachment(entry, at)
         elif kind == "system":
             self._system(entry, at)
+        elif kind == "api-request":
+            # Recent Claude Code versions log when the request leaves, after context is attached.
+            self.ready_at = at
 
     def _user(self, entry: dict[str, Any], at: float) -> None:
         message = entry.get("message") or {}
@@ -253,6 +257,11 @@ class _ClaudeParser(_Parser):
             return
         if text.startswith(_INTERRUPTED_PREFIX):
             self._interrupt(at)
+            return
+        origin = entry.get("origin")
+        if self._parent() and ((isinstance(origin, dict) and origin.get("kind") == "task-notification")
+                               or text.startswith(_TASK_NOTIFICATION_PREFIX)):
+            self._notification(entry, text, at)
             return
         if self.agent and self.turns == 0:
             # A sub-agent's first message is the prompt it was given.
@@ -433,6 +442,21 @@ class _ClaudeParser(_Parser):
                                         parent=self._parent(), output=self.reader.clip(text), preview=_line(text)))
             span.metadata = {"level": level}
             span.close(at, STATUS_ERROR if level == "error" or "error" in str(subtype) else STATUS_OK)
+
+    def _notification(self, entry: dict[str, Any], text: str, at: float) -> None:
+        """A background task (sub-agent, shell) reporting back: the platform wakes the agent with it, so it is
+        an event of the turn that started the task, not a prompt of the user's."""
+        summary = re.search(r"<summary>(.*?)</summary>", text, re.DOTALL)
+        status = re.search(r"<status>(.*?)</status>", text, re.DOTALL)
+        state = status.group(1).strip() if status else ""
+        span = self.reader.add(Span(id=f"{self.key}:notify:{entry.get('uuid')}", kind=KIND_EVENT,
+                                    name="Background task finished",
+                                    title=_line(summary.group(1) if summary else text, _TITLE_CHARS), start=at,
+                                    parent=self._parent(), output=self.reader.clip(text), preview=_line(text)))
+        span.metadata = {"origin": "task-notification", **({"status": state} if state else {})}
+        span.close(at, STATUS_ERROR if state in ("failed", "error") else STATUS_OK)
+        self.pending_input.append(text)
+        self.ready_at = at
 
     def _interrupt(self, at: float) -> None:
         for tool_id in tuple(self.open_tools):

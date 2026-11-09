@@ -126,6 +126,11 @@ compactions and errors. It works with every adapter: Claude SDK, Claude CLI and 
   model table). Hover previews, click/tap pins, ←/→ move; "Open in timeline" (and every error row) switches to the
   Timeline, expands the span's ancestors and opens the inspector. Reason: sub-agent prompts would distort the main
   context curve; bucketing by peak keeps thousands of calls light without hiding spikes.
+- D14 Claude background tasks (E2E): a `<task-notification>` user entry (`origin.kind = task-notification`,
+  e.g. a background sub-agent finishing) is an `event` span "Background task finished" inside the current turn,
+  not a new turn; its text feeds the next model call's input. A model call starts at Claude Code's `api-request`
+  entry when the log has one (after context is attached), else at the previous user/tool-result entry. Reason: the
+  user typed one prompt, so the trace shows one turn; model latency excludes context assembly.
 
 ## Technical specification
 
@@ -361,3 +366,11 @@ Status: `todo` · `doing` · `done`. Exactly one `doing` at a time.
   >500 kB main-chunk warning); `uvx ruff check src` → 25 findings, the pre-feature baseline (none in traces);
   `import mic_sessions.main` + `shared.traces` OK. `AGENTS.md`: *Current work* section removed, Trace bullet added
   under *Development sessions*. All tasks done.
+- E2E (live stack via `make up`, project Leffi, Sonnet 5.5 low): Claude SDK and Claude CLI sessions each ran
+  "list root, read README, summarize with a sub-agent". Checked live updates while running (FR7), timeline tree +
+  waterfall, token/model badges, sub-agent nesting with its own model call, filters (kind chip, errors only, search,
+  expand/collapse all), inspector (metrics, Input/Output/Metadata, copy, sheet ≤ lg / side pane on desktop),
+  Insights (context chart, tokens per model, tool ranking, errors), summary strip; 375×812 and 1440×900, light and
+  dark; no page overflow. Fixed in `shared/traces.py` (D14): background sub-agent notification showed as a raw-XML
+  "Turn 2"; model calls started before their context attachments. Not checked: Codex adapter, production/backup
+  Trace tabs (no production chat locally), compaction and interrupted turns. ruff 25 (baseline), `bun run build` OK.
