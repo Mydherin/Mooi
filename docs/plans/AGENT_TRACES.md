@@ -119,6 +119,13 @@ compactions and errors. It works with every adapter: Claude SDK, Claude CLI and 
   right/left on phones). The sheet's header is `touch-none` (swipe down always works there); its content is
   `touch-pan-y` and closes on swipe down only when scrolled to the top. Metadata starts collapsed. Reason: one
   mounted inspector, predictable gestures that never fight scrolling.
+- D13 Insights (F5): the context chart shows **main-conversation** requests by default (a Main / With sub-agents
+  switch appears when the trace has sub-agents), matching `peakContext`; above 240 requests consecutive ones are
+  bucketed and each bar is the bucket's largest request. Bars are plain SVG (no chart dependency) filled with
+  tokens: cache read `info-dot`, cache write `accent-dot`, new input `brand`, output `success-dot` (same parts in the
+  model table). Hover previews, click/tap pins, ←/→ move; "Open in timeline" (and every error row) switches to the
+  Timeline, expands the span's ancestors and opens the inspector. Reason: sub-agent prompts would distort the main
+  context curve; bucketing by peak keeps thousands of calls light without hiding spikes.
 
 ## Technical specification
 
@@ -246,7 +253,7 @@ Status: `todo` · `doing` · `done`. Exactly one `doing` at a time.
 | F2 | `useAgentTrace`, `useTraceSpanDetail`, keyboard + swipe hooks | done |
 | F3 | `TracePanel`, summary strip, toolbar, timeline + rows (windowed) | done |
 | F4 | Inspector (desktop pane + phone bottom sheet with gestures) + detail sections | done |
-| F5 | Insights view (context chart, models, tools) | todo |
+| F5 | Insights view (context chart, models, tools) | done |
 | F6 | Tab integration: session workspace, production page, backup page | todo |
 | F7 | `cd spa-mooi && bun run build` (tsc + vite) passes | todo |
 | V1 | Temporary harness (see D8): JSON from real logs → DEV page; check desktop + mobile, light + dark, gestures, overflow; fix issues | todo |
@@ -318,3 +325,9 @@ Status: `todo` · `doing` · `done`. Exactly one `doing` at a time.
   420px column; phones: portal sheet (backdrop, grabber, body scroll lock, focus, drag follow, D12). New
   `hooks/useWideLayout.ts`, `lib/prettyTraceText.ts`, `lib/formatSpanOffset.ts`; `TracePanel` renders the inspector
   in the F4 slot (placeholder removed). `bunx tsc -b` passes. Next: F5.
+- F5: `components/TraceInsights({trace, onOpenSpan})` (cards: Context per request full width, Tokens per model + Tools
+  side by side from `xl`, Errors full width; scrolls, safe-area bottom) with `TraceContextChart({bars, onOpenSpan})`,
+  `TraceModelTable({models})`, `TraceToolRanking({tools})` (Calls / Time switch), `TraceErrorList({errors, traceStartMs,
+  onOpenSpan, limit=50})`; new `types/TraceContextBar.ts`, `lib/traceContextBars.ts` (D13), `lib/formatTokenShare.ts`.
+  `TracePanel` renders it in the F5 slot (`openFromInsights` = expand ancestors + Timeline + inspector; placeholder and
+  `EmptyState` import removed). `bunx tsc -b` passes. Next: F6.

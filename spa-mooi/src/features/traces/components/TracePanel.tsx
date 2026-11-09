@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { BarChart3, ListTree, RotateCw, TriangleAlert } from 'lucide-react';
+import { TraceInsights } from '@/features/traces/components/TraceInsights';
 import { TraceInspector } from '@/features/traces/components/TraceInspector';
 import { TraceEmptyState } from '@/features/traces/components/TraceEmptyState';
 import { TraceSummaryStrip } from '@/features/traces/components/TraceSummaryStrip';
@@ -16,7 +17,6 @@ import { traceTimeScale } from '@/features/traces/lib/traceTimeScale';
 import type { TraceFilter } from '@/features/traces/types/TraceFilter';
 import type { TraceView } from '@/features/traces/types/TraceView';
 import { Button } from '@/shared/components/Button';
-import { EmptyState } from '@/shared/components/EmptyState';
 import { IconButton } from '@/shared/components/IconButton';
 import { SegmentedControl } from '@/shared/components/SegmentedControl';
 import { StatusDot } from '@/shared/components/StatusDot';
@@ -118,14 +118,20 @@ const TracePanelBody = ({ sessionId, active }: TracePanelProps) => {
     />
   ) : null;
 
-  /*
-   * F5 slot — the Insights view: replace this placeholder with
-   *   <TraceInsights trace={trace} onOpenSpan={(spanId) => { setView('timeline'); openSpan(spanId); }} />
-   */
-  const insights: ReactNode = (
-    <div className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-4 py-6">
-      <EmptyState icon={BarChart3} title="Insights" description="Context size per request, tokens per model and tool rankings." />
-    </div>
+  const openFromInsights = useCallback(
+    (spanId: string) => {
+      // Expand the span's ancestors so the timeline can scroll it into view.
+      const byId = new Map((spans ?? []).map((span) => [span.id, span]));
+      const ancestors = new Set<string>();
+      for (let id = byId.get(spanId)?.parentId; id && !ancestors.has(id); id = byId.get(id)?.parentId) ancestors.add(id);
+      setCollapsed((current) => {
+        if (![...ancestors].some((id) => current.has(id))) return current;
+        return new Set([...current].filter((id) => !ancestors.has(id)));
+      });
+      setView('timeline');
+      openSpan(spanId);
+    },
+    [openSpan, spans],
   );
 
   if (!trace) {
@@ -208,7 +214,7 @@ const TracePanelBody = ({ sessionId, active }: TracePanelProps) => {
               {timeline}
             </>
           ) : (
-            insights
+            <TraceInsights trace={trace} onOpenSpan={openFromInsights} />
           )}
         </div>
         {inspector}
