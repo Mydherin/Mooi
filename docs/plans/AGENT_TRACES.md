@@ -257,7 +257,7 @@ Status: `todo` · `doing` · `done`. Exactly one `doing` at a time.
 | F6 | Tab integration: session workspace, production page, backup page | done |
 | F7 | `cd spa-mooi && bun run build` (tsc + vite) passes | done |
 | V1 | Temporary harness (see D8): JSON from real logs → DEV page; check desktop + mobile, light + dark, gestures, overflow; fix issues | done |
-| V2 | Remove harness, final build/lint, update `AGENTS.md` Context, remove *Current work* pointer, report | todo |
+| V2 | Remove harness, final build/lint, update `AGENTS.md` Context, remove *Current work* pointer, report | done |
 
 ## Progress log
 
@@ -355,3 +355,9 @@ Status: `todo` · `doing` · `done`. Exactly one `doing` at a time.
   `spa-mooi/trace-harness.local.html`, `spa-mooi/src/traceHarness.local.tsx`, `spa-mooi/public/trace-harness.local/`
   (JSON copies; git-ignored by `*.local`); outside the repo: `.claude/launch.json` entry `spa-vite`
   (pre-existing, untracked, reused) and the scratchpad generator. Next: V2.
+- V2: stopped the V1 harness dev server (vite :5199); deleted `spa-mooi/trace-harness.local.html`,
+  `spa-mooi/src/traceHarness.local.tsx`, `spa-mooi/public/trace-harness.local/` and the V1 scratchpad generator +
+  JSON; kept the pre-existing `.claude/launch.json` entry `spa-vite`. `bun run build` passes (only the pre-existing
+  >500 kB main-chunk warning); `uvx ruff check src` → 25 findings, the pre-feature baseline (none in traces);
+  `import mic_sessions.main` + `shared.traces` OK. `AGENTS.md`: *Current work* section removed, Trace bullet added
+  under *Development sessions*. All tasks done.

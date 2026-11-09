@@ -63,6 +63,10 @@ from it. Where they differ, this context wins over the current implementation (s
   side by side, phones show them one after the other.
 - KPIs per session and provider account: context size, session limits, weekly limits, other usage metrics.
 - Model and thinking-effort selection per session.
+- A **Trace** tab, like Langfuse / LangSmith, shows every internal step of the agent: turns, LLM calls with
+  tokens, cache and context size per request, tool calls, nested sub-agents, skills, hooks, injected context,
+  compactions and errors, as a live timeline with an inspector and usage insights. Available in development
+  sessions (including the first dev deployment setup), production and backup chats, for every adapter.
 - Multiple provider accounts, including several of the same provider; sessions of one project may use the
   same or different accounts.
 - **Agentic merge**: merging an outdated branch with conflicts makes the agent resolve them, preserving
@@ -158,15 +162,6 @@ from it. Where they differ, this context wins over the current implementation (s
 - **Dictation**: local push-to-talk speech-to-text in every agent chat composer.
 
 # Guidelines
-
-## Current work (temporary)
-
-- Active plan: [`docs/plans/AGENT_TRACES.md`](docs/plans/AGENT_TRACES.md) (agent traces / **Trace** tab).
-- Current task: the first task of its *Task board* not marked `done` (next: **B1**).
-- On a fresh session: read only that plan and continue from its current task; trust its decisions and
-  anchors, do not re-analyze. Update its task board and progress log after every task.
-- Before the session stops: update the plan (statuses, progress log, this pointer), then commit the work.
-- Remove this section once every task of the plan is done.
 
 ## Source of truth
 
