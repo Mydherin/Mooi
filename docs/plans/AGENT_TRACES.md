@@ -255,7 +255,7 @@ Status: `todo` · `doing` · `done`. Exactly one `doing` at a time.
 | F4 | Inspector (desktop pane + phone bottom sheet with gestures) + detail sections | done |
 | F5 | Insights view (context chart, models, tools) | done |
 | F6 | Tab integration: session workspace, production page, backup page | done |
-| F7 | `cd spa-mooi && bun run build` (tsc + vite) passes | todo |
+| F7 | `cd spa-mooi && bun run build` (tsc + vite) passes | done |
 | V1 | Temporary harness (see D8): JSON from real logs → DEV page; check desktop + mobile, light + dark, gestures, overflow; fix issues | todo |
 | V2 | Remove harness, final build/lint, update `AGENTS.md` Context, remove *Current work* pointer, report | todo |
 
@@ -336,3 +336,4 @@ Status: `todo` · `doing` · `done`. Exactly one `doing` at a time.
   `ProductionTab` / `BackupTab` += `'trace'`; `ProjectDeploymentPage` / `ProjectBackupPage` — tab after Changes when
   `chat` exists, lazy `<TracePanel key={chat.id} sessionId={chat.id} active />` rendered only while that tab is open
   (same pattern as their Changes tab). `bunx tsc -b` passes. Next: F7.
+- F7: `bun run build` (tsc -b + vite) passes unchanged (`TracePanel` lazy chunk ~48 kB; only the pre-existing >500 kB main-chunk warning). The SPA has no linter configured. Reviewed traces hooks/API and the F6 integration (no hidden pane whitelists): no fixes needed. `dist/` is git-ignored. Next: V1.
