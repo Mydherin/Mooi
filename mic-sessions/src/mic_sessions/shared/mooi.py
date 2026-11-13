@@ -49,6 +49,8 @@ class Credential:
     expires_at: datetime | None
     connection_id: str | None = None
     save: Callable[[str], Awaitable[None]] | None = field(default=None, repr=False)
+    # Reports that the provider ended this sign-in, so the account page asks the player to sign in again.
+    expire: Callable[[], Awaitable[None]] | None = field(default=None, repr=False)
     session_model: str | None = None
     session_effort: str | None = None
     # The platform's default adapter for this provider; None is the provider's first one.
@@ -408,6 +410,14 @@ async def fetch_agent_credential(caller: Caller, connection_id: str) -> Credenti
         )
         _raise_for_status(response, "Agent connection changed; reconnect the session")
 
+    async def expire() -> None:
+        response = await get_http_client().put(
+            f"{settings.mooi_api_base_url}/me/agents/{body['provider']}/credential/expired",
+            headers=_service_headers(caller),
+            json={"connectionId": body.get("connectionId")},
+        )
+        _raise_for_status(response, "Agent connection changed; reconnect the session")
+
     return Credential(
         provider=body["provider"],
         mode=body["mode"],
@@ -417,13 +427,17 @@ async def fetch_agent_credential(caller: Caller, connection_id: str) -> Credenti
         session_effort=body.get("sessionEffort"),
         session_adapter=body.get("sessionAdapter"),
         save=save if body["provider"] == "codex" else None,
+        expire=expire if body["provider"] == "codex" else None,
         expires_at=datetime.fromisoformat(expires_at) if expires_at else None,
     )
 
 
-async def link_codex(caller: Caller, token: str, account_label: str | None, name: str) -> None:
+async def link_codex(caller: Caller, token: str, account_label: str | None, name: str,
+                     connection_id: str | None = None) -> None:
+    """Saves a Codex sign-in as a new account, or into `connection_id` when signing an account in again."""
     response = await get_http_client().post(
         f"{get_settings().mooi_api_base_url}/me/agents/codex/device-connection",
-        headers=_service_headers(caller), json={"token": token, "accountLabel": account_label, "name": name},
+        headers=_service_headers(caller),
+        json={"token": token, "accountLabel": account_label, "name": name, "connectionId": connection_id},
     )
     _raise_for_status(response, "Could not save the Codex connection")

@@ -7,11 +7,14 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.http.HttpStatus;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Component;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -48,7 +51,8 @@ import lombok.Setter;
  * {@code auth.json}) to {@code mic-sessions} on request; the browser never holds it. Claude is linked by
  * the Claude Code sign-in (OAuth2 + PKCE, the code pasted back from Anthropic's page), whose short-lived
  * token this feature renews: it is the only holder of the refresh token, so concurrent sessions of one
- * account never race to rotate it. Tokens pasted from {@code claude setup-token} keep working. Every
+ * account never race to rotate it, and it keeps every grant renewed in the background, so an account
+ * stays signed in for as long as Anthropic keeps the grant alive — exactly like Claude Code. Tokens pasted from {@code claude setup-token} keep working. Every
  * mode is recorded in the same table, distinguished only by {@link Agents.Mode}.
  *
  * <p>Self-contained by architecture: API, application logic, persistence and contracts live in this
@@ -75,13 +79,15 @@ public class AgentConnectionFeature {
 
     /**
      * The code is redeemed for the caller on this request, never for whoever the state claims. It may
-     * arrive as Anthropic's callback page shows it, {@code code#state}.
+     * arrive as Anthropic's callback page shows it, {@code code#state}. With a {@code connectionId} the
+     * grant repairs that existing account (a sign-in again) instead of adding one.
      */
     @PostMapping("/me/agents/{provider}/connection")
     @Auth.Authenticated
     public AgentConnectionPayload connectOauth(@PathVariable String provider,
             @Valid @RequestBody OauthConnectRequest request, Auth.Principal principal) {
-        return agentConnectionService.connectOauth(principal.player().id(), provider, request.code(), request.state(), request.name());
+        return agentConnectionService.connectOauth(principal.player().id(), provider, request.code(), request.state(),
+                request.name(), request.connectionId());
     }
 
     /** Always recorded as {@code setup_token}: this door never produces an OAuth-mode row. */
@@ -157,6 +163,19 @@ public class AgentConnectionFeature {
         agentConnectionService.refreshCredential(principal.player().id(), provider, request);
     }
 
+    /**
+     * A session reports that the provider ended a sign-in it renews itself (Codex): the account page
+     * then asks the player to sign in again, instead of the next session failing unexplained.
+     */
+    @PutMapping("/me/agents/{provider}/credential/expired")
+    @Auth.Authenticated
+    @Auth.ServiceCall
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void expireCredential(@PathVariable String provider,
+                                 @Valid @RequestBody ExpiredCredentialRequest request, Auth.Principal principal) {
+        agentConnectionService.expireCredential(principal.player().id(), provider, request.connectionId());
+    }
+
     // --- application ---
 
     /**
@@ -226,29 +245,49 @@ public class AgentConnectionFeature {
          * <p>The state is checked against the caller and the provider, not merely against our own
          * signature: a perfectly valid state minted for somebody else, or for a different provider,
          * is exactly the attack this parameter exists to stop, and only this request knows both.
+         *
+         * <p>Anthropic's page shows {@code code#state}, and that pasted state wins over the one the
+         * client sends: it is the one the authorization was issued for, signed and bound to this caller.
+         * A phone that reloaded the app while the player signed in (an installed PWA coming back from
+         * Safari) has minted a new attempt by then, and its code must still redeem.
+         *
+         * <p>With {@code connectionId} the grant replaces the credential of that account rather than
+         * adding one, so its sessions, title and default selection carry on.
          */
         @Transactional
-        public AgentConnectionPayload connectOauth(UUID playerId, String provider, String code, String state, String name) {
+        public AgentConnectionPayload connectOauth(UUID playerId, String provider, String code, String state, String name,
+                                                   UUID connectionId) {
             Agents.Provider agentProvider = settings.find(provider).orElseThrow(Agents.AgentsException::unknownProvider);
-            Agents.StateCodec.StateClaims claims = stateCodec.verify(state);
-            if (!claims.playerId().equals(playerId) || !claims.provider().equals(provider)) {
-                throw Agents.AgentsException.invalidState();
-            }
-            // Anthropic's page shows `code#state`: the state half must be the one this attempt minted.
             String pasted = code.strip();
             int separator = pasted.indexOf('#');
-            if (separator >= 0 && !pasted.substring(separator + 1).strip().equals(state)) {
+            String pastedState = separator >= 0 ? pasted.substring(separator + 1).strip() : "";
+            String attemptState = !pastedState.isEmpty() ? pastedState : state;
+            if (attemptState == null || attemptState.isBlank()) {
+                throw Agents.AgentsException.invalidState();
+            }
+            Agents.StateCodec.StateClaims claims = stateCodec.verify(attemptState);
+            if (!claims.playerId().equals(playerId) || !claims.provider().equals(provider)) {
                 throw Agents.AgentsException.invalidState();
             }
             String authorizationCode = separator >= 0 ? pasted.substring(0, separator).strip() : pasted;
             if (authorizationCode.isEmpty()) {
                 throw Agents.AgentsException.invalidToken();
             }
-            Agents.OAuthClient.Tokens grant = oauthClient.exchangeCode(agentProvider, authorizationCode, state,
-                    claims.codeVerifier());
-            AgentConnection saved = create(playerId, agentProvider, Agents.Mode.OAUTH, toGrant(grant), name);
-            Agents.LOG.info("Player {} linked agent provider {} ({})", playerId, agentProvider.id(),
-                    Agents.Mode.OAUTH.wire());
+            AgentConnection existing = null;
+            if (connectionId != null) {
+                existing = agentConnectionRepository.findLockedByPlayerIdAndId(playerId, connectionId)
+                        .filter(connection -> connection.getProvider().equals(agentProvider.id()))
+                        .orElseThrow(Agents.AgentsException::reauthorize);
+            } else if (cleanName(name) == null) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Account title is required");
+            }
+            Grant grant = toGrant(oauthClient.exchangeCode(agentProvider, authorizationCode, attemptState,
+                    claims.codeVerifier()));
+            AgentConnection saved = existing == null
+                    ? create(playerId, agentProvider, Agents.Mode.OAUTH, grant, name)
+                    : relink(existing, grant, name);
+            Agents.LOG.info("Player {} {} agent provider {} ({})", playerId, existing == null ? "linked" : "signed in again to",
+                    agentProvider.id(), Agents.Mode.OAUTH.wire());
             return toPayload(saved);
         }
 
@@ -295,14 +334,38 @@ public class AgentConnectionFeature {
             return toPayload(saved);
         }
 
+        /**
+         * Records a Codex sign-in. With {@code connectionId} it signs that existing account in again:
+         * title and default selection stay, and the credential id changes so the sessions still holding
+         * the ended sign-in stop renewing it over the new one and ask for a new session.
+         */
         @Transactional
         public AgentConnectionPayload connectDevice(UUID playerId, DeviceConnectRequest request) {
             Agents.Provider provider = settings.find("codex").orElseThrow(Agents.AgentsException::unknownProvider);
             if (request.token().length() > 65536 || request.accountLabel() != null && request.accountLabel().length() > 255) {
                 throw Agents.AgentsException.invalidToken();
             }
-            return toPayload(create(playerId, provider, Agents.Mode.DEVICE_OAUTH,
-                    new Grant(request.token(), null, null, null, request.accountLabel()), request.name()));
+            Grant grant = new Grant(request.token(), null, null, null, request.accountLabel());
+            if (request.connectionId() == null) {
+                return toPayload(create(playerId, provider, Agents.Mode.DEVICE_OAUTH, grant, request.name()));
+            }
+            AgentConnection connection = agentConnectionRepository.findLockedByPlayerIdAndId(playerId, request.connectionId())
+                    .filter(existing -> existing.getProvider().equals(provider.id()))
+                    .orElseThrow(Agents.AgentsException::reauthorize);
+            connection.setCredentialId(UUID.randomUUID());
+            connection.setMode(Agents.Mode.DEVICE_OAUTH.wire());
+            applyGrant(connection, grant);
+            Agents.LOG.info("Player {} signed in again to agent provider {} ({})", playerId, provider.id(),
+                    Agents.Mode.DEVICE_OAUTH.wire());
+            return toPayload(agentConnectionRepository.save(connection));
+        }
+
+        /** Idempotent: an account already flagged, relinked meanwhile or gone is left as it is. */
+        @Transactional
+        public void expireCredential(UUID playerId, String provider, UUID credentialId) {
+            if (agentConnectionRepository.markStale(playerId, provider, credentialId) == 1) {
+                Agents.LOG.warn("Agent provider {} ended a sign-in of player {}; it needs a new sign-in", provider, playerId);
+            }
         }
 
         @Transactional
@@ -420,46 +483,122 @@ public class AgentConnectionFeature {
             return cleaned;
         }
 
+        /** The OAuth connections whose token is due for renewal, soonest first, for the keeper. */
+        public List<UUID> renewalDue(int limit) {
+            return agentConnectionRepository.findRenewalDue(Agents.Mode.OAUTH.wire(),
+                    OffsetDateTime.now(clock).plus(settings.getTokenRefreshSkew()), Pageable.ofSize(limit));
+        }
+
+        /**
+         * Renews one connection in the background, under the same row lock as {@link #credential}, and
+         * only if it is still due once locked: another instance, or a session asking for it, may have
+         * renewed it meanwhile. A failure is already recorded by {@link #renew} and retried next run.
+         */
+        @Transactional(noRollbackFor = Agents.AgentsException.class)
+        public void renewIfDue(UUID connectionId) {
+            agentConnectionRepository.findLockedById(connectionId)
+                    .filter(connection -> Agents.Mode.OAUTH.wire().equals(connection.getMode()) && !connection.isStale())
+                    .filter(this::renewalDue)
+                    .ifPresent(connection -> settings.find(connection.getProvider()).ifPresent(provider -> {
+                        try {
+                            renew(connection, provider);
+                        } catch (Agents.AgentsException exception) {
+                            // Logged and recorded by renew; the next run retries an outage.
+                        }
+                    }));
+        }
+
+        private boolean renewalDue(AgentConnection connection) {
+            OffsetDateTime expiresAt = connection.getAccessTokenExpiresAt();
+            return expiresAt != null && !expiresAt.isAfter(OffsetDateTime.now(clock).plus(settings.getTokenRefreshSkew()));
+        }
+
         /**
          * Renews an OAuth credential shortly before it expires, so nothing downstream is handed a
-         * token that dies mid-flight.
+         * token that dies mid-flight. Claude Code's own rule: a sign-in ends only when the provider
+         * refuses the refresh token, never because renewal failed for a while.
          *
-         * <p>A refusal marks the row {@code stale} and throws {@link Agents.AgentsException#reauthorize()}
-         * rather than destroying it: the link is still a fact, and the player only needs to
-         * re-authorize to repair it.
+         * <p>A token that still works is handed out whatever renewal answered — the keeper retries an
+         * outage, and a refused grant is already flagged for the player to sign in again. Only a token
+         * past its expiry fails the call: with {@link Agents.AgentsException#reauthorize()} when the
+         * grant is refused, with the outage itself (retryable) otherwise.
          */
         private AgentConnection ensureFreshToken(AgentConnection connection, Agents.Provider provider) {
-            OffsetDateTime expiresAt = connection.getAccessTokenExpiresAt();
-            if (expiresAt == null || expiresAt.isAfter(OffsetDateTime.now(clock).plus(settings.getTokenRefreshSkew()))) {
+            if (!renewalDue(connection)) {
                 return connection;
             }
+            try {
+                return renew(connection, provider);
+            } catch (Agents.AgentsException exception) {
+                if (connection.getAccessTokenExpiresAt().isAfter(OffsetDateTime.now(clock))) {
+                    return connection;
+                }
+                throw exception;
+            }
+        }
+
+        /**
+         * Spends the refresh token for a new grant. The refresh token rotates on every renewal, so a
+         * grant renewed regularly never lapses. A definitive refusal marks the row {@code stale} and
+         * throws {@link Agents.AgentsException#reauthorize()} rather than destroying it: the link is
+         * still a fact, and signing in again repairs it. An outage leaves the row as it was.
+         */
+        private AgentConnection renew(AgentConnection connection, Agents.Provider provider) {
             String refreshToken = secretBox.decrypt(connection.getRefreshToken());
             if (refreshToken == null) {
-                Agents.LOG.warn("Agent connection of player {} for provider {} has no refresh token to renew with",
-                        connection.getPlayerId(), provider.id());
+                Agents.LOG.warn("Agent connection {} of player {} has no refresh token to renew with",
+                        connection.getId(), connection.getPlayerId());
                 markStale(connection);
                 throw Agents.AgentsException.reauthorize();
             }
             try {
-                Agents.OAuthClient.Tokens renewed = oauthClient.refresh(provider, refreshToken);
+                Agents.OAuthClient.Tokens renewed = oauthClient.refresh(provider, refreshToken, connection.getScope());
                 // Some providers omit fields on renewal rather than rotating them: keep what was there.
-                Grant grant = new Grant(renewed.accessToken(), renewed.accessTokenExpiresAt(),
+                applyGrant(connection, new Grant(renewed.accessToken(), renewed.accessTokenExpiresAt(),
                         renewed.refreshToken() != null ? renewed.refreshToken() : refreshToken,
                         renewed.scope() != null ? renewed.scope() : connection.getScope(),
-                        renewed.accountLabel() != null ? renewed.accountLabel() : connection.getAccountLabel());
-                connection.setAccessToken(secretBox.encrypt(grant.accessToken()));
-                connection.setAccessTokenExpiresAt(grant.accessTokenExpiresAt());
-                connection.setRefreshToken(secretBox.encrypt(grant.refreshToken()));
-                connection.setScope(grant.scope());
-                connection.setAccountLabel(grant.accountLabel());
-                connection.setStale(false);
+                        renewed.accountLabel() != null ? renewed.accountLabel() : connection.getAccountLabel()));
                 return agentConnectionRepository.save(connection);
             } catch (Agents.AgentsException exception) {
-                Agents.LOG.warn("Unable to renew the agent credential of player {} for provider {}: {}",
-                        connection.getPlayerId(), provider.id(), exception.getReason());
+                if (!exception.isDefinitive()) {
+                    Agents.LOG.warn("Agent connection {} of player {} could not be renewed yet: {}",
+                            connection.getId(), connection.getPlayerId(), exception.getReason());
+                    throw exception;
+                }
+                Agents.LOG.warn("Agent connection {} of player {} was refused renewal ({}); it needs a new sign-in",
+                        connection.getId(), connection.getPlayerId(), exception.getOauthError());
                 markStale(connection);
                 throw Agents.AgentsException.reauthorize();
             }
+        }
+
+        /**
+         * A new sign-in into an existing account. Signing in to a different account than before
+         * changes its credential id, so live sessions see the account change instead of silently
+         * switching subscription mid-conversation.
+         */
+        private AgentConnection relink(AgentConnection connection, Grant grant, String name) {
+            String previous = connection.getAccountLabel();
+            if (previous != null && grant.accountLabel() != null && !previous.equalsIgnoreCase(grant.accountLabel())) {
+                connection.setCredentialId(UUID.randomUUID());
+            }
+            if (cleanName(name) != null) {
+                connection.setName(cleanName(name));
+            }
+            connection.setMode(Agents.Mode.OAUTH.wire());
+            applyGrant(connection, grant);
+            return agentConnectionRepository.save(connection);
+        }
+
+        private void applyGrant(AgentConnection connection, Grant grant) {
+            connection.setAccessToken(secretBox.encrypt(grant.accessToken()));
+            connection.setAccessTokenExpiresAt(grant.accessTokenExpiresAt());
+            connection.setRefreshToken(secretBox.encrypt(grant.refreshToken()));
+            connection.setScope(grant.scope());
+            if (grant.accountLabel() != null) {
+                connection.setAccountLabel(grant.accountLabel());
+            }
+            connection.setStale(false);
         }
 
         private void markStale(AgentConnection connection) {
@@ -483,6 +622,33 @@ public class AgentConnectionFeature {
             return new AgentConnectionPayload(connection.getId(), connection.getProvider(), label, connection.getName(), connection.getMode(),
                     connection.getAccountLabel(), connection.getScope(), connection.getConnectedAt(),
                     connection.getAccessTokenExpiresAt(), connection.isStale(), connection.getId().equals(defaultId));
+        }
+    }
+
+    /**
+     * Keeps every Claude sign-in alive, the way a Claude Code that is always open does: each grant is
+     * renewed shortly before its access token expires, whether or not a session is running, so the
+     * refresh token keeps rotating and never lapses from disuse. Sessions then always find a fresh token,
+     * and a grant the provider revoked is flagged on the account page before anyone tries to use it.
+     */
+    @Component
+    @RequiredArgsConstructor
+    public static class AgentTokenKeeper {
+
+        /** Bounds one run; a larger backlog simply carries over to the next one. */
+        private static final int BATCH = 200;
+
+        private final AgentConnectionService agentConnectionService;
+
+        @Scheduled(cron = "${app.agents.token-renewal-cron}")
+        public void renewDueTokens() {
+            for (UUID connectionId : agentConnectionService.renewalDue(BATCH)) {
+                try {
+                    agentConnectionService.renewIfDue(connectionId);
+                } catch (RuntimeException exception) {
+                    Agents.LOG.warn("Background renewal of agent connection {} failed", connectionId, exception);
+                }
+            }
         }
     }
 
@@ -598,12 +764,26 @@ public class AgentConnectionFeature {
         @Query("select c from AgentConnection c where c.playerId = :playerId and c.id = :id")
         Optional<AgentConnection> findLockedByPlayerIdAndId(UUID playerId, UUID id);
 
+        @Lock(LockModeType.PESSIMISTIC_WRITE)
+        @Query("select c from AgentConnection c where c.id = :id")
+        Optional<AgentConnection> findLockedById(UUID id);
+
+        /** Live grants expiring before {@code threshold}; a stale one waits for its player to sign in again. */
+        @Query("select c.id from AgentConnection c where c.mode = :mode and c.stale = false "
+                + "and c.accessTokenExpiresAt < :threshold order by c.accessTokenExpiresAt")
+        List<UUID> findRenewalDue(String mode, OffsetDateTime threshold, Pageable page);
+
         // The identity check and update must be atomic with a concurrent disconnect/relink.
         @Modifying
-        @Query("update AgentConnection c set c.accessToken = :token "
+        @Query("update AgentConnection c set c.accessToken = :token, c.stale = false "
                 + "where c.playerId = :playerId and c.provider = 'codex' "
                 + "and c.mode = 'device_oauth' and c.credentialId = :connectionId")
         int refreshCodex(UUID playerId, UUID connectionId, String token);
+
+        @Modifying
+        @Query("update AgentConnection c set c.stale = true where c.playerId = :playerId "
+                + "and c.provider = :provider and c.credentialId = :credentialId and c.stale = false")
+        int markStale(UUID playerId, String provider, UUID credentialId);
     }
 
     // --- contracts ---
@@ -644,10 +824,19 @@ public class AgentConnectionFeature {
     public record AgentConnectionsResponse(List<AgentConnectionPayload> connections) {
     }
 
-    public record OauthConnectRequest(@NotBlank String code, @NotBlank String state, @NotBlank String name) {
+    /**
+     * {@code state} may be omitted when {@code code} is pasted as {@code code#state}. {@code name} is
+     * required for a new account; {@code connectionId} signs an existing account in again instead.
+     */
+    public record OauthConnectRequest(@NotBlank String code, String state, String name, UUID connectionId) {
     }
 
-    public record DeviceConnectRequest(@NotBlank String token, String accountLabel, @NotBlank String name) { }
+    /** {@code connectionId} signs that existing account in again instead of adding one. */
+    public record DeviceConnectRequest(@NotBlank String token, String accountLabel, @NotBlank String name,
+                                       UUID connectionId) { }
+
+    /** The credential id a session was handed ({@code CredentialPayload.connectionId}). */
+    public record ExpiredCredentialRequest(@jakarta.validation.constraints.NotNull UUID connectionId) { }
 
     public record RefreshCredentialRequest(@NotBlank String token,
             @jakarta.validation.constraints.NotNull UUID connectionId) { }

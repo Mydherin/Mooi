@@ -121,7 +121,7 @@ public class Agents {
      * provider's runtime expects on its process environment.
      */
     public record Provider(String id, String label, boolean oauthEnabled, String clientId, String authorizeUri,
-                           String tokenUri, String scopes, String redirectUri, String envVar) {
+                           String tokenUri, String scopes, String refreshScopes, String redirectUri, String envVar) {
     }
 
     // --- errors ---
@@ -133,8 +133,21 @@ public class Agents {
      */
     public static class AgentsException extends ResponseStatusException {
 
+        /** The OAuth {@code error} code of a refusal ({@code invalid_grant}, {@code invalid_scope}...), else null. */
+        @Getter
+        private final String oauthError;
+        /** True when the provider refused the grant itself, so retrying the same request cannot succeed. */
+        @Getter
+        private final boolean definitive;
+
         private AgentsException(HttpStatus status, String reason) {
+            this(status, reason, null, false);
+        }
+
+        private AgentsException(HttpStatus status, String reason, String oauthError, boolean definitive) {
             super(status, reason);
+            this.oauthError = oauthError;
+            this.definitive = definitive;
         }
 
         /** No provider registered under that id. */
@@ -153,9 +166,10 @@ public class Agents {
         }
 
         /** The provider refused the grant — a spent code, a revoked token, a mismatched redirect URI. */
-        public static AgentsException rejected(String description) {
-            LOG.warn("The agent provider refused the authorization: {}", description);
-            return new AgentsException(HttpStatus.BAD_REQUEST, "The agent provider refused the authorization");
+        public static AgentsException rejected(String oauthError, String description) {
+            LOG.warn("The agent provider refused the authorization: {} ({})", oauthError, description);
+            return new AgentsException(HttpStatus.BAD_REQUEST, "The agent provider refused the authorization",
+                    oauthError, true);
         }
 
         /**
@@ -167,7 +181,7 @@ public class Agents {
          */
         public static AgentsException reauthorize() {
             return new AgentsException(HttpStatus.CONFLICT,
-                    "Your agent provider authorization is no longer valid, please connect again");
+                    "Your agent provider authorization is no longer valid, please connect again", null, true);
         }
 
         /** The agent provider is unreachable, slow or broken. Distinct from a refusal: retrying may work. */
@@ -205,6 +219,12 @@ public class Agents {
         /** The scopes of a Claude Code subscription sign-in, so sessions get every capability it has. */
         private static final String CLAUDE_SCOPES = "org:create_api_key user:profile user:inference "
                 + "user:sessions:claude_code user:mcp_servers user:file_upload user:plugins";
+        /**
+         * What Claude Code asks for when it renews a subscription sign-in: every scope above but
+         * {@code org:create_api_key}, a Console scope the refresh grant refuses ({@code invalid_scope}).
+         */
+        private static final String CLAUDE_REFRESH_SCOPES = "user:profile user:inference "
+                + "user:sessions:claude_code user:mcp_servers user:file_upload user:plugins";
 
         @Getter
         private final Duration stateExpiresIn;
@@ -226,8 +246,9 @@ public class Agents {
             this.requestTimeout = Duration.ofMillis(requestTimeoutMs);
 
             Provider claude = new Provider("claude", "Claude", claudeOauthEnabled, CLAUDE_CLIENT_ID,
-                    CLAUDE_AUTHORIZE_URI, CLAUDE_TOKEN_URI, CLAUDE_SCOPES, CLAUDE_REDIRECT_URI, CLAUDE_ENV_VAR);
-            Provider codex = new Provider("codex", "Codex", false, null, null, null, null, null, null);
+                    CLAUDE_AUTHORIZE_URI, CLAUDE_TOKEN_URI, CLAUDE_SCOPES, CLAUDE_REFRESH_SCOPES, CLAUDE_REDIRECT_URI,
+                    CLAUDE_ENV_VAR);
+            Provider codex = new Provider("codex", "Codex", false, null, null, null, null, null, null, null);
             this.providers = Map.of(claude.id(), claude, codex.id(), codex);
         }
 
@@ -390,7 +411,7 @@ public class Agents {
 
         private static final String ACCEPT_HEADER = "Accept";
         private static final String JSON = "application/json";
-            private static final int MAX_SCOPE_LENGTH = 512;
+        private static final int MAX_SCOPE_LENGTH = 512;
         private static final int MAX_ACCOUNT_LABEL_LENGTH = 255;
         private static final int MAX_ERROR_LENGTH = 256;
 
@@ -436,18 +457,37 @@ public class Agents {
                     "code_verifier", codeVerifier)));
         }
 
-        /** Some providers rotate the refresh token on renewal, some do not; a missing one keeps the old. */
-        public Tokens refresh(Provider provider, String refreshToken) {
+        /**
+         * Renews a grant exactly as Claude Code does: the provider's refresh scopes first and, when the
+         * grant refuses them ({@code invalid_scope}), once more with the scopes it was actually granted.
+         * The refresh token rotates on every renewal; a response without one keeps the old.
+         */
+        public Tokens refresh(Provider provider, String refreshToken, String grantedScope) {
+            String requested = provider.refreshScopes() != null ? provider.refreshScopes() : provider.scopes();
+            try {
+                return refreshWith(provider, refreshToken, requested);
+            } catch (AgentsException exception) {
+                if (!"invalid_scope".equals(exception.getOauthError()) || grantedScope == null
+                        || grantedScope.isBlank() || grantedScope.equals(requested)) {
+                    throw exception;
+                }
+                LOG.info("Renewing an agent credential with its granted scopes after invalid_scope");
+                return refreshWith(provider, refreshToken, grantedScope);
+            }
+        }
+
+        private Tokens refreshWith(Provider provider, String refreshToken, String scope) {
             return readTokens(post(provider.tokenUri(), Map.of(
                     "grant_type", "refresh_token",
                     "client_id", provider.clientId(),
                     "refresh_token", refreshToken,
-                    "scope", provider.scopes() == null ? "" : provider.scopes())));
+                    "scope", scope == null ? "" : scope)));
         }
 
         /**
-         * A 4xx other than 429 is the provider refusing the grant (a spent code, a revoked refresh
-         * token), so it is read as a refusal, not as an outage: retrying would not help, re-authorizing does.
+         * A 400 or 401 is the provider refusing the grant (a spent code, a revoked or expired refresh
+         * token): retrying would not help, re-authorizing does. Anything else — a 403 from an edge
+         * proxy, a 429, a 5xx, a network failure — is an outage the next attempt may get past.
          */
         private String post(String tokenUri, Map<String, String> fields) {
             HttpRequest request = HttpRequest.newBuilder(URI.create(tokenUri))
@@ -458,8 +498,10 @@ public class Agents {
                     .build();
             try {
                 HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-                if (response.statusCode() / 100 == 4 && response.statusCode() != 429) {
-                    throw AgentsException.rejected("the token endpoint answered " + response.statusCode());
+                if (response.statusCode() == 400 || response.statusCode() == 401) {
+                    String[] error = oauthError(response.body());
+                    throw AgentsException.rejected(error[0] != null ? error[0] : "http_" + response.statusCode(),
+                            error[1] != null ? error[1] : "the token endpoint answered " + response.statusCode());
                 }
                 if (response.statusCode() / 100 != 2) {
                     throw AgentsException.unavailable("the token endpoint answered " + response.statusCode());
@@ -476,10 +518,9 @@ public class Agents {
         /** The {@code error} field is read first: some providers refuse a grant with a 200 status. */
         private Tokens readTokens(String body) {
             JsonNode node = readJson(body);
-            String error = text(node, "error", MAX_ERROR_LENGTH);
-            if (error != null) {
-                String description = text(node, "error_description", MAX_ERROR_LENGTH);
-                throw AgentsException.rejected(description != null ? description : error);
+            String[] error = oauthError(node);
+            if (error[0] != null) {
+                throw AgentsException.rejected(error[0], error[1]);
             }
             String accessToken = text(node, "access_token");
             if (accessToken == null) {
@@ -494,6 +535,29 @@ public class Agents {
             }
             return new Tokens(accessToken, expiresAt(node, "expires_in"), text(node, "refresh_token"),
                     text(node, "scope", MAX_SCOPE_LENGTH), accountLabel);
+        }
+
+        /**
+         * The OAuth error code and description of a refusal: {@code error} is a string per RFC 6749,
+         * or an object whose {@code type} is the code, as Anthropic's endpoint sometimes answers.
+         */
+        private String[] oauthError(String body) {
+            try {
+                return oauthError(objectMapper.readTree(body));
+            } catch (JacksonException | IllegalArgumentException exception) {
+                return new String[] {null, null};
+            }
+        }
+
+        private static String[] oauthError(JsonNode node) {
+            if (node == null || !node.isObject()) {
+                return new String[] {null, null};
+            }
+            JsonNode error = node.get("error");
+            if (error != null && error.isObject()) {
+                return new String[] {text(error, "type", MAX_ERROR_LENGTH), text(error, "message", MAX_ERROR_LENGTH)};
+            }
+            return new String[] {text(node, "error", MAX_ERROR_LENGTH), text(node, "error_description", MAX_ERROR_LENGTH)};
         }
 
         private JsonNode readJson(String body) {

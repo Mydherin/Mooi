@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import tempfile
 import time
@@ -18,6 +19,9 @@ from openai_codex.models import UnknownNotification
 
 from mic_sessions.shared.browser import playwright_server
 from mic_sessions.shared.mooi import Credential
+from mic_sessions.shared.web import ApiException
+
+LOG = logging.getLogger("sessions")
 
 
 def decline(method: str) -> dict[str, Any]:
@@ -284,15 +288,43 @@ def release(account: Account):
         account.directory.cleanup()
 
 
+# What the Codex CLI answers when ChatGPT refused its refresh token: only a new sign-in repairs it.
+_SIGNED_OUT = ("sign in again", "refresh token was rejected")
+
+
+def _signed_out(error: BaseException) -> bool:
+    message = str(error).lower()
+    return any(marker in message for marker in _SIGNED_OUT)
+
+
+async def _report_signed_out(account: Account) -> ApiException:
+    """Flags the account for its player, then fails the call with what to do about it."""
+    if account.credential.expire is not None:
+        try:
+            await account.credential.expire()
+        except Exception:
+            LOG.warning("Could not flag Codex connection %s as signed out", account.credential.connection_id,
+                        exc_info=True)
+    return ApiException.conflict("Your Codex sign-in has ended. Sign in again from your account page.")
+
+
 async def open_client(account: Account, cwd: Path, handler=None) -> tuple[Client, str]:
     """Starts an app-server on the account's latest credential, refreshed and persisted under the
-    account lock; returns it with the credential it holds."""
+    account lock; returns it with the credential it holds. A sign-in ChatGPT ended is reported to the
+    platform, so the account page shows it instead of the next session failing unexplained."""
     client = Client(account.home, cwd, handler)
     async with account.lock:
         await client.start()
         try:
             # Serialize refresh-token rotation and storage, not the entire conversation.
-            await client.call("account_read", {"refreshToken": True})
+            try:
+                state = await client.call("account_read", {"refreshToken": True})
+            except Exception as error:
+                if _signed_out(error):
+                    raise await _report_signed_out(account) from None
+                raise
+            if state.account is None and state.requires_openai_auth:
+                raise await _report_signed_out(account)
             await account.persist()
         except BaseException:
             await asyncio.shield(client.close())

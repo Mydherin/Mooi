@@ -4,8 +4,10 @@ import type { CodexAuthorization } from '@/features/agents/types/CodexAuthorizat
 
 const path = '/agents/codex/authorization';
 
-export const startCodexAuthorization = async (name: string): Promise<CodexAuthorization> => {
-  const response = await sessionsFetch(`${path}?name=${encodeURIComponent(name)}`, { method: 'POST' });
+/** A `connectionId` signs that existing account in again instead of adding one. */
+export const startCodexAuthorization = async (name: string, connectionId?: string): Promise<CodexAuthorization> => {
+  const query = new URLSearchParams({ name, ...(connectionId ? { connectionId } : {}) });
+  const response = await sessionsFetch(`${path}?${query}`, { method: 'POST' });
   if (!response.ok) throw new Error(await apiErrorMessage(response, 'Could not start Codex login.'));
   return response.json();
 };

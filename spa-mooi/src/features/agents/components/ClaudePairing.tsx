@@ -8,6 +8,8 @@ import { useAgentsStore } from '@/stores/agentsStore';
 interface ClaudePairingProps {
   provider: string;
   name: string;
+  /** Signs this existing account in again instead of adding one. */
+  connectionId?: string;
   onConnected: () => void;
 }
 
@@ -16,7 +18,7 @@ interface ClaudePairingProps {
  * paste back here (Claude Code's client only redirects to that page). The code is redeemed by the API
  * with the state it signed, so this component never handles a token.
  */
-export const ClaudePairing = ({ provider, name, onConnected }: ClaudePairingProps) => {
+export const ClaudePairing = ({ provider, name, connectionId, onConnected }: ClaudePairingProps) => {
   const [attempt, setAttempt] = useState<AgentAuthorizationResponse | null>(null);
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
@@ -34,7 +36,7 @@ export const ClaudePairing = ({ provider, name, onConnected }: ClaudePairingProp
     if (!attempt || !code.trim()) return;
     setBusy(true);
     setError(null);
-    completeAgentAuthorization(provider, code.trim(), attempt.state, name)
+    completeAgentAuthorization(provider, code.trim(), attempt.state, name, connectionId)
       .then((connection) => {
         useAgentsStore.getState().upsertConnection(connection);
         onConnected();
@@ -62,7 +64,8 @@ export const ClaudePairing = ({ provider, name, onConnected }: ClaudePairingProp
         <KeyRound className="size-4 shrink-0 text-ink-subtle" />
         <input value={code} onChange={(event) => setCode(event.target.value)} disabled={busy}
           onKeyDown={(event) => { if (event.key === 'Enter') connect(); }}
-          placeholder="Paste the code" autoComplete="off" spellCheck={false}
+          placeholder="Paste the code" autoComplete="off" autoCapitalize="none" autoCorrect="off" spellCheck={false}
+          enterKeyHint="done"
           className="h-full min-w-0 flex-1 bg-transparent text-sm text-ink outline-none" />
       </span>
     </label>
@@ -70,6 +73,6 @@ export const ClaudePairing = ({ provider, name, onConnected }: ClaudePairingProp
       {busy ? 'Connecting…' : 'Connect account'}
     </Button>
     {error && <p role="alert" className="text-sm text-danger">{error}</p>}
-    <p className="text-xs text-ink-subtle">The code works once and expires after a few minutes.</p>
+    <p className="text-xs text-ink-subtle">The code works once and expires after a few minutes. If the app reloads while you sign in, reopen this step and paste it all the same.</p>
   </div>;
 };

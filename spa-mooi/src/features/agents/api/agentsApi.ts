@@ -54,19 +54,21 @@ export const startAgentAuthorization = async (provider: string): Promise<AgentAu
 };
 
 /**
- * Redeems the code the provider showed (Claude shows `code#state`, sent as pasted). Sent with the
- * caller's own token, which is what binds the link.
+ * Redeems the code the provider showed (Claude shows `code#state`, sent as pasted: its state wins, so
+ * a page reloaded mid sign-in still links). Sent with the caller's own token, which is what binds the
+ * link. A `connectionId` signs that existing account in again instead of adding one.
  */
 export const completeAgentAuthorization = async (
   provider: string,
   code: string,
   state: string,
   name: string,
+  connectionId?: string,
 ): Promise<AgentConnection> => {
   const response = await authenticatedFetch(connectionPath(provider), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ code, state, name }),
+    body: JSON.stringify({ code, state, name, connectionId }),
   });
 
   if (!response.ok) {

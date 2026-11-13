@@ -1,6 +1,8 @@
-import { useState } from 'react';
-import { Bot, Pencil, Plus, RefreshCw, Star, TriangleAlert, Unlink } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Bot, LogIn, Pencil, Plus, RefreshCw, Star, TriangleAlert, Unlink } from 'lucide-react';
 import { AddAgentAccountDialog } from '@/features/agents/components/AddAgentAccountDialog';
+import { ClaudePairing } from '@/features/agents/components/ClaudePairing';
+import { CodexPairing } from '@/features/agents/components/CodexPairing';
 import { useAgentConnections } from '@/features/agents/hooks/useAgentConnections';
 import type { AgentConnection } from '@/features/agents/types/AgentConnection';
 import type { AgentProvider } from '@/features/agents/types/AgentProvider';
@@ -16,12 +18,32 @@ const accountTitle = (connection: AgentConnection) => connection.name || connect
 const usesLegacyToken = (connection: AgentConnection, providers: AgentProvider[]) =>
   connection.mode === 'setup_token' && providers.some((provider) => provider.id === connection.provider && provider.oauthEnabled);
 
+/**
+ * Accounts the provider's sign-in can repair in place: an ended sign-in (Claude or Codex device code),
+ * or a deprecated setup token.
+ */
+const canSignInAgain = (connection: AgentConnection, providers: AgentProvider[]) => {
+  const provider = providers.find((entry) => entry.id === connection.provider);
+  const signsIn = Boolean(provider && (provider.oauthEnabled || provider.modes.includes('device_oauth')));
+  return signsIn && (connection.stale || usesLegacyToken(connection, providers));
+};
+
 export const AgentConnectionsCard = () => {
   const { providers, connections, status, error, busy, actionError, connectToken,
     disconnect, rename, setDefaultAccount, reload, clearActionError } = useAgentConnections();
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<AgentConnection | null>(null);
+  const [signingIn, setSigningIn] = useState<AgentConnection | null>(null);
   const [name, setName] = useState('');
+
+  // The list is loaded once per shell mount, and an installed app stays mounted for days: re-read it
+  // whenever this page is shown or comes back to the foreground, so an expired sign-in is visible here.
+  useEffect(() => {
+    reload();
+    const onVisible = () => { if (document.visibilityState === 'visible') reload(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [reload]);
 
   return <Card className="p-5 sm:p-6">
     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -61,10 +83,17 @@ export const AgentConnectionsCard = () => {
             {connection.stale && <span className="inline-flex items-center gap-1 text-warning"><TriangleAlert className="size-3" /> Needs attention</span>}
             {usesLegacyToken(connection, providers) && <span className="inline-flex items-center gap-1 text-warning"><TriangleAlert className="size-3" /> Deprecated</span>}
           </p>
-          {usesLegacyToken(connection, providers) && <p className="mt-1 text-xs text-ink-muted">
-            Linked with a setup token, a deprecated method: it expires and cannot be renewed. Add this account
-            again with {connection.label} sign-in, then disconnect this one.
+          {connection.stale && <p className="mt-1 text-xs text-ink-muted">
+            The {connection.label} sign-in of this account has expired. Sign in again to repair it, no need to remove it.
           </p>}
+          {usesLegacyToken(connection, providers) && <p className="mt-1 text-xs text-ink-muted">
+            Linked with a setup token, a deprecated method: it expires and cannot be renewed. Sign in again
+            with {connection.label} to keep this account renewed automatically.
+          </p>}
+          {canSignInAgain(connection, providers) && <Button variant="secondary" size="sm" className="mt-2" disabled={busy}
+            onClick={() => { clearActionError(); setSigningIn(connection); }}>
+            <LogIn className="size-4" /> Sign in again
+          </Button>}
         </div>
         {/* Icon actions keep the account name readable on phones; the labels live in title and aria-label. */}
         <div className="flex shrink-0 items-center gap-1.5">
@@ -91,6 +120,16 @@ export const AgentConnectionsCard = () => {
 
     {adding && <AddAgentAccountDialog providers={providers} busy={busy} actionError={actionError}
       onClose={() => setAdding(false)} onConnected={reload} onConnectToken={connectToken} />}
+
+    <Modal open={signingIn !== null} onClose={() => setSigningIn(null)}
+      title={signingIn ? `Sign in again to ${accountTitle(signingIn)}` : 'Sign in again'}
+      description="The account is repaired in place: its title and default selection are kept.">
+      {signingIn && (signingIn.mode === 'device_oauth'
+        ? <CodexPairing name={accountTitle(signingIn)} connectionId={signingIn.id}
+          onConnected={() => { setSigningIn(null); reload(); }} />
+        : <ClaudePairing provider={signingIn.provider} name={signingIn.name ?? ''} connectionId={signingIn.id}
+          onConnected={() => { setSigningIn(null); reload(); }} />)}
+    </Modal>
 
     <Modal open={editing !== null} onClose={() => setEditing(null)} title="Rename account"
       description="Choose a title to recognize this account."

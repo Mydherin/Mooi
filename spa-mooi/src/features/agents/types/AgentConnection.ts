@@ -4,8 +4,8 @@ import type { AgentConnectionMode } from '@/features/agents/types/AgentConnectio
  * An agent-provider credential linked to the signed-in player, exactly as the API reports it.
  *
  * No token material of any kind: the browser never needs the credential itself, so it is never
- * given one. `stale` is `true` when an OAuth credential expired and refresh failed — the player
- * repairs it with one click, the row is not deleted.
+ * given one. `stale` is `true` once the provider refused to renew an OAuth credential — the player
+ * signs in again into the same row with one click, the row is not deleted.
  */
 export interface AgentConnection {
   id: string;

@@ -22,6 +22,8 @@ router = APIRouter()
 class Attempt:
     owner: str
     name: str = ""
+    # The existing account a sign-in again repairs; None adds a new account.
+    connection_id: str | None = None
     task: asyncio.Task | None = None
     state: str = "pending"
     client: Client | None = None
@@ -68,7 +70,8 @@ async def _login(attempt: Attempt):
 
 @router.post("/agents/codex/authorization")
 async def start(caller: Annotated[Caller, Depends(current_caller)],
-                name: Annotated[str, Query(min_length=1, max_length=100)]):
+                name: Annotated[str, Query(min_length=1, max_length=100)],
+                connection_id: Annotated[str | None, Query(alias="connectionId", max_length=64)] = None):
     name = name.strip()
     if not name:
         raise ApiException.bad_request("An account title is required")
@@ -83,7 +86,7 @@ async def start(caller: Annotated[Caller, Depends(current_caller)],
     if len(_attempts) >= 32:
         raise ApiException(429, "Too many login attempts. Try again later.")
     key = uuid4().hex
-    attempt = Attempt(owner, name=name, ready=asyncio.get_running_loop().create_future())
+    attempt = Attempt(owner, name=name, connection_id=connection_id, ready=asyncio.get_running_loop().create_future())
     _attempts[key] = attempt
     attempt.task = asyncio.create_task(_login(attempt))
     try:
@@ -117,7 +120,7 @@ async def status(key: str, caller: Annotated[Caller, Depends(current_caller)]):
             account = await attempt.client.call("account_read", {"refreshToken": True})
             label = getattr(account.account.root, "email", None) if account.account else None
             home = attempt.client.home
-            await link_codex(caller, (home / "auth.json").read_text(), label, attempt.name)
+            await link_codex(caller, (home / "auth.json").read_text(), label, attempt.name, attempt.connection_id)
             attempt.state = "connected"
         except Exception:
             attempt.state = "failed"

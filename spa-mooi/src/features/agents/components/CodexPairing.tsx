@@ -5,10 +5,12 @@ import type { CodexAuthorization } from '@/features/agents/types/CodexAuthorizat
 
 interface CodexPairingProps {
   name: string;
+  /** Signs this existing account in again instead of adding one. */
+  connectionId?: string;
   onConnected: () => void;
 }
 
-export const CodexPairing = ({ name, onConnected }: CodexPairingProps) => {
+export const CodexPairing = ({ name, connectionId, onConnected }: CodexPairingProps) => {
   const [attempt, setAttempt] = useState<CodexAuthorization | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -31,7 +33,7 @@ export const CodexPairing = ({ name, onConnected }: CodexPairingProps) => {
         } else timer = setTimeout(() => void poll(), 2000);
       } catch (cause) { fail(cause); }
     };
-    const startTimer = setTimeout(() => void startCodexAuthorization(name.trim()).then((value) => {
+    const startTimer = setTimeout(() => void startCodexAuthorization(name.trim(), connectionId).then((value) => {
       current = value;
       if (disposed) { void cancelCodexAuthorization(value.id).catch(() => {}); return; }
       setAttempt(value);

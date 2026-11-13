@@ -97,10 +97,14 @@ app:
     token-refresh-skew: ${GITHUB_TOKEN_REFRESH_SKEW:5m}
     request-timeout-ms: ${GITHUB_REQUEST_TIMEOUT_MS:10000}
   agents:
-    state-expires-in: ${AGENT_STATE_EXPIRES_IN:10m}
+    # Time to finish a sign-in on Anthropic's page; phones may detour through e-mail for a code.
+    state-expires-in: ${AGENT_STATE_EXPIRES_IN:30m}
     # Claude sign-in tokens live 8h; renewing 1h early lets a turn started on one finish on it.
     token-refresh-skew: ${AGENT_TOKEN_REFRESH_SKEW:1h}
-    request-timeout-ms: ${AGENT_REQUEST_TIMEOUT_MS:10000}
+    # Every sign-in is renewed in the background once due, keeping it alive like an open Claude Code.
+    token-renewal-cron: ${AGENT_TOKEN_RENEWAL_CRON:0 */10 * * * *}
+    # Claude Code gives the token endpoint 30s: a renewal cut short may already have rotated the token.
+    request-timeout-ms: ${AGENT_REQUEST_TIMEOUT_MS:30000}
     claude:
       # Offers the Claude Code sign-in; false falls back to pasting a `claude setup-token` token.
       enabled: ${AGENT_CLAUDE_ENABLED:true}

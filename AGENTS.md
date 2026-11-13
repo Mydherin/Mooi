@@ -75,7 +75,9 @@ from it. Where they differ, this context wins over the current implementation (s
   the code Anthropic shows pasted back; a `claude setup-token` token only when operators turn sign-in
   off, and for existing links), Codex by device code. The platform alone
   renews sign-in tokens, so concurrent sessions of one account never race, and live sessions pick up a
-  renewed token on their next message.
+  renewed token on their next message. It renews every sign-in in the background as Claude Code does, so
+  an account stays signed in as long as the provider keeps the grant; an outage never signs it out, and
+  an account the provider did sign out is flagged on the account page and signed in again in place.
 - **Agentic merge**: merging an outdated branch with conflicts makes the agent resolve them, preserving
   both sides' features.
 
