@@ -1,6 +1,5 @@
 # TODOs
 
-- [ ] Langfuse view over session, to debug
 - [ ] Microphone expiration
 - [ ] So times when I make production deployment it says fetching but it do not show more logs until I reload
 - [ ] Apply dnd in todos list with better pattern, about grabbing 1.5 secs in any place to enable in the row
@@ -12,6 +11,7 @@
 - [ ] Say how diff commits from main to previous release
 - [ ] Upgrade playwright
 - [ ] Shared deployments between some users
+- [x] Langfuse view over session, to debug
 - [x] Do not close session with proper refresh token after 30 days without connection
 - [x] Remove the legacy body refresh token transport (AUTH_LEGACY_BODY_TOKEN_ENABLED, LegacyRefreshRequest, legacyRefreshToken.ts) at least 30 days after the persistent-sessions release
 - [x] Adjust ui/ux pattern with proper number in status in todos view
