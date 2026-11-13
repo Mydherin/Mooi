@@ -1,6 +1,6 @@
 # TODOs
 
-- [/] Needs attention phone view in providers account page
+- [ ] Needs attention phone view in providers account page
 - [ ] Microphone expiration
 - [ ] So times when I make production deployment it says fetching but it do not show more logs until I reload
 - [ ] Apply dnd in todos list with better pattern, about grabbing 1.5 secs in any place to enable in the row
