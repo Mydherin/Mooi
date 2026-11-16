@@ -3,7 +3,7 @@ import type { ProductionFiles } from './ProductionFiles';
 
 export interface ProductionDeploymentDetail {
   deployment: ProductionDeployment;
-  files: ProductionFiles | null;
+  files: Omit<ProductionFiles, 'targets'> | null;
   message: string | null;
   logs: string[];
 }

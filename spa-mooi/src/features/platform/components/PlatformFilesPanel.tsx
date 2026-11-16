@@ -94,7 +94,7 @@ export const PlatformFilesPanel = <F,>({ fields, documents, summary, loadError, 
   const complete = editing ? fields.every(({ key }) => text(editing, key).trim().length > 0) : false;
   const written = content.trim().length > 0;
   const shownError = error ?? loadError;
-  const startEditing = () => setEditing(Object.fromEntries(fields.map(({ key }) => [key, text(current, key)])));
+  const startEditing = () => setEditing({ ...current, ...Object.fromEntries(fields.map(({ key }) => [key, text(current, key)])) });
 
   return (
     <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] lg:grid-cols-[260px_minmax(0,1fr)] lg:grid-rows-1">

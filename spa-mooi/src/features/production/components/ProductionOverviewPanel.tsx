@@ -52,6 +52,7 @@ export const ProductionOverviewPanel = ({ project, overview, error, onRetry, sta
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{[0, 1, 2, 3].map((item) => <Card key={item} className="h-20 animate-pulse-soft" />)}</div>
         </> : null : <>
           <ProductionHero project={project} stage={stage} hasChat={hasChat} missingVariables={missingVariables} releaseTag={releaseTag}
+            targets={overview.targets}
             onSetup={onSetup} onDeploy={onDeploy} onOpenChat={onOpenChat} onOpenConsole={onOpenConsole} onFix={onFix} onEnvironment={onEnvironment} />
 
           {started ? <>

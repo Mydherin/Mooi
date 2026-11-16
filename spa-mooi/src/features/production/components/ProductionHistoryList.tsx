@@ -4,6 +4,7 @@ import { deploymentPath } from '@/app/paths';
 import type { Project } from '@/features/projects/types/Project';
 import { DeploymentStateBadge } from '@/features/production/components/DeploymentStateBadge';
 import { DeploymentStateIcon } from '@/features/production/components/DeploymentStateIcon';
+import { ProductionTargetLink } from '@/features/production/components/ProductionTargetLink';
 import type { ProductionDeployment } from '@/features/production/types/ProductionDeployment';
 import { formatDuration } from '@/shared/utils/formatDuration';
 import { formatRelativeTime } from '@/shared/utils/formatRelativeTime';
@@ -32,6 +33,8 @@ export const ProductionHistoryList = ({ deployments, projects, onOpen }: Product
           </span>
           <span className="hidden sm:block"><DeploymentStateBadge state={deployment.state} /></span>
         </button>
+        {deployment.targets[0] ? <ProductionTargetLink target={deployment.targets[0]}
+          extraTargets={deployment.targets.length - 1} className="hidden max-w-36 sm:inline-flex" /> : null}
         {project ? <Link to={deploymentPath(project.id)} aria-label={`Open ${project.name} deployment`} title="Open project deployment"
           className="grid size-9 shrink-0 place-items-center rounded-control text-ink-subtle transition hover:bg-surface hover:text-ink focus-visible:outline-2 focus-visible:outline-brand">
           <ArrowRight className="size-4" /></Link> : null}

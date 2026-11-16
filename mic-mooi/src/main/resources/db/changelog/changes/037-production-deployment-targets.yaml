@@ -1,0 +1,20 @@
+databaseChangeLog:
+  - changeSet:
+      id: 037-production-deployment-targets
+      author: mooi
+      changes:
+        - addColumn:
+            tableName: production_recipes
+            columns:
+              - column:
+                  name: active_targets
+                  type: text
+              - column:
+                  name: draft_targets
+                  type: text
+        - addColumn:
+            tableName: production_deployments
+            columns:
+              - column:
+                  name: targets
+                  type: text

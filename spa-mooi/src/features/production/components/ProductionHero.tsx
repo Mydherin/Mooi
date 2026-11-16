@@ -2,7 +2,9 @@ import { ExternalLink, KeyRound, MessagesSquare, Rocket, Sparkles, Terminal } fr
 import type { Project } from '@/features/projects/types/Project';
 import { PRODUCTION_STAGE_VIEWS } from '@/features/production/lib/productionStageView';
 import type { ProductionStage } from '@/features/production/types/ProductionStage';
+import type { ProductionTarget } from '@/features/production/types/ProductionTarget';
 import { ProductionSteps } from '@/features/production/components/ProductionSteps';
+import { ProductionTargetLink } from '@/features/production/components/ProductionTargetLink';
 import { Badge } from '@/shared/components/Badge';
 import { Button } from '@/shared/components/Button';
 import { Card } from '@/shared/components/Card';
@@ -16,6 +18,7 @@ interface ProductionHeroProps {
   hasChat: boolean;
   missingVariables: number;
   releaseTag: string | null;
+  targets: ProductionTarget[];
   onSetup: () => void;
   onDeploy: () => void;
   onOpenChat: () => void;
@@ -28,7 +31,7 @@ interface ProductionHeroProps {
  * The project's production story in one card: where it stands and the single next step. Secondary
  * actions stay in the page header so this card never grows a toolbar.
  */
-export const ProductionHero = ({ project, stage, hasChat, missingVariables, releaseTag, onSetup, onDeploy, onOpenChat,
+export const ProductionHero = ({ project, stage, hasChat, missingVariables, releaseTag, targets, onSetup, onDeploy, onOpenChat,
   onOpenConsole, onFix, onEnvironment }: ProductionHeroProps) => {
   const view = PRODUCTION_STAGE_VIEWS[stage];
   const Icon = view.icon;
@@ -65,6 +68,10 @@ export const ProductionHero = ({ project, stage, hasChat, missingVariables, rele
               <p className="mt-1 max-w-xl text-sm leading-relaxed text-ink-muted">
                 {blocked ? `${missingVariables} required environment ${missingVariables === 1 ? 'variable is' : 'variables are'} missing. Set ${missingVariables === 1 ? 'it' : 'them'} before deploying.` : view.description}
               </p>
+              {stage === 'live' && targets.length > 0 ? <div className="mt-3 flex flex-wrap gap-2">
+                {targets.map((target) => <ProductionTargetLink key={`${target.label}:${target.url}`} target={target}
+                  className="rounded-full border border-line bg-surface px-3 py-1.5 text-sm" />)}
+              </div> : null}
             </div>
           </div>
 

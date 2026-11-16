@@ -217,7 +217,8 @@ async def start_production_deployment(caller: Caller, project_id: UUID, operatio
             f"{get_settings().mooi_api_base_url}/me/projects/{project_id}/production/deployments",
             headers=_service_headers(caller),
             json={"operationId": str(operation_id), "sessionId": str(session_id) if session_id else None,
-                  "releaseTag": release_tag, "files": files})
+                  "releaseTag": release_tag, "targets": files.get("targets", []),
+                  "files": {name: files[name] for name in ("manifest", "script", "statusScript")}})
     except httpx.HTTPError:
         raise ApiException.bad_gateway() from None
     _raise_for_status(response, "Project not found")
