@@ -67,7 +67,17 @@ export const updateProject = async (projectId: string, settings: ProjectSettings
   return (await response.json()) as Project;
 };
 
-export const removeProject = async (projectId: string): Promise<void> => {
+/** Removes Mooi's project reference without touching the repository on GitHub. */
+export const unlinkProject = async (projectId: string): Promise<void> => {
+  const response = await authenticatedFetch(`${PROJECTS_PATH}/${projectId}`, { method: 'DELETE' });
+
+  if (!response.ok) {
+    throw new Error(await apiErrorMessage(response, 'Could not unlink this project from Mooi.'));
+  }
+};
+
+/** Permanently deletes the repository on GitHub and removes its project reference from Mooi. */
+export const deleteProjectRepository = async (projectId: string): Promise<void> => {
   const response = await authenticatedFetch(`${PROJECTS_PATH}/${projectId}/repository`, { method: 'DELETE' });
 
   if (!response.ok) {
