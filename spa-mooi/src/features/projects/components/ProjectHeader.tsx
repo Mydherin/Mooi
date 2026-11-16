@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronRight, ExternalLink, Globe, KeyRound, Pencil, Trash2 } from 'lucide-react';
+import { ChevronRight, ExternalLink, Globe, KeyRound, Link2Off, Pencil } from 'lucide-react';
 import { ROUTES } from '@/app/routes';
 import { DevelopmentEnvironmentDialog } from '@/features/development/components/DevelopmentEnvironmentDialog';
 import { EditProjectDialog } from '@/features/projects/components/EditProjectDialog';
@@ -84,11 +84,11 @@ export const ProjectHeader = ({ project, busy, onRemove }: ProjectHeaderProps) =
               type="button"
               onClick={onRemove}
               disabled={busy}
-              aria-label="Delete GitHub repository"
-              title="Delete GitHub repository"
+              aria-label="Remove project"
+              title="Remove project"
               className={cn(iconAction, 'border-danger/35 text-danger hover:bg-danger-soft hover:text-danger')}
             >
-              <Trash2 className="size-4" />
+              <Link2Off className="size-4" />
             </button>
           </div>
         </div>

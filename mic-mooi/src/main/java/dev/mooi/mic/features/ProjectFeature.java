@@ -106,12 +106,12 @@ public class ProjectFeature {
         projectService.markDevelopmentDeploymentReady(projectId);
     }
 
-    /** Removes the local project reference only. */
+    /** Unlinks the project from Mooi without touching GitHub; project-owned records cascade away. */
     @DeleteMapping("/me/projects/{projectId}")
     @Auth.Authenticated
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void removeProject(@PathVariable UUID projectId, Auth.Principal principal) {
-        projectService.remove(principal.player().id(), projectId);
+    public void unlinkProject(@PathVariable UUID projectId, Auth.Principal principal) {
+        projectService.unlink(principal.player().id(), projectId);
     }
 
     /** Permanently deletes the repository on GitHub and then its local project reference. */
@@ -238,11 +238,12 @@ public class ProjectFeature {
             Github.LOG.info("Player {} deleted GitHub repository {}", playerId, project.getFullName());
         }
 
+        /** Deletes only Mooi's player-scoped project; the GitHub repository is never contacted. */
         @Transactional
-        public void remove(UUID playerId, UUID projectId) {
+        public void unlink(UUID playerId, UUID projectId) {
             projectRepository.findByIdAndPlayerId(projectId, playerId).ifPresent(project -> {
                 projectRepository.delete(project);
-                Github.LOG.info("Player {} removed repository {} from workspace", playerId, project.getFullName());
+                Github.LOG.info("Player {} unlinked project {} from Mooi", playerId, project.getFullName());
             });
         }
 
