@@ -406,6 +406,11 @@ class Workspaces:
         finally:
             index.unlink(missing_ok=True)
 
+    async def revision(self, workspace: Path) -> str:
+        """A stable identity for the complete tracked and untracked working tree."""
+        snapshot = await self._snapshot(workspace)
+        return (await self._git("-C", str(workspace), "rev-parse", f"{snapshot}^{{tree}}")).strip()
+
     async def set_identity(self, workspace: Path, identity: GitIdentity) -> None:
         """Makes commits the agent writes in this clone carry the player's identity."""
         await self._git("-C", str(workspace), "config", "user.name", identity.name)
@@ -751,6 +756,10 @@ async def inspect(workspace: Path) -> WorkspaceInspection:
 
 async def changes(workspace: Path, base_commit: str) -> ChangesSummary:
     return await get_workspaces().changes(workspace, base_commit)
+
+
+async def revision(workspace: Path) -> str:
+    return await get_workspaces().revision(workspace)
 
 
 async def file_diff(workspace: Path, base_commit: str, path: str) -> FileDiff:

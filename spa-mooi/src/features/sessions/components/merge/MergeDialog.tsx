@@ -10,6 +10,7 @@ interface MergeDialogProps {
   changes: ChangesSummary | null | undefined;
   merging: boolean;
   error: string | null;
+  suggestedMessage: string | null;
   onCancel: () => void;
   onCommit: (message: string) => void;
 }
@@ -17,8 +18,9 @@ interface MergeDialogProps {
 const MAX_TITLE = 200;
 
 /** Asks for the one mandatory input of a merge: the title of the single commit pushed to the target. */
-export const MergeDialog = ({ targetBranch, branch, changes, merging, error, onCancel, onCommit }: MergeDialogProps) => {
-  const [title, setTitle] = useState('');
+export const MergeDialog = ({ targetBranch, branch, changes, merging, error, suggestedMessage,
+  onCancel, onCommit }: MergeDialogProps) => {
+  const [title, setTitle] = useState(suggestedMessage ?? '');
   const valid = title.trim().length > 0;
   const submit = () => {
     if (valid && !merging) onCommit(title.trim());
@@ -41,6 +43,9 @@ export const MergeDialog = ({ targetBranch, branch, changes, merging, error, onC
             onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); submit(); } }}
             disabled={merging} required autoFocus placeholder="e.g. feat: add project search"
             className="h-12 rounded-control border border-line bg-surface-2 px-3 text-sm text-ink outline-none transition focus:border-brand disabled:opacity-60" />
+          {suggestedMessage ? <span className="text-xs font-normal leading-relaxed text-ink-subtle">
+            Suggested from this session. Review or replace it before committing.
+          </span> : null}
         </label>
         {changes ? (
           <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-muted">

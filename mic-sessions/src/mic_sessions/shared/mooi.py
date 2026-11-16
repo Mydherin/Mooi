@@ -119,6 +119,16 @@ async def fetch_project(caller: Caller, project_id: UUID) -> Project:
     raise ApiException.not_found("Project not found")
 
 
+async def fetch_suggested_commit_preferences(caller: Caller) -> dict:
+    payload = await _get(
+        get_http_client(),
+        f"{get_settings().mooi_api_base_url}/me/preferences/suggested-commit",
+        _bearer(caller),
+        "Account not found",
+    )
+    return {"enabled": bool(payload.get("enabled", True)), "language": str(payload.get("language") or "en")}
+
+
 async def fetch_github_token(caller: Caller) -> str:
     settings = get_settings()
     body = await _get(
