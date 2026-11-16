@@ -16,4 +16,5 @@ export interface AdminPlayer {
   projects: number;
   agentAccounts: number;
   githubLinked: boolean;
+  maxSessions: number;
 }

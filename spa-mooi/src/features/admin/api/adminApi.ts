@@ -8,6 +8,20 @@ import { apiErrorMessage } from '@/shared/utils/apiErrorMessage';
 // Identity (directory, sign-ins, bans) lives in mic-mooi; live chats live in mic-sessions.
 const playerPath = (playerId: string) => `/admin/players/${encodeURIComponent(playerId)}`;
 
+export const fetchPlayerSessionLimit = async (playerId: string): Promise<number> => {
+  const response = await authenticatedFetch(`${playerPath(playerId)}/session-limit`);
+  if (!response.ok) throw new Error(await apiErrorMessage(response, 'Could not load the session limit.'));
+  return ((await response.json()) as { maxSessions: number }).maxSessions;
+};
+
+export const setPlayerSessionLimit = async (playerId: string, maxSessions: number): Promise<number> => {
+  const response = await authenticatedFetch(`${playerPath(playerId)}/session-limit`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ maxSessions }),
+  });
+  if (!response.ok) throw new Error(await apiErrorMessage(response, 'Could not save the session limit.'));
+  return ((await response.json()) as { maxSessions: number }).maxSessions;
+};
+
 export const ADMIN_PAGE_SIZE = 50;
 
 export const fetchAdminPlayers = async (query: string, offset: number): Promise<{ players: AdminPlayer[]; total: number }> => {
