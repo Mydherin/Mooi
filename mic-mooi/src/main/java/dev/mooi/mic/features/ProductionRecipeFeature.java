@@ -1,5 +1,7 @@
 package dev.mooi.mic.features;
 
+import java.net.URI;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -29,6 +31,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -101,9 +104,13 @@ public class ProductionRecipeFeature {
     }
 
     /** A draft may be partial while the agent writes it document by document; deploying requires all three. */
+    public record DeploymentTarget(@NotBlank @Size(max = 100) String label,
+                                   @NotBlank @Size(max = 2048)
+                                   @jakarta.validation.constraints.Pattern(regexp = "https?://\\S+") String url) { }
     public record RecipeInput(@NotNull @Size(max = 65536) String manifest,
                               @NotNull @Size(max = 65536) String script,
-                              @NotNull @Size(max = 65536) String statusScript) { }
+                              @NotNull @Size(max = 65536) String statusScript,
+                              @Size(max = 20) List<@Valid DeploymentTarget> targets) { }
 
     /** Environment names only: values are write-only for every caller except the deploy runner. */
     public record RecipePayload(RecipeInput active, RecipeInput draft, long revision, List<String> environment) { }
@@ -116,6 +123,10 @@ public class ProductionRecipeFeature {
     @RequiredArgsConstructor
     public static class RecipeService {
         private static final Pattern NAME = Pattern.compile("MOOI_PRODUCTION_[A-Z0-9_]{1,100}");
+        private static final Pattern TARGET_CONTEXT = Pattern.compile(
+                "(?i)\\b(?:verified|public|production|live|site|app|web)\\s+(?:url|endpoint)"
+                        + "|\\b(?:url|endpoint)\\s*(?:is|:)");
+        private static final Pattern HTTPS_URL = Pattern.compile("https://[^\\s<>`\"']+");
         private static final int MAX_VARIABLES = 100;
         private static final int MAX_VALUE = 8192;
 
@@ -155,6 +166,7 @@ public class ProductionRecipeFeature {
             row.setDraftManifest(box.encrypt(input.manifest()));
             row.setDraftScript(box.encrypt(input.script()));
             row.setDraftStatusScript(box.encrypt(input.statusScript()));
+            row.setDraftTargets(packTargets(input.targets()));
             row.setRevision(row.getRevision() + 1);
             return payload(recipes.save(row));
         }
@@ -169,9 +181,11 @@ public class ProductionRecipeFeature {
             row.setActiveManifest(row.getDraftManifest());
             row.setActiveScript(row.getDraftScript());
             row.setActiveStatusScript(row.getDraftStatusScript());
+            row.setActiveTargets(row.getDraftTargets());
             row.setDraftManifest(null);
             row.setDraftScript(null);
             row.setDraftStatusScript(null);
+            row.setDraftTargets(null);
             row.setRevision(row.getRevision() + 1);
             return payload(row);
         }
@@ -228,14 +242,51 @@ public class ProductionRecipeFeature {
 
         private RecipePayload payload(Recipe row) {
             return new RecipePayload(
-                    unpack(row.getActiveManifest(), row.getActiveScript(), row.getActiveStatusScript()),
-                    unpack(row.getDraftManifest(), row.getDraftScript(), row.getDraftStatusScript()),
+                    unpack(row.getActiveManifest(), row.getActiveScript(), row.getActiveStatusScript(), row.getActiveTargets()),
+                    unpack(row.getDraftManifest(), row.getDraftScript(), row.getDraftStatusScript(), row.getDraftTargets()),
                     row.getRevision(), List.copyOf(values(row).keySet()));
         }
 
-        private RecipeInput unpack(String manifest, String script, String statusScript) {
-            return script == null ? null : new RecipeInput(box.decrypt(manifest), box.decrypt(script),
-                    statusScript == null ? "" : box.decrypt(statusScript));
+        private RecipeInput unpack(String manifest, String script, String statusScript, String targets) {
+            if (script == null) return null;
+            String openedManifest = box.decrypt(manifest);
+            return new RecipeInput(openedManifest, box.decrypt(script),
+                    statusScript == null ? "" : box.decrypt(statusScript),
+                    targets == null ? inferTargets(openedManifest) : unpackTargets(targets));
+        }
+
+        private String packTargets(List<DeploymentTarget> targets) {
+            return targets == null ? null : box.encrypt(json.writeValueAsString(targets));
+        }
+
+        private List<DeploymentTarget> unpackTargets(String targets) {
+            return targets == null ? List.of() : json.readValue(box.decrypt(targets),
+                    new TypeReference<List<DeploymentTarget>>() { });
+        }
+
+        /** Older configurations predate structured destinations; recover only explicitly labelled HTTPS URLs. */
+        private List<DeploymentTarget> inferTargets(String manifest) {
+            var urls = new LinkedHashSet<String>();
+            manifest.lines().filter(line -> TARGET_CONTEXT.matcher(line).find()).forEach(line -> {
+                var matches = HTTPS_URL.matcher(line);
+                while (matches.find()) {
+                    String candidate = trimUrlPunctuation(matches.group());
+                    try {
+                        URI uri = URI.create(candidate);
+                        if (uri.getHost() != null) urls.add(uri.toString());
+                    } catch (IllegalArgumentException ignored) {
+                        // A prose fragment that merely resembles a URL is not a deployment destination.
+                    }
+                }
+            });
+            if (urls.size() == 1) return List.of(new DeploymentTarget("Production", urls.getFirst()));
+            return urls.stream().map(url -> new DeploymentTarget(URI.create(url).getHost(), url)).toList();
+        }
+
+        private String trimUrlPunctuation(String url) {
+            int end = url.length();
+            while (end > 0 && ".,;:!)]}".indexOf(url.charAt(end - 1)) >= 0) end--;
+            return url.substring(0, end);
         }
     }
 
@@ -247,9 +298,11 @@ public class ProductionRecipeFeature {
         @Column(name = "active_manifest", columnDefinition = "text") private String activeManifest;
         @Column(name = "active_script", columnDefinition = "text") private String activeScript;
         @Column(name = "active_status_script", columnDefinition = "text") private String activeStatusScript;
+        @Column(name = "active_targets", columnDefinition = "text") private String activeTargets;
         @Column(name = "draft_manifest", columnDefinition = "text") private String draftManifest;
         @Column(name = "draft_script", columnDefinition = "text") private String draftScript;
         @Column(name = "draft_status_script", columnDefinition = "text") private String draftStatusScript;
+        @Column(name = "draft_targets", columnDefinition = "text") private String draftTargets;
         @Column(name = "environment", columnDefinition = "text") private String environment;
         @Column(name = "revision", nullable = false) private long revision;
     }

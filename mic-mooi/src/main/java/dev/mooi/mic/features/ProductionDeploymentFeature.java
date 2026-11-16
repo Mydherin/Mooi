@@ -38,6 +38,9 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 
 /** Durable, project-scoped record of each production deployment attempt; the chat that prepared it is optional. */
 @RestController
@@ -99,12 +102,16 @@ public class ProductionDeploymentFeature {
     public record DeploymentFiles(@NotBlank @Size(max = 65536) String manifest,
                                   @NotBlank @Size(max = 65536) String script,
                                   @Size(max = 65536) String statusScript) { }
+    public record DeploymentTarget(@NotBlank @Size(max = 100) String label,
+                                   @NotBlank @Size(max = 2048)
+                                   @jakarta.validation.constraints.Pattern(regexp = "https?://\\S+") String url) { }
     public record StartDeployment(UUID operationId, UUID sessionId, @NotBlank @Size(max = 255) String releaseTag,
+                                  @Size(max = 20) List<@Valid DeploymentTarget> targets,
                                   @Valid DeploymentFiles files) { }
     public record FinishDeployment(@NotBlank String state, @Size(max = 2000) String message,
                                    @Size(max = 2000) List<String> logs) { }
     public record DeploymentPayload(UUID operationId, UUID projectId, UUID sessionId, String releaseTag,
-                                    String state, Instant startedAt, Instant finishedAt) { }
+                                    List<DeploymentTarget> targets, String state, Instant startedAt, Instant finishedAt) { }
     public record ReconcileDeployments(@NotNull @Size(max = 1000) List<@NotNull UUID> active) { }
     public record Reconciled(int interrupted) { }
     public record DeploymentPage(List<DeploymentPayload> deployments, boolean hasMore) { }
@@ -122,6 +129,7 @@ public class ProductionDeploymentFeature {
         private final DeploymentFilesRepository files;
         private final ProjectRepository projects;
         private final Crypto.SecretBox box;
+        private final ObjectMapper json = JsonMapper.shared();
 
         private void requireProject(UUID projectId, UUID playerId) {
             if (!projects.existsByIdAndPlayerId(projectId, playerId)) {
@@ -198,6 +206,8 @@ public class ProductionDeploymentFeature {
             row.setProjectId(projectId);
             row.setSessionId(input.sessionId());
             row.setReleaseTag(input.releaseTag());
+            row.setTargets(input.targets() == null || input.targets().isEmpty() ? null
+                    : box.encrypt(json.writeValueAsString(input.targets())));
             row.setState("running");
             row.setStartedAt(Instant.now());
             deployments.save(row);
@@ -243,7 +253,12 @@ public class ProductionDeploymentFeature {
 
         private DeploymentPayload payload(Deployment row) {
             return new DeploymentPayload(row.getOperationId(), row.getProjectId(), row.getSessionId(),
-                    row.getReleaseTag(), row.getState(), row.getStartedAt(), row.getFinishedAt());
+                    row.getReleaseTag(), targets(row), row.getState(), row.getStartedAt(), row.getFinishedAt());
+        }
+
+        private List<DeploymentTarget> targets(Deployment row) {
+            return row.getTargets() == null ? List.of() : json.readValue(box.decrypt(row.getTargets()),
+                    new TypeReference<List<DeploymentTarget>>() { });
         }
     }
 
@@ -256,6 +271,7 @@ public class ProductionDeploymentFeature {
         @Column(name = "project_id", nullable = false) private UUID projectId;
         @Column(name = "session_id") private UUID sessionId;
         @Column(name = "release_tag", nullable = false) private String releaseTag;
+        @Column(name = "targets", columnDefinition = "text") private String targets;
         @Column(name = "state", nullable = false) private String state;
         @Column(name = "started_at", nullable = false) private Instant startedAt;
         @Column(name = "finished_at") private Instant finishedAt;

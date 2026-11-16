@@ -4,8 +4,8 @@ import { fetchProductionDeploymentDetail } from '@/features/production/api/produ
 import { PRODUCTION_DOCUMENTS } from '@/features/production/lib/productionDocuments';
 import type { ProductionDeployment } from '@/features/production/types/ProductionDeployment';
 import type { ProductionDeploymentDetail } from '@/features/production/types/ProductionDeploymentDetail';
-import type { ProductionFiles } from '@/features/production/types/ProductionFiles';
 import { DeploymentStateBadge } from '@/features/production/components/DeploymentStateBadge';
+import { ProductionTargetLink } from '@/features/production/components/ProductionTargetLink';
 import { Button } from '@/shared/components/Button';
 import { Modal } from '@/shared/components/Modal';
 import { cn } from '@/shared/utils/cn';
@@ -22,10 +22,12 @@ interface ProductionDeploymentDetailDialogProps {
   onDelete?: () => Promise<void>;
 }
 
+type ProductionDocumentKey = 'manifest' | 'script' | 'statusScript';
+
 /** One recorded attempt: its result, the exact files it ran and its redacted output. */
 export const ProductionDeploymentDetailDialog = ({ deployment, projectName, onClose, onRedeploy, onFix, onDelete }: ProductionDeploymentDetailDialogProps) => {
   const [detail, setDetail] = useState<ProductionDeploymentDetail | null>(null);
-  const [selected, setSelected] = useState<keyof ProductionFiles | 'output'>('output');
+  const [selected, setSelected] = useState<ProductionDocumentKey | 'output'>('output');
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -47,7 +49,8 @@ export const ProductionDeploymentDetailDialog = ({ deployment, projectName, onCl
 
   const files = detail?.files;
   const tabs = [{ id: 'output' as const, label: 'Output' },
-    ...PRODUCTION_DOCUMENTS.filter(({ key }) => Boolean(files?.[key])).map(({ key, name }) => ({ id: key, label: name }))];
+    ...PRODUCTION_DOCUMENTS.filter(({ key }) => key !== 'targets' && Boolean(files?.[key]))
+      .map(({ key, name }) => ({ id: key as ProductionDocumentKey, label: name }))];
   const content = selected === 'output' ? (detail?.logs.join('\n') || 'No output was recorded.') : files?.[selected] ?? '';
   const finished = deployment.finishedAt;
 
@@ -67,6 +70,11 @@ export const ProductionDeploymentDetailDialog = ({ deployment, projectName, onCl
         {onRedeploy && deployment.state !== 'running' ? <Button variant="secondary" size="sm" onClick={onRedeploy}><RotateCcw className="size-4" />Redeploy</Button> : null}
       </div>
     </div>
+    {deployment.targets.length > 0 ? <div className="mt-4 flex flex-wrap items-center gap-2 rounded-control border border-line bg-surface-2 px-3.5 py-2.5">
+      <span className="mr-1 text-xs font-semibold text-ink-muted">Deployed to</span>
+      {deployment.targets.map((target) => <ProductionTargetLink key={`${target.label}:${target.url}`} target={target}
+        className="rounded-full bg-surface px-2.5 py-1" />)}
+    </div> : null}
     {confirmDelete ? <p className="mt-4 rounded-control bg-surface-2 px-3.5 py-2.5 text-xs leading-relaxed text-ink-muted">
       Removes this entry, its files and its output from Mooi. The deployed service and the current configuration stay in place.</p> : null}
 

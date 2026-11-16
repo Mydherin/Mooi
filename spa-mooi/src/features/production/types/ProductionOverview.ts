@@ -1,5 +1,6 @@
 import type { PlatformEnvironmentVariable } from '@/features/platform/types/PlatformEnvironmentVariable';
 import type { ProductionSnapshot } from './ProductionSnapshot';
+import type { ProductionTarget } from './ProductionTarget';
 
 export interface ProductionOverview {
   /** A draft or an active configuration exists, so a deployment can run. */
@@ -8,6 +9,7 @@ export interface ProductionOverview {
   deployed: boolean;
   hasDraft: boolean;
   revision: number;
+  targets: ProductionTarget[];
   environment: PlatformEnvironmentVariable[];
   snapshot: ProductionSnapshot;
   chatSessionId: string | null;

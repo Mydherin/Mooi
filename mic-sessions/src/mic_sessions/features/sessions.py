@@ -261,6 +261,13 @@ class ProductionStatusResult(BaseModel):
     checkedAt: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
+class ProductionTarget(BaseModel):
+    """One user-facing endpoint reached by a successful production deployment."""
+
+    label: str = Field(min_length=1, max_length=100)
+    url: str = Field(min_length=8, max_length=2048, pattern=r"^https?://\S+$")
+
+
 class ProductionStoredFiles(BaseModel):
     """DEPLOYMENT.md, deploy.sh and status.sh as stored: virtual documents living only in the platform.
     A draft may still miss documents while the agent writes them one by one."""
@@ -268,6 +275,7 @@ class ProductionStoredFiles(BaseModel):
     manifest: str
     script: str
     statusScript: str = ""
+    targets: list[ProductionTarget] = Field(default_factory=list, max_length=20)
 
     @property
     def complete(self) -> bool:
@@ -288,6 +296,7 @@ class ProductionFilesPatch(BaseModel):
     manifest: str | None = Field(default=None, min_length=1, max_length=65536, pattern=r"\S")
     script: str | None = Field(default=None, min_length=1, max_length=65536, pattern=r"\S")
     statusScript: str | None = Field(default=None, min_length=1, max_length=65536, pattern=r"\S")
+    targets: list[ProductionTarget] | None = Field(default=None, max_length=20)
 
     @model_validator(mode="after")
     def validate_documents(self) -> ProductionFilesPatch:
@@ -317,6 +326,7 @@ class ProductionOverview(BaseModel):
     deployed: bool
     hasDraft: bool
     revision: int
+    targets: list[ProductionTarget] = Field(default_factory=list)
     environment: list[ProductionEnvironmentVariable]
     snapshot: ProductionSnapshot
     chatSessionId: UUID | None
@@ -2690,6 +2700,7 @@ They are VIRTUAL documents stored only in the Mooi platform. Never write them to
 - `DEPLOYMENT.md` (field `manifest`): the natural-language manifest of the deployment, and the source you or another agent read to change or repair it later. Describe every target, the method, prerequisites, the repository files and variables involved (names only, never values), the production-specific resource names, how a release reaches each target and how the service is verified. Keep it true: update it with every change to the setup.
 - `deploy.sh` (field `script`): a non-interactive bash script the platform runs from a detached checkout of the release being deployed (that checkout is the working directory). It must start with `set -euo pipefail`, be idempotent (a fresh target and an already deployed one both end up running the release; prepare one-time prerequisites itself when it can), read every value from environment variables, deploy exactly `MOOI_PRODUCTION_RELEASE_SHA` to every target and exit non-zero when any target fails.
 - `status.sh` (field `statusScript`): a non-interactive, read-only bash script, safe to run repeatedly from an empty working directory, that exits 0 only while every deployed target is healthy and prints concise status details per target. It must not depend on release variables or repository files.
+- Deployment destinations (field `targets`): every stable HTTP or HTTPS endpoint where a user can open the deployed project, as `[{{"label": "Production", "url": "https://example.com"}}]`. Include every browsable target, use short distinct labels, and use an empty list only when the deployed project truly has no web endpoint. Keep these in sync with DEPLOYMENT.md.
 
 Save each document with the platform API as soon as you write or change it, one document per request, so the user follows your progress in the Platform files tab.
 
@@ -2721,7 +2732,7 @@ So commit every repository change the deployment needs before you test. Never ru
 ## Platform API
 Use Python urllib with an inline JSON body, never a temporary file, and send the header `X-Mooi-Agent-Token: {session.agent_token}`:
 - `GET {base}/documents`: active and draft documents plus the names of stored environment variables.
-- `PATCH {base}/documents` with any of the JSON keys `manifest`, `script`, `statusScript`: saves those documents into the draft and keeps the others.
+- `PATCH {base}/documents` with any of the JSON keys `manifest`, `script`, `statusScript`, `targets`: saves those fields into the draft and keeps the others.
 - `GET {base}/environment`: `values` (the project's stored `MOOI_PRODUCTION_` and inherited `MOOI_DEVELOPMENT_` values the scripts receive) and `serverProvided` (names of server-wide values whose values you cannot read).
 - `PUT {base}/environment` with JSON `{{"values": {{"MOOI_PRODUCTION_NAME": "value"}}}}` (null removes a variable).
 - `POST {base}/repository/commit` with JSON `{{"message": "<commit title>"}}`: commits every repository change onto `{branch}` as one commit and pushes it. It answers 409 with the conflicting files when `{branch}` moved in a conflicting way.
@@ -2734,7 +2745,7 @@ Use Python urllib with an inline JSON body, never a temporary file, and send the
 2. Settle the targets and the method with the user and ask for every missing value.
 3. Write the repository files, save the platform files and store the variables.
 4. Commit the repository changes once the user approves them.
-5. Test. Testing is mandatory: finish every setup, update or fix with a successful test deployment. Once all three documents are saved, every required variable is stored and any repository change is committed, start the test and wait for its result. If it fails, find the cause in the output, save the corrected documents (ask the user for anything missing) and test again. A successful test deploys that release to production and makes the draft the active configuration.
+5. Test. Testing is mandatory: finish every setup, update or fix with a successful test deployment. Once all three documents and the deployment destinations are saved, every required variable is stored and any repository change is committed, start the test and wait for its result. If it fails, find the cause in the output, save the corrected documents (ask the user for anything missing) and test again. A successful test deploys that release to production and makes the draft the active configuration.
 6. Only after a successful test tell the user clearly that the deployment is tested and working: from now on the Deploy button runs this script deterministically for any release, without an agent. Suggest clearing this chat (or closing it); it can be reused later to change or fix the deployment.
 
 Never run deploy.sh yourself and never change production with your own tools (SSH, Docker, cloud CLIs...): every change reaches production through deploy.sh and the test endpoint. Read-only inspection to diagnose a failure is fine.
@@ -2830,6 +2841,7 @@ async def production_overview(project_id: UUID, caller: Annotated[Caller, Depend
     return ProductionOverview(
         configured=files is not None and files.complete, deployed=documents.active is not None,
         hasDraft=documents.draft is not None, revision=documents.revision,
+        targets=documents.active.targets if documents.active is not None else files.targets if files is not None else [],
         environment=[ProductionEnvironmentVariable(name=name, configured=name in stored or name in server
                                                    or name in development, required=name in required,
                                                    inherited=name.startswith("MOOI_DEVELOPMENT_"))
