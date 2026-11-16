@@ -1,0 +1,20 @@
+databaseChangeLog:
+  - changeSet:
+      id: 035-player-session-limits
+      author: mooi
+      changes:
+        - addColumn:
+            tableName: players
+            columns:
+              - column:
+                  name: max_sessions
+                  type: integer
+                  defaultValueNumeric: 4
+                  constraints:
+                    nullable: false
+        - sql:
+            sql: ALTER TABLE players ADD CONSTRAINT ck_players_max_sessions CHECK (max_sessions > 0)
+      rollback:
+        - dropColumn:
+            tableName: players
+            columnName: max_sessions

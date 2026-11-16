@@ -1,7 +1,8 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useEffectEvent, useState, type ReactNode } from 'react';
 import { Ban, LogOut, MonitorSmartphone, ShieldCheck, Square, SquareX } from 'lucide-react';
 import {
-  closeAdminSession, closePlayerSessions, fetchPlayerSignIns, setPlayerBanned, signOutPlayer,
+  closeAdminSession, closePlayerSessions, fetchPlayerSignIns, setPlayerBanned, signOutPlayer, setPlayerSessionLimit,
+  fetchPlayerSessionLimit,
 } from '@/features/admin/api/adminApi';
 import { deviceLabel } from '@/features/admin/lib/adminActivity';
 import type { AdminPlayer } from '@/features/admin/types/AdminPlayer';
@@ -28,7 +29,7 @@ interface AdminUserDialogProps {
   onClose: () => void;
 }
 
-type Action = 'close' | 'signOut' | 'ban' | 'unban' | `session:${string}`;
+type Action = 'limit' | 'close' | 'signOut' | 'ban' | 'unban' | `session:${string}`;
 
 const Section = ({ title, children }: { title: string; children: ReactNode }) => (
   <section className="mt-6 first:mt-0">
@@ -53,6 +54,24 @@ export const AdminUserDialog = ({ player, devices, lastSeenAt, sessions, self, o
   const [busy, setBusy] = useState<Action | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmBan, setConfirmBan] = useState(false);
+  const [limit, setLimit] = useState(String(player.maxSessions));
+  useEffect(() => setLimit(String(player.maxSessions)), [player.maxSessions]);
+  const receiveLimit = useEffectEvent((maxSessions: number) => {
+    if (busy === null && maxSessions !== player.maxSessions) onChange({ maxSessions });
+  });
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const refresh = async () => {
+      try {
+        const maxSessions = await fetchPlayerSessionLimit(player.id);
+        if (!cancelled) receiveLimit(maxSessions);
+      } catch { /* The next refresh retries; explicit saves report errors. */ }
+      if (!cancelled) timer = setTimeout(refresh, 5000);
+    };
+    void refresh();
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [player.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -141,6 +160,23 @@ export const AdminUserDialog = ({ player, devices, lastSeenAt, sessions, self, o
       </div>
 
       <div className="mt-6">
+        <Section title="Session limit">
+          <form className="flex flex-wrap items-end gap-3" onSubmit={(event) => {
+            event.preventDefault();
+            run('limit', async () => onChange({ maxSessions: await setPlayerSessionLimit(player.id, Number(limit)) }));
+          }}>
+            <label className="flex flex-col gap-1 text-sm text-ink-muted">
+              Maximum open sessions
+              <input type="number" min="1" max="2147483647" step="1" required value={limit}
+                onChange={(event) => setLimit(event.target.value)} disabled={busy !== null}
+                className="w-40 rounded-control border border-line bg-surface-2 px-3 py-2 text-ink" />
+            </label>
+            <Button type="submit" variant="secondary" disabled={busy !== null || Number(limit) === player.maxSessions}>
+              {busy === 'limit' ? 'Saving…' : 'Save limit'}
+            </Button>
+          </form>
+          <p className="mt-2 text-xs text-ink-subtle">Applies across all projects and agent accounts, including production and backup chats. Lowering the limit keeps existing sessions open. Platform capacity also applies.</p>
+        </Section>
         <Section title={`Live sessions · ${sessions.length}`}>
           {sessions.length === 0 ? <p className="text-sm text-ink-subtle">No live session right now.</p> : (
             <ul className="divide-y divide-line rounded-control border border-line">

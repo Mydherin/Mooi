@@ -119,6 +119,12 @@ async def fetch_project(caller: Caller, project_id: UUID) -> Project:
     raise ApiException.not_found("Project not found")
 
 
+async def fetch_session_limit(caller: Caller) -> int:
+    body = await _get(get_http_client(), f"{get_settings().mooi_api_base_url}/me/session-limit",
+                      _bearer(caller), "Account not found")
+    return int(body["maxSessions"])
+
+
 async def fetch_github_token(caller: Caller) -> str:
     settings = get_settings()
     body = await _get(

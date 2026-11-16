@@ -13,6 +13,12 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Min;
 
 import dev.mooi.mic.shared.Auth;
 import lombok.RequiredArgsConstructor;
@@ -20,9 +26,9 @@ import lombok.RequiredArgsConstructor;
 /**
  * Feature: the administration directory of players.
  *
- * <p>A read model only: one paged query per page of the directory, joining what other features own
+ * <p>The directory uses one paged query per page, joining what other features own
  * (sign-ins, projects, agent accounts, GitHub links) by {@code player_id} through their own indexes.
- * Nothing here writes: suspending or signing a player out changes identity, so it belongs to
+ * Account session limits are managed here; suspending or signing a player out changes identity, so it belongs to
  * {@link AuthFeature}, and what a player is doing right now (presence, live agent sessions) is
  * memory-resident in {@code mic-sessions}, which streams it to administrators.
  *
@@ -49,6 +55,25 @@ public class AdminFeature {
         return new SignInsPayload(adminService.signIns(playerId));
     }
 
+    @GetMapping("/me/session-limit")
+    @Auth.Authenticated
+    public SessionLimitPayload sessionLimit(Auth.Principal principal) {
+        return adminService.sessionLimit(principal.player().id());
+    }
+
+    @PutMapping("/admin/players/{playerId}/session-limit")
+    @Auth.RequireRole(Auth.Role.ADMIN)
+    public SessionLimitPayload setSessionLimit(@PathVariable UUID playerId,
+                                               @Valid @RequestBody SessionLimitPayload body) {
+        return adminService.setSessionLimit(playerId, body.maxSessions());
+    }
+
+    @GetMapping("/admin/players/{playerId}/session-limit")
+    @Auth.RequireRole(Auth.Role.ADMIN)
+    public SessionLimitPayload playerSessionLimit(@PathVariable UUID playerId) {
+        return adminService.sessionLimit(playerId);
+    }
+
     // --- application ---
 
     @Service
@@ -63,7 +88,7 @@ public class AdminFeature {
          * round trip; the lateral aggregate reads one player's sign-ins through their player index.
          */
         private static final String PLAYERS = """
-                SELECT p.id, p.username, p.email, p.avatar_url, p.role, p.created_at, p.banned_at,
+                SELECT p.id, p.username, p.email, p.avatar_url, p.role, p.created_at, p.banned_at, p.max_sessions,
                        s.last_seen_at, s.sign_ins,
                        (SELECT count(*) FROM projects pr WHERE pr.player_id = p.id) AS projects,
                        (SELECT count(*) FROM agent_connections c WHERE c.player_id = p.id) AS agent_accounts,
@@ -107,7 +132,8 @@ public class AdminFeature {
                                 row.getObject("created_at", OffsetDateTime.class),
                                 row.getObject("last_seen_at", OffsetDateTime.class),
                                 row.getObject("banned_at", OffsetDateTime.class), row.getInt("sign_ins"),
-                                row.getInt("projects"), row.getInt("agent_accounts"), row.getBoolean("github_linked"));
+                                row.getInt("projects"), row.getInt("agent_accounts"), row.getBoolean("github_linked"),
+                                row.getInt("max_sessions"));
                     })
                     .list();
             return new PlayersPayload(players, total[0]);
@@ -125,6 +151,19 @@ public class AdminFeature {
                     .list();
         }
 
+        public SessionLimitPayload sessionLimit(UUID playerId) {
+            return jdbc.sql("SELECT max_sessions FROM players WHERE id = :id").param("id", playerId)
+                    .query((row, index) -> new SessionLimitPayload(row.getInt("max_sessions")))
+                    .optional().orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+        }
+
+        public SessionLimitPayload setSessionLimit(UUID playerId, int maxSessions) {
+            int updated = jdbc.sql("UPDATE players SET max_sessions = :limit WHERE id = :id")
+                    .param("limit", maxSessions).param("id", playerId).update();
+            if (updated == 0) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found");
+            return new SessionLimitPayload(maxSessions);
+        }
+
         /** A contains-match on name or email; wildcards typed by the administrator match literally. */
         private static String pattern(String query) {
             String needle = query == null ? "" : query.strip().toLowerCase(Locale.ROOT);
@@ -140,8 +179,10 @@ public class AdminFeature {
     /** {@code lastSeenAt} is the latest sign-in activity; whether the player is online now comes live from mic-sessions. */
     public record PlayerPayload(UUID id, String username, String email, String avatarUrl, String role,
                                 OffsetDateTime createdAt, OffsetDateTime lastSeenAt, OffsetDateTime bannedAt,
-                                int signIns, int projects, int agentAccounts, boolean githubLinked) {
+                                int signIns, int projects, int agentAccounts, boolean githubLinked, int maxSessions) {
     }
+
+    public record SessionLimitPayload(@Min(1) int maxSessions) { }
 
     public record PlayersPayload(List<PlayerPayload> players, long total) {
     }

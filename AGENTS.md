@@ -163,6 +163,10 @@ from it. Where they differ, this context wins over the current implementation (s
     close sessions, block sign-in) or unban them. Live data costs nothing while no admin watches.
   - **Agents**: minimal per-provider session defaults (adapter, model, thinking effort) preselected for
     every user; saved on change.
+  - **Account session limits**: administrators configure a positive maximum of open agent sessions per
+    user account (default: four), shared across projects, providers and development, production and
+    backup chats. Changes apply to new creations immediately; lowering a limit keeps existing sessions
+    open. The host capacity limit still applies independently.
   - Other platform settings as they come.
 
 ## Other capabilities
