@@ -8,9 +8,10 @@ interface SegmentedControlProps {
   className?: string;
   /** Id of the element naming the group. */
   labelledBy?: string;
+  disabled?: boolean;
 }
 
-export const SegmentedControl = ({ items, value, onChange, className, labelledBy }: SegmentedControlProps) => (
+export const SegmentedControl = ({ items, value, onChange, className, labelledBy, disabled = false }: SegmentedControlProps) => (
   <div role="group" aria-labelledby={labelledBy} className={cn('inline-flex flex-wrap gap-1 rounded-control border border-line bg-surface-2 p-0.5', className)}>
     {items.map((item) => {
       const Icon = item.icon;
@@ -21,9 +22,10 @@ export const SegmentedControl = ({ items, value, onChange, className, labelledBy
           key={item.id}
           type="button"
           aria-pressed={isActive}
+          disabled={disabled}
           onClick={() => onChange(item.id)}
           className={cn(
-            'inline-flex min-h-9 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-[7px] px-3 text-[13px] font-medium transition-[background-color,color,box-shadow] duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand',
+            'inline-flex min-h-9 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-[7px] px-3 text-[13px] font-medium transition-[background-color,color,box-shadow] duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:cursor-not-allowed disabled:opacity-50',
             isActive ? 'bg-surface text-ink shadow-raised ring-1 ring-line' : 'text-ink-muted hover:text-ink',
           )}
         >

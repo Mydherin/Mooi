@@ -672,6 +672,17 @@ class MergePayload(BaseModel):
     targetBranch: str
     conflicts: list[str]
     commit: str | None = None
+    suggestedMessage: str | None = None
+
+
+class SuggestedCommitPreferencesPayload(BaseModel):
+    enabled: bool
+    language: Literal["en", "es"]
+
+
+class SuggestedCommitUpdate(BaseModel):
+    message: str = Field(min_length=1, max_length=200, pattern=r"^[^\r\n]+$")
+    language: Literal["en", "es"]
 
 
 # --- in-memory session record ------------------------------------------------------------------
@@ -684,6 +695,13 @@ class PendingInfo:
 
     kind: str
     request_id: str
+
+
+@dataclass(frozen=True)
+class SuggestedCommit:
+    message: str
+    language: Literal["en", "es"]
+    workspace_revision: str
 
 
 @dataclass
@@ -757,6 +775,8 @@ class Session:
     usage_refresh_at: float = 0.0
     # The usage the player's lists last received (see `_usage_signature`), so finer changes stay in the transcript.
     usage_signature: tuple[Any, ...] | None = None
+    # Latest agent-written title, valid only while the complete working tree still matches.
+    suggested_commit: SuggestedCommit | None = None
 
     def to_payload(self) -> SessionPayload:
         descriptor = describe(self.provider)
@@ -2153,10 +2173,29 @@ def _require_mergeable(session: Session) -> None:
         raise ApiException.conflict("Wait for the agent to finish before merging")
 
 
-def _merge_payload(preview: workspaces.MergePreview, commit: str | None = None) -> MergePayload:
+def _merge_payload(preview: workspaces.MergePreview, commit: str | None = None,
+                   suggested_message: str | None = None) -> MergePayload:
     state: MergeState = ("merged" if commit else "conflicts" if preview.conflicts
                          else "up_to_date" if preview.up_to_date else "clean")
-    return MergePayload(state=state, targetBranch=preview.target, conflicts=preview.conflicts, commit=commit)
+    return MergePayload(state=state, targetBranch=preview.target, conflicts=preview.conflicts, commit=commit,
+                        suggestedMessage=suggested_message)
+
+
+async def _current_suggested_commit(session: Session, preferences: dict) -> str | None:
+    suggestion = session.suggested_commit
+    if (not preferences.get("enabled") or suggestion is None
+            or suggestion.language != preferences.get("language")):
+        return None
+    try:
+        async with session.changes_lock:
+            revision = await workspaces.revision(session.workspace)
+    except Exception:
+        LOG.warning("Session %s could not validate its suggested commit", session.id, exc_info=True)
+        return None
+    if suggestion.workspace_revision != revision:
+        session.suggested_commit = None
+        return None
+    return suggestion.message
 
 
 def _conflict_prompt(session: Session, preview: workspaces.MergePreview) -> str:
@@ -2212,10 +2251,17 @@ async def check_merge(session_id: UUID, caller: Annotated[Caller, Depends(curren
     """Dry-runs the merge against the freshly fetched default branch without touching the checkout."""
     session = get_registry().get_for(caller, session_id)
     token = await mooi.fetch_github_token(caller)
+    try:
+        preferences = await mooi.fetch_suggested_commit_preferences(caller)
+    except ApiException:
+        LOG.warning("Session %s could not load suggested commit preferences", session.id, exc_info=True)
+        preferences = {"enabled": False, "language": "en"}
     async with session.operation_lock:
         _require_mergeable(session)
         _touch(session)
-        return _merge_payload(await workspaces.preview_merge(session.workspace, session.base_branch, token))
+        preview = await workspaces.preview_merge(session.workspace, session.base_branch, token)
+        suggestion = await _current_suggested_commit(session, preferences) if not preview.conflicts else None
+        return _merge_payload(preview, suggested_message=suggestion)
 
 
 @router.post("/sessions/{session_id}/merge")
@@ -2363,6 +2409,13 @@ The project's to-do list is `docs/TODOS.md` on the default branch, shown in the 
 - Keep the order the Mooi views keep: a new item goes on top; done items stay at the bottom, so completing one moves it just above the other done items, and reopening or starting a done one moves it just below the items still to do.
 - When `state` is `unsupported`, do not save: tell the user Mooi cannot render the file and ask whether to clean it up (save the `salvage` items) or keep it and edit it by hand.
 
+## Suggested commit message
+At the end of every turn in which you changed repository files, after all edits and verification are complete, update the session's suggested commit message. This is an internal action: do not mention it in the user-facing answer.
+- Read `GET {root}/suggested-commit/agent` immediately before writing. If `enabled` is false, do nothing.
+- Write `PUT {root}/suggested-commit/agent` with JSON `{{"message": "<title>", "language": "<language returned by GET>"}}`.
+- Base the title on both the user's request and the work actually present in the session. Describe the session's complete unmerged change, not merely the last command. Use one concise line (maximum 200 characters), follow the repository's commit style when one is evident, and write in English for `en` or Spanish for `es`.
+- Keep this operation in the current turn. If no repository file changed in the turn, keep the existing suggestion.
+
 ## Shared Docker host
 Docker here is the host's shared engine: other projects' live containers, volumes and networks (production ones included) run on it, and the same names may appear in this repository.
 - Compose commands are scoped to this session's project through `COMPOSE_PROJECT_NAME={_compose_project(session)}`; keep it, never pass `--project-name`/`-p` or override it.
@@ -2486,6 +2539,36 @@ async def agent_save_development_environment(session_id: UUID, request: Request,
                                              body: ProductionEnvironmentUpdate) -> DevelopmentEnvironment:
     session, caller = await _agent_access(session_id, request, "session")
     return await _save_development_environment(caller, session.project_id, body)
+
+
+@router.get("/sessions/{session_id}/suggested-commit/agent")
+async def agent_suggested_commit_preferences(
+    session_id: UUID, request: Request
+) -> SuggestedCommitPreferencesPayload:
+    _, caller = await _agent_access(session_id, request, "session")
+    return SuggestedCommitPreferencesPayload.model_validate(await mooi.fetch_suggested_commit_preferences(caller))
+
+
+@router.put("/sessions/{session_id}/suggested-commit/agent", status_code=status.HTTP_204_NO_CONTENT)
+async def agent_update_suggested_commit(
+    session_id: UUID, request: Request, body: SuggestedCommitUpdate
+) -> None:
+    session, caller = await _agent_access(session_id, request, "session")
+    preferences = await mooi.fetch_suggested_commit_preferences(caller)
+    if not preferences["enabled"]:
+        raise ApiException.conflict("Suggested commit messages are disabled")
+    if body.language != preferences["language"]:
+        raise ApiException.conflict("Suggested commit language changed; read the preference again")
+    async with session.changes_lock:
+        summary = await workspaces.changes(session.workspace, session.base_commit)
+        if not summary.files:
+            raise ApiException.conflict("There are no unmerged changes to describe")
+        revision = await workspaces.revision(session.workspace)
+    message = body.message.strip()
+    if not message:
+        raise ApiException.bad_request("The suggested commit message cannot be blank")
+    session.suggested_commit = SuggestedCommit(message, body.language, revision)
+    record(session, "commit.suggestion.updated", {"message": message, "language": body.language})
 
 
 # --- the project's to-do list: docs/TODOS.md on the default branch, the file being the only copy ---

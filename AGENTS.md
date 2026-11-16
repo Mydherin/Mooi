@@ -63,6 +63,10 @@ from it. Where they differ, this context wins over the current implementation (s
   side by side, phones show them one after the other.
 - KPIs per session and provider account: context size, session limits, weekly limits, other usage metrics.
 - Model and thinking-effort selection per session.
+- Each development session maintains an editable **Suggested commit message** based on what the user
+  requested and what the agent actually changed. It is refreshed after productive turns and pre-fills
+  the clean merge dialog only while it still matches the working tree. Account preferences enable or
+  disable it and choose English or Spanish; they follow the user across devices.
 - A **Trace** tab, like Langfuse / LangSmith, shows every internal step of the agent: prompts, turns (one
   agent-loop iteration each: an LLM call with tokens, cache and context size, then the tools it requested),
   nested sub-agents, skills, hooks, injected context, compactions and errors, as a live timeline with an

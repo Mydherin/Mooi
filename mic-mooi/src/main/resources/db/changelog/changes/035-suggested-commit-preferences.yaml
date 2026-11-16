@@ -1,0 +1,19 @@
+databaseChangeLog:
+  - changeSet:
+      id: 035-suggested-commit-preferences
+      author: mooi
+      changes:
+        - sql:
+            sql: |
+              CREATE TABLE suggested_commit_preferences (
+                player_id uuid,
+                enabled boolean NOT NULL DEFAULT true,
+                language varchar(2) NOT NULL DEFAULT 'en',
+                CONSTRAINT pk_suggested_commit_preferences PRIMARY KEY (player_id),
+                CONSTRAINT fk_suggested_commit_preferences_player FOREIGN KEY (player_id)
+                  REFERENCES players(id) ON DELETE CASCADE,
+                CONSTRAINT ck_suggested_commit_language CHECK (language IN ('en', 'es'))
+              );
+      rollback:
+        - dropTable:
+            tableName: suggested_commit_preferences
