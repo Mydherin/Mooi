@@ -73,47 +73,56 @@ export const AgentConnectionsCard = () => {
     </div>}
 
     {connections.length > 0 && <ul className="mt-5 divide-y divide-line rounded-xl border border-line px-4 sm:px-5">
-      {connections.map((connection) => <li key={connection.id} className="flex items-center gap-3 py-4">
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-surface-2 text-ink-muted"><Bot className="size-5" /></span>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-ink">{accountTitle(connection)}</p>
-          <p className="mt-0.5 flex items-center gap-1.5 text-xs text-ink-subtle">
-            {connection.label}
-            {connection.defaultAccount && <span className="font-semibold text-brand">Default</span>}
-            {connection.stale && <span className="inline-flex items-center gap-1 text-warning"><TriangleAlert className="size-3" /> Needs attention</span>}
-            {usesLegacyToken(connection, providers) && <span className="inline-flex items-center gap-1 text-warning"><TriangleAlert className="size-3" /> Deprecated</span>}
-          </p>
-          {connection.stale && <p className="mt-1 text-xs text-ink-muted">
-            The {connection.label} sign-in of this account has expired. Sign in again to repair it, no need to remove it.
-          </p>}
-          {usesLegacyToken(connection, providers) && <p className="mt-1 text-xs text-ink-muted">
-            Linked with a setup token, a deprecated method: it expires and cannot be renewed. Sign in again
-            with {connection.label} to keep this account renewed automatically.
-          </p>}
-          {canSignInAgain(connection, providers) && <Button variant="secondary" size="sm" className="mt-2" disabled={busy}
-            onClick={() => { clearActionError(); setSigningIn(connection); }}>
-            <LogIn className="size-4" /> Sign in again
-          </Button>}
-        </div>
-        {/* Icon actions keep the account name readable on phones; the labels live in title and aria-label. */}
-        <div className="flex shrink-0 items-center gap-1.5">
-          <button type="button" aria-label={`${connection.defaultAccount ? 'Clear default account' : `Use ${accountTitle(connection)} by default`}`}
-            title={connection.defaultAccount ? 'Clear default account' : 'Use by default'} aria-pressed={connection.defaultAccount}
-            disabled={busy} className={cn(iconAction, connection.defaultAccount && 'text-brand')}
-            onClick={() => void setDefaultAccount(connection.defaultAccount ? null : connection.id)}>
-            <Star className={cn('size-4', connection.defaultAccount && 'fill-current')} />
-          </button>
-          <button type="button" aria-label={`Rename ${accountTitle(connection)}`} title="Rename" disabled={busy} className={iconAction}
-            onClick={() => { clearActionError(); setEditing(connection); setName(connection.name || accountTitle(connection)); }}>
-            <Pencil className="size-4" />
-          </button>
-          <button type="button" aria-label={`Disconnect ${accountTitle(connection)}`} title="Disconnect" disabled={busy}
-            className={cn(iconAction, 'border-danger/35 text-danger hover:bg-danger-soft hover:text-danger')}
-            onClick={() => void disconnect(connection.id)}>
-            <Unlink className="size-4" />
-          </button>
-        </div>
-      </li>)}
+      {connections.map((connection) => {
+        const legacy = usesLegacyToken(connection, providers);
+        return <li key={connection.id} className="py-4">
+          <div className="flex items-center gap-3">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-surface-2 text-ink-muted"><Bot className="size-5" /></span>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold text-ink">{accountTitle(connection)}</p>
+            <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-ink-subtle">
+              {connection.label}
+              {connection.defaultAccount && <span className="font-semibold text-brand">Default</span>}
+              {connection.stale && <span className="inline-flex items-center gap-1 whitespace-nowrap text-warning"><TriangleAlert className="size-3 shrink-0" /> Needs attention</span>}
+              {legacy && <span className="inline-flex items-center gap-1 whitespace-nowrap text-warning"><TriangleAlert className="size-3 shrink-0" /> Deprecated</span>}
+            </p>
+          </div>
+          {/* Icon actions keep the account name readable on phones; the labels live in title and aria-label. */}
+          <div className="flex shrink-0 items-center gap-1.5">
+            <button type="button" aria-label={`${connection.defaultAccount ? 'Clear default account' : `Use ${accountTitle(connection)} by default`}`}
+              title={connection.defaultAccount ? 'Clear default account' : 'Use by default'} aria-pressed={connection.defaultAccount}
+              disabled={busy} className={cn(iconAction, connection.defaultAccount && 'text-brand')}
+              onClick={() => void setDefaultAccount(connection.defaultAccount ? null : connection.id)}>
+              <Star className={cn('size-4', connection.defaultAccount && 'fill-current')} />
+            </button>
+            <button type="button" aria-label={`Rename ${accountTitle(connection)}`} title="Rename" disabled={busy} className={iconAction}
+              onClick={() => { clearActionError(); setEditing(connection); setName(connection.name || accountTitle(connection)); }}>
+              <Pencil className="size-4" />
+            </button>
+            <button type="button" aria-label={`Disconnect ${accountTitle(connection)}`} title="Disconnect" disabled={busy}
+              className={cn(iconAction, 'border-danger/35 text-danger hover:bg-danger-soft hover:text-danger')}
+              onClick={() => void disconnect(connection.id)}>
+              <Unlink className="size-4" />
+            </button>
+          </div>
+          </div>
+          {/* The repair notice spans the row below the actions, so its text keeps a readable width on phones;
+              from sm up it lines up with the account name. */}
+          {(connection.stale || legacy) && <div className="mt-3 space-y-1.5 rounded-xl border border-warning/30 bg-warning-soft px-3.5 py-3 text-xs leading-relaxed text-ink-muted sm:ml-13">
+            {connection.stale && <p>
+              The {connection.label} sign-in of this account has expired. Sign in again to repair it, no need to remove it.
+            </p>}
+            {legacy && <p>
+              Linked with a setup token, a deprecated method: it expires and cannot be renewed. Sign in again
+              with {connection.label} to keep this account renewed automatically.
+            </p>}
+            {canSignInAgain(connection, providers) && <Button variant="secondary" size="sm" className="mt-1.5 w-full sm:w-auto" disabled={busy}
+              onClick={() => { clearActionError(); setSigningIn(connection); }}>
+              <LogIn className="size-4" /> Sign in again
+            </Button>}
+          </div>}
+        </li>;
+      })}
     </ul>}
 
     {actionError && !adding && !editing && <p role="alert" className="mt-4 text-sm text-danger">{actionError}</p>}
