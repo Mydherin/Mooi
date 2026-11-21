@@ -71,7 +71,9 @@ public class AdminFeature {
                        count(*) OVER () AS total
                 FROM players p
                 CROSS JOIN LATERAL (
-                    SELECT max(a.last_used_at) AS last_seen_at,
+                    -- A running Software Factory renews its own sign-in: that is not the player being seen.
+                    SELECT max(a.last_used_at) FILTER (WHERE NOT EXISTS (
+                               SELECT 1 FROM factories f WHERE f.grant_session_id = a.id)) AS last_seen_at,
                            count(*) FILTER (WHERE a.revoked_at IS NULL) AS sign_ins
                     FROM auth_sessions a WHERE a.player_id = p.id
                 ) s

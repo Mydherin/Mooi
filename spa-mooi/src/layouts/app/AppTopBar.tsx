@@ -8,6 +8,8 @@ import { Logo } from '@/shared/components/Logo';
 import { ThemeToggle } from '@/shared/components/ThemeToggle';
 import { useImmersiveRoute } from '@/layouts/app/useImmersiveRoute';
 import { cn } from '@/shared/utils/cn';
+import { factoryNeedsAttention } from '@/features/factory/lib/factoryNeedsAttention';
+import { useLiveStore } from '@/stores/liveStore';
 import { useSidebarStore } from '@/stores/sidebarStore';
 
 /** The section the current path belongs to, by the longest matching nav link. */
@@ -29,13 +31,17 @@ const useCurrentSection = () => {
  */
 export const AppTopBar = () => {
   const open = useSidebarStore((state) => state.open);
+  const attention = useLiveStore((live) => Object.values(live.factories).some(factoryNeedsAttention));
   const immersive = useImmersiveRoute();
   const section = useCurrentSection();
   const SectionIcon = section?.icon;
 
   return (
     <header className={cn('sticky top-0 z-30 flex h-14 composing:max-lg:hidden shrink-0 items-center gap-2 border-b border-line bg-surface/85 px-2 backdrop-blur-xl sm:px-4 lg:h-12 lg:bg-canvas lg:px-5 lg:backdrop-blur-none', immersive && 'max-lg:hidden')}>
-      <IconButton icon={Menu} label="Open navigation" onClick={open} className="lg:hidden" />
+      <span className="relative lg:hidden">
+        <IconButton icon={Menu} label={attention ? 'Open navigation, a factory needs you' : 'Open navigation'} onClick={open} />
+        {attention ? <span aria-hidden className="pointer-events-none absolute top-2 right-2 size-2 rounded-full bg-warning-dot ring-2 ring-surface" /> : null}
+      </span>
 
       <Link
         to={ROUTES.projects}

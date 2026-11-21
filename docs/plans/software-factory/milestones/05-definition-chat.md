@@ -1,6 +1,6 @@
 ---
 id: 05-definition-chat
-status: planned
+status: done
 depends: [03-orchestrator-core]
 context: [mic-sessions]
 ---
@@ -12,7 +12,7 @@ context: [mic-sessions]
 The human-driven part. It covers the persistent factory chat, the definition flow, the approval gate and
 Phase 0 (Foundations).
 
-**Factory chat** (`kind="factory"`, `factoryRole="chat"`):
+**Factory chat** (`kind="session"` with a `FactoryBinding` of role `chat`, D3):
 
 - One per project, persistent like the production chat. It runs on the default branch, and a new one
   replaces the previous one.
@@ -51,14 +51,14 @@ These are the same functions the agent endpoints call (convergence).
 
 ## Tasks
 
-- [ ] Chat session kind/role handling, replacement rule, `chat_session_id` persistence
-- [ ] Architect and chat briefs (definition mode, then steering mode)
-- [ ] Approval: shared function plus SPA and agent endpoints
-- [ ] Phase 0 rules in the templates; the builder brief embeds the deployment setup brief for the dev
+- [x] Chat session kind/role handling, replacement rule, `chat_session_id` persistence
+- [x] Architect and chat briefs (definition mode, then steering mode)
+- [x] Approval: shared function plus SPA and agent endpoints
+- [x] Phase 0 rules in the templates; the builder brief embeds the deployment setup brief for the dev
   deployment milestone
-- [ ] Start endpoint (`ready` → `running`) with run-config validation (reuse `descriptor.prepare` and
+- [x] Start endpoint (`ready` → `running`) with run-config validation (reuse `descriptor.prepare` and
   `configure`, as `_open_session` does)
-- [ ] Checks: `uvx ruff check src`, import check
+- [x] Checks: `uvx ruff check src`, import check
 
 ## Acceptance
 
@@ -70,6 +70,45 @@ These are the same functions the agent endpoints call (convergence).
 
 ## State
 
-Not started.
+Done (session 3). Code complete and checked; the *Acceptance* scenarios are verified manually by the user
+(the SPA entry points arrive with milestone 08; until then the endpoints are callable directly).
+
+What exists (`features/factories.py`, section *operations*, then *player API* and *agent API*):
+
+- `open_chat(caller, project_id, ChatRequest)`: creates the factory on first use (`mooi.create_factory`),
+  closes the previous chat (`_bound(..., "chat")`), opens a `kind="session"` session on the default branch
+  with `FactoryBinding(factory_id, "chat")` and the brief as `initialMessage` (`architect_brief(request)`
+  while `defining`, `steering_brief(request)` otherwise), then stores `chatSessionId` (one retry on 409).
+- `approve_definition`: `defining` only; reads the default branch through `_read_plan` (control checkout,
+  under the per-factory `_checkout_lock`, also used by the runner) and answers
+  `{approved, issues, factory}`: issues from `factory_docs.definition_issues`, else `ready` with the plan
+  snapshot.
+- `start_factory(RunConfigRequest)`: `ready` only; `_run_config` validates with `describe` → `prepare` →
+  `configure` and stores the resolved selection; `mooi.grant_factory`, then `running`, then `launch`.
+- `delete_factory`: refused while `running`/`pausing`; deletes in mic-mooi, closes every bound session,
+  removes the control checkout, publishes `factory.updated` with `factory: null`.
+- Endpoints: `POST /factories/{projectId}/chat` (201), `POST /factories/{projectId}/definition/approve`,
+  `POST /factories/{projectId}/start`, `DELETE /factories/{projectId}`; chat agent
+  `POST /sessions/{id}/factory/agent/publish` (`defining` only, `sessions.publish_repository` = the
+  platform-chat squash onto the default branch) and `POST /sessions/{id}/factory/agent/approve`.
+- Every player-side write goes through `_write` (revision of the payload read, `factory.updated`
+  published); the runner's own writes still use `FactoryRunner._save`.
+- Prompts: `steering_brief(request=None)`; the planner brief of `00-foundations` requires the technical base
+  and, for web applications, a dev deployment milestone; the builder's deployment section applies only when
+  the milestone's *Spec* sets up the deployment.
+
+Local decisions (session 3):
+
+- The chat is `kind="session"` with role `chat` (D3), not a `kind="factory"` as the spec first said.
+- The builder brief does not inline the Deploy button's brief (it is long and costs context in every
+  foundations session); the agent `GET`s the same brief from its standing instructions when its milestone
+  sets the deployment up. Same brief, same test, so convergence holds.
+- Approval answers its issues with 200 `{approved: false}` instead of an error, so the chat and the SPA show
+  them as a checklist.
+- The "ready → running" start lives here; starting from `paused`, pause and resume are milestone 07
+  (`agent_api(chat=True)` already documents `pause`/`resume`/`change-requests`, which 07 must add).
 
 ## Log
+
+- Session 3: chat, approval, start and delete operations with SPA and agent endpoints; Phase 0 brief rules.
+  Ruff: no new findings; import check passes.

@@ -494,6 +494,14 @@ class Workspaces:
     async def merge_in_progress(self, workspace: Path) -> bool:
         return await self._git_ok("-C", str(workspace), "rev-parse", "-q", "--verify", "MERGE_HEAD")
 
+    async def changed_since(self, workspace: Path, commit: str, path: Path) -> bool:
+        """Whether `path` (relative to the workspace) differs from `commit`, committed or not, including
+        a file created since."""
+        if not await self._git_ok("-C", str(workspace), "diff", "--quiet", commit, "--", str(path)):
+            return True
+        listed = await self._git("-C", str(workspace), "status", "--porcelain", "--", str(path))
+        return bool(listed.strip())
+
     async def integrate(self, workspace: Path, target: str, identity: GitIdentity, token: str) -> list[str]:
         """Brings the freshly fetched `target` into the checked-out branch. Answers the paths that would
         conflict, leaving the checkout untouched; an empty list means HEAD now contains `target`."""
@@ -542,6 +550,46 @@ class Workspaces:
         await self._git(*_NO_CREDENTIAL_HELPER, "-C", str(checkout), "checkout", "--force", "--detach", remote,
                         auth=token)
         return checkout, await self.head_commit(checkout)
+
+    async def branch_file(self, checkout: Path, branch: str, path: Path, token: str) -> str | None:
+        """`path` as the remote `branch` holds it now, read through a shallow fetch into the control
+        checkout; None when the branch or the file does not exist."""
+        await self.validate_branch(branch)
+        remote = f"refs/remotes/origin/{branch}"
+        code, _, detail = await self._run(*_NO_CREDENTIAL_HELPER, "-C", str(checkout), "fetch", "--depth", "1",
+                                          "--filter=blob:none", "--no-tags", "origin", f"+refs/heads/{branch}:{remote}",
+                                          auth=token)
+        if code != 0:
+            if "couldn't find remote ref" in detail.lower():
+                return None
+            LOG.warning("git fetch of %s failed with %s: %s", branch, code, detail or "no output")
+            raise ApiException.bad_gateway(detail or f"{branch} could not be fetched")
+        if not (await self._git("-C", str(checkout), "ls-tree", remote, "--", path.as_posix())).strip():
+            return None
+        return await self._git(*_NO_CREDENTIAL_HELPER, "-C", str(checkout), "show", f"{remote}:{path.as_posix()}",
+                               auth=token)
+
+    async def factory_branch_checkout(self, factory_id: UUID, project_full_name: str, branch: str,
+                                      token: str) -> Path:
+        """A fresh working tree of `branch` beside the control checkout, for the platform's own edits of a
+        milestone branch: squashing a milestone that passed its test onto the default branch, or releasing
+        one from `attention`. Blobs arrive on checkout only."""
+        await self.validate_branch(branch)
+        directory = self._factory_directory(factory_id)
+        if directory.is_symlink() or not (directory / ".mooi-factory").is_file():
+            raise RuntimeError("The factory's control checkout must exist before merging")
+        checkout = directory / "branch"
+        await self.remove_factory_branch_checkout(factory_id)
+        await self._git(*_NO_CREDENTIAL_HELPER, "clone", "--filter=blob:none", "--single-branch", "--branch", branch,
+                        "--no-tags", f"https://github.com/{project_full_name}.git", str(checkout), auth=token)
+        return checkout
+
+    async def remove_factory_branch_checkout(self, factory_id: UUID) -> None:
+        checkout = self._factory_directory(factory_id) / "branch"
+        if checkout.is_symlink():
+            raise RuntimeError("Refusing a symlink in the factory checkout path")
+        if checkout.exists():
+            await asyncio.to_thread(shutil.rmtree, checkout)
 
     async def remove_factory_checkout(self, factory_id: UUID) -> None:
         directory = self._factory_directory(factory_id)
@@ -897,6 +945,10 @@ async def merge_in_progress(workspace: Path) -> bool:
     return await get_workspaces().merge_in_progress(workspace)
 
 
+async def changed_since(workspace: Path, commit: str, path: Path) -> bool:
+    return await get_workspaces().changed_since(workspace, commit, path)
+
+
 async def integrate(workspace: Path, target: str, identity: GitIdentity, token: str) -> list[str]:
     return await get_workspaces().integrate(workspace, target, identity, token)
 
@@ -907,3 +959,15 @@ async def factory_checkout(factory_id: UUID, project_full_name: str, branch: str
 
 async def remove_factory_checkout(factory_id: UUID) -> None:
     await get_workspaces().remove_factory_checkout(factory_id)
+
+
+async def branch_file(checkout: Path, branch: str, path: Path, token: str) -> str | None:
+    return await get_workspaces().branch_file(checkout, branch, path, token)
+
+
+async def factory_branch_checkout(factory_id: UUID, project_full_name: str, branch: str, token: str) -> Path:
+    return await get_workspaces().factory_branch_checkout(factory_id, project_full_name, branch, token)
+
+
+async def remove_factory_branch_checkout(factory_id: UUID) -> None:
+    await get_workspaces().remove_factory_branch_checkout(factory_id)

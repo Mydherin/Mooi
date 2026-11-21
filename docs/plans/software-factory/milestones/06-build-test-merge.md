@@ -1,6 +1,6 @@
 ---
 id: 06-build-test-merge
-status: planned
+status: done
 depends: [04-context-checkpoints, 05-definition-chat]
 context: [mic-sessions]
 ---
@@ -54,13 +54,14 @@ becomes a change request.
 
 ## Tasks
 
-- [ ] Planner, builder and tester briefs (concrete reading lists, following the reading rule of milestone 02)
+- [x] Planner, builder and tester briefs (written in milestone 02; reviewed here)
 - [x] Default-branch → milestone-branch merge at step start, with the merger step on conflicts (done in
   milestone 03: `workspaces.integrate` + `FactoryRunner._merger`, using `merger_brief`)
-- [ ] Test-cycle accounting and the `attention` transition
-- [ ] Merge flow with status updates in the squash
-- [ ] Phase-end drift refresh
-- [ ] Checks: `uvx ruff check src`, import check
+- [x] Milestone progress read from its branch (D5c)
+- [x] Test-cycle accounting and the `attention` transition
+- [x] Merge flow with status updates in the squash
+- [x] Phase-end drift refresh (covered by the planner brief, decision of milestone 02)
+- [x] Checks: `uvx ruff check src`, import check
 
 ## Acceptance
 
@@ -72,6 +73,32 @@ becomes a change request.
 
 ## State
 
-Not started.
+Done (session 3). Code complete and checked; the *Acceptance* scenarios are verified manually by the user.
+
+What exists:
+
+- D5c: `_read_plan(..., progress=True)` (runner only) overlays the next milestone's front matter read from
+  its branch (`workspaces.branch_file`: shallow fetch into the control checkout, `None` when the branch or
+  file is missing) with `factory_docs.with_branch_progress`. The saved `plan` snapshot includes it.
+- Merge (`FactoryRunner._merge`, no agent): `workspaces.factory_merge_checkout` (fresh blob-filtered clone
+  of the milestone branch in `factories/<id>/merge`, removed afterwards), front matter `status: done`,
+  `test: passed`, then `Workspaces.merge` with `feat(<phase>): <title>`. Conflicts make the cycle run a
+  `merger` step (`_ROLES["merge"]`) on the milestone branch with `merger_brief`; if the default branch
+  integrates cleanly at step start, that step ends `completed` at once and the next cycle merges.
+- D10: after a verified tester `failed`, `_count_failure` reads the workspace's milestone and, at
+  `attempts >= FACTORY_MAX_TEST_CYCLES` (setting, default 3), sets `status: attention`, appends a *Log* line
+  and commits; the next cycle pauses with reason `attention`.
+- The tester's preview stops with its session (`close_session` cleans its deployment).
+
+Local decisions (session 3):
+
+- The phase is set `done` by the existing platform `close` action in the next cycle, not in the merge
+  squash: editing `ROADMAP.md` from a milestone branch would conflict with concurrent plan changes.
+- Phase-end drift control is the planner brief's job (it reads the last three built phases and refreshes
+  later *Assumptions*), as milestone 02 decided: no extra step.
+- Milestone branches stay on GitHub after merging.
 
 ## Log
+
+- Session 3: branch progress overlay, platform merge with merger fallback, test-cycle bound. Ruff: no new
+  findings; import check passes; `branch_file`'s git commands checked against a local bare repository.

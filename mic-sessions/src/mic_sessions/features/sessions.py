@@ -4577,6 +4577,11 @@ async def deliver(session: Session, caller: Caller, text: str) -> None:
         await _deliver(session, runtime, text)
 
 
+async def publish_repository(session: Session, caller: Caller, message: str) -> MergePayload:
+    """Squashes the session's changes onto its project's default branch, as platform chats commit."""
+    return await _commit_platform_repository(session, caller, MergeRequest(message=message))
+
+
 async def interrupt(session: Session) -> None:
     """Interrupts the running turn, if any; the provider's terminal result makes the session READY."""
     async with session.operation_lock:

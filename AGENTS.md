@@ -173,8 +173,9 @@ from it. Where they differ, this context wins over the current implementation (s
   - **Test** end to end only, in fresh sessions distinct from the builders, against the milestone's dev
     preview. A failure records reproducible bugs; builder sessions fix them and testing runs again. After a
     bounded number of failed cycles the milestone needs attention and the loop waits for the human.
-  - **Merge** into the default branch once the end-to-end test passes (agentic merge when outdated). One
-    branch per milestone, pushed at every checkpoint.
+  - **Merge** into the default branch once the end-to-end test passes: the platform squashes the milestone
+    branch itself, and only conflicts call an agent (agentic merge). One branch per milestone, pushed at every
+    checkpoint; it holds the milestone's progress until the merge.
 - **Fresh sessions at 20%**: every factory session stops once it has used 20% of its context window. The
   platform measures it (each adapter's context KPI) and asks the agent to checkpoint: commit, push and rewrite
   the milestone's state for the next session. A hard limit and a platform-side safety commit cover a checkpoint
@@ -193,7 +194,8 @@ from it. Where they differ, this context wins over the current implementation (s
     platform keeps only operational state (current step, sessions, retries, change requests).
 - **Deterministic orchestrator**: the platform, never an agent, drives the loop as a persisted state machine.
   Each step is a fresh Mooi session with a role prompt (architect, phase planner, builder, tester, impact
-  analyst), visible live with its chat, changes and trace, and open to the human.
+  analyst), visible live with its chat, changes and trace, and open to the human. A step ends with an explicit
+  outcome the platform accepts only when the documents and Git agree with it.
 - **The human can step in at any time without breaking anything**:
   - Pause (gracefully at the next checkpoint, or immediately) and resume at will. Provider, account, adapter,
     model and effort are chosen at every start and resume, and apply to every session until the next pause.
@@ -202,11 +204,13 @@ from it. Where they differ, this context wins over the current implementation (s
     delta milestones. Scope-level changes ask the human to confirm.
   - Consistency guarantees: a single writer of the plan, atomic idempotent steps, and on resume the platform
     reconciles its journal with Git, which wins.
-- **Background**: runs on the server with nobody connected and survives restarts. It pauses when provider
-  limits run out and continues with the same choice once they renew. It flags milestones needing attention,
-  change requests awaiting confirmation and finished phases.
-- After the last phase the factory rests: small additions enter as change requests; large scope changes
-  reopen definition with the human.
+- **Background**: runs on the server with nobody connected and survives restarts, under its own sign-in
+  opened at each start or resume. Signing out everywhere, a kick or a ban revoke it like any device, and so
+  does every pause except one for provider limits. It pauses when provider limits run out and continues
+  with the same choice once they renew. It flags milestones needing attention, change requests awaiting
+  confirmation and finished phases on the Factory tab, the project card and the main menu, live.
+- After the last phase the factory rests: small additions enter as change requests and wake it up; an
+  accepted scope-level change reopens definition with the human.
 - A **Factory** tab shows the roadmap (phases, milestones, statuses), the active session live, decisions,
   change requests and controls. All of it is also available from the chat through the platform API.
 
@@ -229,9 +233,9 @@ from it. Where they differ, this context wins over the current implementation (s
 
 # Current work
 
-- **Software Factory** implementation is in progress: when asked to continue it, read
-  `docs/plans/software-factory/PHASE.md`, then follow its session protocol (first milestone not `done`).
-  Other requests ignore this pointer.
+- **Software Factory** end-to-end verification: when asked to continue it, read
+  `docs/plans/software-factory/PHASE.md`, then follow its session protocol (first milestone not `done`:
+  `10-e2e-verification`, which the user asked to test in the preview). Other requests ignore this pointer.
 
 # Guidelines
 

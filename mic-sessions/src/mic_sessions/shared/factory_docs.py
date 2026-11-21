@@ -14,7 +14,7 @@ Git is the source of truth: the platform state only caches what `read_plan` answ
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Literal
 
@@ -150,6 +150,27 @@ def write_front_matter(path: Path, updates: dict[str, Any]) -> bool:
     return True
 
 
+def append_log(path: Path, line: str) -> None:
+    """Adds `- <line>` at the end of the file's `## Log` section, creating the section when missing."""
+    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    start = next((index for index, text in enumerate(lines) if text.strip() == "## Log"), None)
+    if start is None:
+        while lines and not lines[-1].strip():
+            lines.pop()
+        lines += ["", "## Log", ""]
+        end = len(lines)
+    else:
+        end = next((index for index in range(start + 1, len(lines)) if lines[index].startswith("## ")), len(lines))
+        while end > start + 1 and not lines[end - 1].strip():
+            end -= 1
+        if end == start + 1:
+            lines.insert(end, "")
+            end += 1
+    lines.insert(end, f"- {line}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def _strings(value: Any) -> tuple[str, ...]:
     if isinstance(value, str):
         return (value,)
@@ -267,6 +288,26 @@ def _consistency(workspace: Path, plan: FactoryPlan) -> list[DocIssue]:
             if relative not in registered:
                 issues.append(DocIssue(str(ROOT / relative), "Not registered in FACTORY.md"))
     return issues
+
+
+def with_branch_progress(plan: FactoryPlan, milestone: Milestone, text: str) -> FactoryPlan:
+    """The plan with `milestone`'s progress (`status`, `test`, `attempts`) taken from `text`, its file on
+    its milestone branch: builders and testers record progress there, and it reaches the default branch
+    only with the merge. A branch never closes its own milestone (the merge squash does), so `done` there
+    reads as `testing`."""
+    data, _ = split_front_matter(text)
+    if not data:
+        return plan
+    status = str(data.get("status") or milestone.status)
+    status = "testing" if status == "done" else status if status in MILESTONE_STATUSES else milestone.status
+    test = str(data.get("test") or "none")
+    attempts = data.get("attempts")
+    updated = replace(milestone, status=status, test=test if test in TEST_RESULTS else "none",
+                      attempts=attempts if isinstance(attempts, int) and attempts >= 0 else milestone.attempts)
+    phases = tuple(replace(phase, milestones=tuple(updated if item.id == milestone.id else item
+                                                   for item in phase.milestones))
+                   if phase.id == milestone.phase_id else phase for phase in plan.phases)
+    return replace(plan, phases=phases)
 
 
 def definition_issues(plan: FactoryPlan) -> list[DocIssue]:

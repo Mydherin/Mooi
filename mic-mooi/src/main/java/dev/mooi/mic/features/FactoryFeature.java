@@ -266,6 +266,18 @@ public class FactoryFeature {
             factories.delete(row);
         }
 
+        /**
+         * A project leaving the workspace takes its factory with it. The database cascade would drop the row
+         * too, but not the factory's sign-in: it is revoked here first, as removing the factory does.
+         */
+        @Transactional
+        public void forgetProject(UUID projectId) {
+            factories.findByProjectId(projectId).ifPresent(row -> {
+                revokeGrant(row);
+                factories.delete(row);
+            });
+        }
+
         @Transactional
         public GrantPayload grant(UUID projectId, UUID playerId) {
             var row = owned(projectId, playerId);

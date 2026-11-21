@@ -1,6 +1,6 @@
 ---
 id: 04-context-checkpoints
-status: planned
+status: done
 depends: [03-orchestrator-core]
 context: [mic-sessions]
 ---
@@ -47,14 +47,14 @@ error):
 
 ## Tasks
 
-- [ ] Usage hook in `record()` for factory sessions → runner
-- [ ] Soft-limit flow: interrupt → wait for READY → checkpoint brief
-- [ ] Hard limit and timeout
+- [x] Usage hook in `record()` for factory sessions → runner
+- [x] Soft-limit flow: interrupt → wait for READY → checkpoint brief
+- [x] Hard limit and timeout
 - [x] Safety commit and push helper in `Workspaces` (`checkpoint_commit`; done in milestone 03, also used
   by every step close)
-- [ ] Recovery brief selection
-- [ ] Settings + `.env.example`
-- [ ] Checks: `uvx ruff check src`, import check
+- [x] Recovery brief selection
+- [x] Settings + `.env.example`
+- [x] Checks: `uvx ruff check src`, import check
 
 ## Acceptance
 
@@ -65,6 +65,36 @@ error):
 
 ## State
 
-Not started.
+Done (session 3). Code complete and checked; the *Acceptance* scenarios are verified manually by the user
+once milestones 05/07 provide the start endpoints.
+
+What exists:
+
+- Settings `factory_context_soft_percent` (20), `factory_context_hard_percent` (30, must be above soft,
+  checked in `get_settings`), `factory_checkpoint_timeout_seconds` (600); documented in `.env.example`.
+- `FactoryRunner.observe`: on `session.usage` tracks the peak; the first value at or above soft sets
+  `_Step.checkpoint_percent`; during the checkpoint, a value at or above the hard limit sets `_Step.stop`.
+- `_await_outcome`: soft → `_checkpoint` (interrupt, wait for READY within the timeout, deliver
+  `checkpoint_message` in the same conversation); then waits with the timeout; a stop, the timeout or a
+  checkpoint turn ending without an outcome ends the step. `_settle(step, seconds)` lets a turn end, then
+  interrupts and waits up to 60 s for READY before the safety commit.
+- `_close` → `_flag_recovery`: a milestone step (not merger) without a handover whose milestone file is
+  unchanged since `base_commit` (`workspaces.changed_since`) gets a `Recovery needed` line in *Log*
+  (`factory_docs.append_log`), committed by the safety commit.
+- Next session: `recovery_note()` when the last step had no handover (milestone 03); new `handover_note`
+  carries the summary of a valid `continue` to the next session of the same target (plan roles have no
+  *State*).
+
+Local decisions (session 3):
+
+- **Late soft crossing**: the hard limit during a checkpoint is `max(hard, crossing percent + (hard -
+  soft))`, so a usage jump past hard still leaves the checkpoint its margin.
+- **Checkpoint brief refused (409)** because another message got in first: that turn is the checkpoint's
+  last chance; when it ends without an outcome the step ends.
+- **Handover summaries** live in the runner's memory only; after a restart the recovery note covers it.
+- Graceful/immediate pause (milestone 07) should reuse `_checkpoint` / `_Step.stop`.
 
 ## Log
+
+- Session 3: settings, usage hook, checkpoint/hard-stop/timeout flow, recovery Log line, handover note.
+  Ruff: no new findings; import check passes.

@@ -139,6 +139,7 @@ public class ProjectFeature {
         private final Github.OAuthClient oauthClient;
         private final Crypto.SecretBox secretBox;
         private final Clock clock;
+        private final FactoryFeature.FactoryService factories;
 
         /** Most recently added first: the list is read as a history of what the player brought in. */
         @Transactional(readOnly = true)
@@ -234,6 +235,7 @@ public class ProjectFeature {
                         "This repository has changed on GitHub. Refresh the project before deleting it");
             }
             oauthClient.deleteRepository(project.getOwner(), project.getName(), token);
+            factories.forgetProject(project.getId());
             projectRepository.delete(project);
             Github.LOG.info("Player {} deleted GitHub repository {}", playerId, project.getFullName());
         }
@@ -241,6 +243,7 @@ public class ProjectFeature {
         @Transactional
         public void remove(UUID playerId, UUID projectId) {
             projectRepository.findByIdAndPlayerId(projectId, playerId).ifPresent(project -> {
+                factories.forgetProject(project.getId());
                 projectRepository.delete(project);
                 Github.LOG.info("Player {} removed repository {} from workspace", playerId, project.getFullName());
             });

@@ -82,6 +82,14 @@ class Settings(BaseSettings):
     # Most files the Files tab lists for one workspace.
     files_max_listed: int = Field(default=50_000, ge=1_000)
 
+    # Software Factory context checkpoints (D7): a step session is asked to hand over once its context
+    # reaches the soft limit; it is stopped past the hard limit or once the checkpoint runs this long.
+    factory_context_soft_percent: float = Field(default=20, gt=0, lt=100)
+    factory_context_hard_percent: float = Field(default=30, gt=0, le=100)
+    factory_checkpoint_timeout_seconds: int = Field(default=600, gt=0)
+    # Failed build → test cycles of one milestone before it needs a human (D10).
+    factory_max_test_cycles: int = Field(default=3, gt=0)
+
     # Session deployments. Docker talks to the host engine, not a nested daemon.
     docker_binary: str = Field(default="docker", min_length=1)
     docker_host: str = "unix:///var/run/docker.sock"
@@ -175,4 +183,6 @@ def get_settings() -> Settings:
         raise RuntimeError("SERVICE_TOKEN must be set")
     if not settings.mooi_api_base_url.startswith(("http://", "https://")):
         raise RuntimeError("MOOI_API_BASE_URL must be a valid URL")
+    if settings.factory_context_hard_percent <= settings.factory_context_soft_percent:
+        raise RuntimeError("FACTORY_CONTEXT_HARD_PERCENT must be above FACTORY_CONTEXT_SOFT_PERCENT")
     return settings

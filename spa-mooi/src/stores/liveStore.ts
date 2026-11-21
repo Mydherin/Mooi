@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { Factory } from '@/features/factory/types/Factory';
 import type { LiveOperationKind } from '@/features/live/types/LiveOperationKind';
 import { applyPlatformSnapshot, applyPlatformStreamEvent } from '@/features/platform/lib/applyPlatformStreamEvent';
 import type { PlatformEnvironmentVariable } from '@/features/platform/types/PlatformEnvironmentVariable';
@@ -24,7 +25,13 @@ const initial = {
   finished: { production: 0, backup: 0 },
   developmentEnvironments: {},
   todos: {},
+  factories: {},
+  factoriesLoaded: false,
 };
+
+/** A factory announced or read out of order never replaces a newer one; a removal always applies. */
+const newerFactory = (current: Factory | null | undefined, incoming: Factory | null): Factory | null =>
+  incoming === null || !current || incoming.id !== current.id || incoming.revision >= current.revision ? incoming : current;
 
 const bump = (counters: Record<string, number>, ...keys: string[]): Record<string, number> =>
   Object.fromEntries([...Object.entries(counters), ...keys.map((key) => [key, (counters[key] ?? 0) + 1])]);
@@ -64,6 +71,9 @@ export const useLiveStore = create<LiveState>((set) => ({
     if (frame.type === 'project.todos') {
       return { todos: { ...state.todos, [projectId]: data.todos as TodoList } };
     }
+    if (frame.type === 'factory.updated') {
+      return { factories: { ...state.factories, [projectId]: newerFactory(state.factories[projectId], (data.factory as Factory | null) ?? null) } };
+    }
     if (frame.type === 'development.environment') {
       return {
         developmentEnvironments: { ...state.developmentEnvironments, [projectId]: data.environment as PlatformEnvironmentVariable[] },
@@ -87,6 +97,18 @@ export const useLiveStore = create<LiveState>((set) => ({
   })),
 
   adoptTodos: (projectId, todos) => set((state) => ({ todos: { ...state.todos, [projectId]: todos } })),
+
+  adoptFactory: (projectId, factory) => set((state) => ({
+    factories: { ...state.factories, [projectId]: newerFactory(state.factories[projectId], factory) },
+  })),
+
+  adoptFactories: (factories) => set((state) => ({
+    factoriesLoaded: true,
+    factories: Object.fromEntries([
+      ...Object.keys(state.factories).map((projectId) => [projectId, null]),
+      ...factories.map((factory) => [factory.projectId, newerFactory(state.factories[factory.projectId], factory)]),
+    ]),
+  })),
 
   reconnect: () => set((state) => ({ generation: state.generation + 1 })),
 

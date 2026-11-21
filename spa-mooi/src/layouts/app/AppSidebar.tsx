@@ -10,7 +10,9 @@ import { IconButton } from '@/shared/components/IconButton';
 import { Initials } from '@/shared/components/Initials';
 import { Logo } from '@/shared/components/Logo';
 import { cn } from '@/shared/utils/cn';
+import { factoryNeedsAttention } from '@/features/factory/lib/factoryNeedsAttention';
 import { useAuthStore } from '@/stores/authStore';
+import { useLiveStore } from '@/stores/liveStore';
 import { useProjectsStore } from '@/stores/projectsStore';
 
 interface AppSidebarProps {
@@ -23,7 +25,10 @@ const SIDEBAR_PROJECTS = 6;
 export const AppSidebar = ({ className, onNavigate }: AppSidebarProps) => {
   const player = useAuthStore((state) => state.player);
   const projects = useProjectsStore((state) => state.projects);
-  const links = appNavLinks.filter((link) => !link.adminOnly || player?.role === 'admin');
+  // Factories live in their projects: the Projects entry counts the ones waiting for the player (D14).
+  const waiting = useLiveStore((live) => Object.values(live.factories).filter(factoryNeedsAttention).length);
+  const links = appNavLinks.filter((link) => !link.adminOnly || player?.role === 'admin')
+    .map((link) => (link.id === 'projects' && waiting > 0 ? { ...link, attention: waiting } : link));
   const sidebarProjects = projects.slice(0, SIDEBAR_PROJECTS);
 
   return (

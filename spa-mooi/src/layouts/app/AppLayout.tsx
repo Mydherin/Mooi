@@ -1,6 +1,7 @@
 import { useRef } from 'react';
 import { Outlet } from 'react-router-dom';
 import { useAgentConnectionsSync } from '@/features/agents/hooks/useAgentConnectionsSync';
+import { useFactoriesSync } from '@/features/factory/hooks/useFactoriesSync';
 import { useGithubConnectionSync } from '@/features/github/hooks/useGithubConnectionSync';
 import { useLiveChannelSync } from '@/features/live/hooks/useLiveChannelSync';
 import { useProjectsSync } from '@/features/projects/hooks/useProjectsSync';
@@ -21,6 +22,7 @@ export const AppLayout = () => {
   useAgentConnectionsSync();
   useRecipeMarketplacesSync();
   useLiveChannelSync();
+  useFactoriesSync();
   const main = useRef<HTMLElement>(null);
   useScrollTopOnNavigate(main);
   usePageTransition(main);

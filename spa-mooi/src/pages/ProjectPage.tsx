@@ -1,9 +1,11 @@
 import { useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams, Link } from 'react-router-dom';
-import { Compass, FolderGit2, ListTodo, MessagesSquare, Plus } from 'lucide-react';
+import { Compass, Factory, FolderGit2, ListTodo, MessagesSquare, Plus } from 'lucide-react';
 import { ROUTES } from '@/app/routes';
 import { sessionPath } from '@/app/paths';
 import { useAgentConnections } from '@/features/agents/hooks/useAgentConnections';
+import { FactoryPanel } from '@/features/factory/components/FactoryPanel';
+import { factoryNeedsAttention } from '@/features/factory/lib/factoryNeedsAttention';
 import { ProjectHeader } from '@/features/projects/components/ProjectHeader';
 import { DeleteProjectDialog } from '@/features/projects/components/DeleteProjectDialog';
 import { useProjects } from '@/features/projects/hooks/useProjects';
@@ -32,7 +34,8 @@ import { useLiveStore } from '@/stores/liveStore';
  */
 const WORKSPACES_TAB = 'workspaces';
 const TODOS_TAB = 'todos';
-const TABS = new Set([WORKSPACES_TAB, TODOS_TAB]);
+const FACTORY_TAB = 'factory';
+const TABS = new Set([WORKSPACES_TAB, TODOS_TAB, FACTORY_TAB]);
 
 export const ProjectPage = () => {
   const { projectId } = useParams();
@@ -47,6 +50,7 @@ export const ProjectPage = () => {
   const requestedTab = searchParams.get('tab');
   const tab = requestedTab && TABS.has(requestedTab) ? requestedTab : 'sessions';
   const todos = useLiveStore((live) => (projectId ? live.todos[projectId] : undefined));
+  const factoryAttention = useLiveStore((live) => (projectId ? factoryNeedsAttention(live.factories[projectId]) : false));
   const sessionsRevision = useMemo(
     () => sessions.map((session) => `${session.id}:${session.status}:${session.deployment.state}:${session.workspacePath ?? ''}`).join('|'),
     [sessions],
@@ -126,10 +130,14 @@ export const ProjectPage = () => {
             // Open items, once the file was read: the tab never reaches GitHub before it is opened.
             count: todos?.state === 'ready' ? todos.items.filter((item) => item.status !== 'done').length : undefined,
           },
+          // The dot lights up when the factory waits for the player (D14).
+          { id: FACTORY_TAB, label: 'Factory', icon: Factory, dot: factoryAttention },
         ]}
       />
 
-      {tab === TODOS_TAB ? (
+      {tab === FACTORY_TAB ? (
+        <FactoryPanel project={project} />
+      ) : tab === TODOS_TAB ? (
         <TodosPanel projectId={project.id} branch={project.defaultBranch ?? 'the default branch'} />
       ) : tab === WORKSPACES_TAB ? (
         <WorkspacesOverview

@@ -1,6 +1,7 @@
 import type { SessionUsage } from './SessionUsage';
 import type { DeploymentSnapshot } from './DeploymentSnapshot';
 import type { DeploymentSetup } from './DeploymentSetup';
+import type { FactoryBinding } from '@/features/factory/types/FactoryBinding';
 import type { AgentCapabilities } from '@/features/sessions/types/AgentCapabilities';
 import type { PendingRequest } from '@/features/sessions/types/PendingRequest';
 import type { SessionKind } from '@/features/sessions/types/SessionKind';
@@ -38,4 +39,6 @@ export interface Session {
   baseCommit: string | null;
   /** Failed with its agent and workspace intact: reconnecting resumes the conversation. */
   recoverable?: boolean;
+  /** Set when the session belongs to the project's Software Factory: its chat or one step of the loop. */
+  factory?: FactoryBinding | null;
 }

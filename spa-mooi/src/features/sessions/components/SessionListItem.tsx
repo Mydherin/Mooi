@@ -1,6 +1,8 @@
 import { Link } from 'react-router-dom';
-import { ChevronRight, GitBranch } from 'lucide-react';
+import { ChevronRight, Factory, GitBranch } from 'lucide-react';
 import { sessionPath } from '@/app/paths';
+import { factoryRoleLabel } from '@/features/factory/lib/factoryRoleLabel';
+import { Badge } from '@/shared/components/Badge';
 import { SessionStatusBadge } from '@/features/sessions/components/SessionStatusBadge';
 import { SessionAccountIdentity } from '@/features/sessions/components/SessionAccountIdentity';
 import { SessionUsageMeters } from '@/features/sessions/components/SessionUsageMeters';
@@ -31,6 +33,7 @@ export const SessionListItem = ({ session, backLink }: SessionListItemProps) => 
         <p className="flex min-w-0 items-center gap-1.5 text-sm font-semibold text-ink">
           <GitBranch className="size-3.5 shrink-0 text-ink-subtle" />
           <span className="truncate font-mono">{session.branch}</span>
+          {session.factory ? <Badge tone="brand" icon={Factory} className="shrink-0">{factoryRoleLabel(session.factory.role)}</Badge> : null}
         </p>
         <p className="mt-0.5 truncate text-[11px] text-ink-subtle">
           {session.detail ?? `Updated ${formatDate(session.updatedAt)}`}

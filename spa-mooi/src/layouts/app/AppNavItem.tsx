@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import type { AppNavLink } from '@/shared/types/AppNavLink';
 import { cn } from '@/shared/utils/cn';
+import { formatCount } from '@/shared/utils/formatCount';
 
 interface AppNavItemProps {
   link: AppNavLink;
@@ -36,6 +37,12 @@ export const AppNavItem = ({ link, onNavigate }: AppNavItemProps) => {
           />
           <Icon className={cn('size-4 shrink-0 transition-colors', isActive ? 'text-brand' : 'text-ink-subtle group-hover/nav:text-ink-muted')} />
           {link.label}
+          {link.attention ? (
+            <span title={`${link.attention} waiting for you`}
+              className="ml-auto inline-flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-warning-dot px-1.5 text-[10px] font-bold text-white tabular-nums">
+              {formatCount(link.attention)}
+            </span>
+          ) : null}
           {link.adminOnly ? (
             <span className="ml-auto rounded-full border border-line px-1.5 py-px font-mono text-[9px] font-medium tracking-[0.08em] text-ink-subtle uppercase">
               Admin

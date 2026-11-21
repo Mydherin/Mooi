@@ -1,6 +1,6 @@
 ---
 id: 07-control-change-requests
-status: planned
+status: done
 depends: [06-build-test-merge]
 context: [mic-sessions, mic-mooi]
 ---
@@ -57,11 +57,11 @@ The human can step in at any time without breaking anything (D9, D12).
 
 ## Tasks
 
-- [ ] Pause (both modes) and resume with mandatory run config, for SPA and agent
-- [ ] Limits detection, auto-pause and auto-resume watcher
-- [ ] Change requests: endpoints, analyst brief, safe-point scheduling, confirmation flow
-- [ ] `attention` resume path
-- [ ] Checks: `uvx ruff check src`, import check; `mic-mooi` build if touched
+- [x] Pause (both modes) and resume with mandatory run config, for SPA and agent
+- [x] Limits detection, auto-pause and auto-resume watcher
+- [x] Change requests: endpoints, analyst brief, safe-point scheduling, confirmation flow
+- [x] `attention` resume path
+- [x] Checks: `uvx ruff check src`, import check; `mic-mooi` not touched
 
 ## Acceptance
 
@@ -73,6 +73,53 @@ The human can step in at any time without breaking anything (D9, D12).
 
 ## State
 
-Not started.
+Done (session 3). Code complete and checked (ruff: no new findings; import check; pyright clean on the
+factory modules, an extra check the project does not configure). *Acceptance* is verified manually by the
+user. `mic-mooi` needed no change.
+
+What exists (`features/factories.py`):
+
+- `_Step` now has an optional `target` and a `change` (analyst steps), plus `milestone`, `phase_id`, `key` and
+  `label` properties used everywhere instead of `step.target...`; `_run_step(role, target, plan, ..., change=)`.
+- Pause: `pause_factory(caller, project_id, mode)`. With a live runner it writes `pausing` and calls
+  `FactoryRunner.request_pause`: graceful sets `_Step.pausing` (checkpoint with `pause_message()` at the
+  next turn end, or no brief if the step had not started), immediate sets `_Step.stop` (interrupt, safety
+  commit, publish). The next `_cycle` writes `paused`/`user`. Without a runner it writes `paused` at once.
+  The back-off sleep of `run()` is cut short by `runner.signal`.
+- Resume: `resume_factory(caller, project_id, RunConfigRequest | None)`; the player endpoint requires the
+  selection, the chat agent may send `{}` for the last one. Validates it like a session (`_run_config`),
+  releases a milestone parked in `attention` (`_release_attention`: on its branch, `status: building`,
+  `attempts: 0`, a *Log* line, pushed; through `workspaces.factory_branch_checkout`, renamed from the merge
+  checkout), opens a new grant, writes `running`, launches.
+- Limits: `_quota_exhausted(session.usage["quota"])` (a window at 100 % or `status: rejected`; `resetsAt`
+  read by `_epoch`). The observer checks every quota update and a session that ended; a hit sets
+  `_Step.limits` and `stop`. `_close` then calls `_pause_for_limits` (pause `limits`, message with the renewal
+  time, `_limited[factory_id] = max(reset, now + 600 s)`). `_watch_limits` (in the `_boot` task, every 60 s)
+  writes `running` for due factories and launches them with the same selection. A still-limited account stops
+  at session start without a brief and pauses again. At boot, factories paused on `limits` are due at once.
+- Change requests: `request_change` (refused while `defining`/`ready`; wakes a `resting` factory with a new
+  grant) and `decide_change` (only `awaiting-confirmation`: accept → `queued` with `scopeLevel: true`,
+  reject → `rejected`). In `_cycle`, after the plan check, open changes are the safe point: an
+  `awaiting-confirmation` one pauses `attention` (`_confirmation_message`), else the oldest
+  `queued`/`analyzing` runs an `analyst` step (CR set `analyzing`). `_resolve_change` at close: `completed` →
+  `applied`, `blocked` → `awaiting-confirmation` + `scopeLevel`, anything else → `queued` again, with the summary
+  as `analysis`. `analyst_brief(..., confirmed=)` allows `VISION.md` changes once confirmed.
+- Endpoints: player `POST /factories/{projectId}/pause|resume|change-requests|change-requests/{id}/decision`;
+  chat agent `POST /sessions/{id}/factory/agent/pause|resume|change-requests|change-requests/{id}/decision`.
+  `GET .../factory/agent` adds `changeRequests` for the chat. `agent_api(chat=True)` documents the decision
+  call.
+
+Local decisions (session 3):
+
+- A confirmed scope-level change is applied by the analyst (with `VISION.md`) instead of reopening the
+  definition: the user's confirmation is the human gate, and the chat stays the place to discuss it. This
+  also covers a resting factory. Reopening `defining` stays possible later without changing the contract.
+- Limits are retried by resuming and letting the next session's quota KPI decide, so every adapter works
+  without provider-specific quota calls; the watcher's renewal time is in memory, and after a restart a
+  limited factory is tried at once.
+- A decision on a change request never resumes the factory by itself: resuming always names the agent (D9).
 
 ## Log
+
+- Session 3: pause/resume (SPA and chat), limits pause and watcher, change requests with the analyst step and
+  the confirmation flow, release from attention.

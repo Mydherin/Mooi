@@ -45,6 +45,7 @@ sync in real time.
 | 🔐 | **Shared environments** | Project-wide variables, live across every session, never committed. |
 | 🌍 | **Deploy anywhere** | Describe your target once (VPS, AWS, anything); the agent builds and tests a repeatable script reused for every release. |
 | 💾 | **Backups & restore** | The same describe-once flow, versioned per release, restorable to production or a sandbox. |
+| 🏭 | **Software Factory** | For large projects: define scope and phases with an architect agent, approve, and the factory builds, tests end to end and merges milestone by milestone on its own, for days or weeks. |
 | 🧑‍🍳 | **Recipes** | Reusable implementation recipes applied straight from the chat. |
 | 🎙️ | **Dictation** | Private, local push-to-talk in every chat. |
 | 🏢 | **Teams & admin** | Multi-tenant isolation, roles and an admin console with platform insights and default models. |
@@ -56,6 +57,13 @@ sync in real time.
 3. **Build**: open sessions, chat with agents, watch changes and preview each feature live.
 4. **Merge**: bring finished work into the main branch, conflicts handled by the agent.
 5. **Ship**: create a release and deploy it to production; back it up and restore whenever needed.
+
+For large projects, the project's **Factory** tab runs the same flow autonomously. You define the project
+with an architect agent (vision, architecture, decisions and ordered phases, written to `docs/factory/`).
+Once you approve, a platform-driven loop expands each phase into milestones and runs each one in fresh
+sessions: a builder, an end-to-end tester against its own preview, and a merge into the default branch.
+Every session hands over at 20% of its context. You can pause, resume with another model or queue change
+requests at any time, from the tab or the factory chat.
 
 ## 📦 Deployments
 

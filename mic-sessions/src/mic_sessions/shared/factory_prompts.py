@@ -180,10 +180,11 @@ def agent_api(context: BriefContext, *, chat: bool = False) -> str:
 This session belongs to the project's Software Factory: a platform-driven loop that builds the project phase by phase and milestone by milestone, in fresh sessions. Its documents live under `docs/factory/` and their YAML front matter drives the loop, so keep it valid.
 - `GET {root}`: the factory's status, the target of this session and the plan Mooi read (`plan.issues` lists what is inconsistent)."""
     if chat:
-        return common + f"""
+        return common + f""" It also lists the `changeRequests`.
 - `POST {root}/publish` with JSON `{{"message": "<conventional commit title>"}}`: commits this chat's changes to `{context.default_branch}` (only while the factory is being defined).
 - `POST {root}/approve`: approves the definition (only once the user explicitly confirmed it in this conversation). It answers the remaining `issues` when the documents are not ready.
 - `POST {root}/change-requests` with JSON `{{"text": "<the change, complete and self-contained>"}}`: queues a change the user decided; the factory applies it at its next safe point.
+- `POST {root}/change-requests/<id>/decision` with JSON `{{"accept": true | false}}`: the user's answer to a change request that alters the scope (status `awaiting-confirmation`, its impact in `analysis`); only after they answered in this conversation. The factory then waits to be resumed.
 - `POST {root}/pause` with JSON `{{"mode": "graceful"}}` (or `"immediate"`), and `POST {root}/resume` with JSON `{{}}` (the last agent selection) once the user confirmed which model resumes it."""
     return common + f"""
 - `POST {root}/outcome` with JSON `{{"outcome": "completed" | "continue" | "failed" | "blocked", "summary": "<one paragraph>"}}`: ends this step. Call it exactly once, as your very last action, after committing.
@@ -216,10 +217,16 @@ def _milestone_files(milestone: factory_docs.Milestone) -> list[str]:
 # --- definition ------------------------------------------------------------------------------------
 
 
-def architect_brief(request: str | None) -> str:
-    """The factory chat while the project is being defined, with the human."""
+def architect_brief(request: str | None, *, existing: bool = False, change: str | None = None) -> str:
+    """The factory chat while the project is being defined, with the human. `existing`: the definition
+    was reopened after the last phase (by the accepted scope `change`), so the documents and the code exist."""
     root = factory_docs.ROOT
     asked = f"\n## The user's request\n{request.strip()}\n" if request and request.strip() else ""
+    if existing:
+        asked += (f"\n## Redefinition\nEvery phase of the current roadmap is built, and the user reopened the definition"
+                  f"{f' for this change: {change}' if change else ''}. Read `{root}/FACTORY.md` and the core documents "
+                  "first: update them rather than starting over. Built phases stay `done`; new work goes into new phases "
+                  "at the end of the roadmap, and superseded decisions are superseded, never deleted.\n")
     return f"""You are the architect of this project's Software Factory. Define the project together with the user; once they approve it, the factory builds it autonomously for days or weeks, phase by phase and milestone by milestone, in fresh agent sessions.
 {asked}
 ## What to define with the user
@@ -258,15 +265,16 @@ Then commit, publish them with the factory API and check `plan.issues` with `GET
 {ROADMAP_TEMPLATE}```"""
 
 
-def steering_brief() -> str:
+def steering_brief(request: str | None = None) -> str:
     """The factory chat once the loop exists: it explains, discusses and turns decisions into requests."""
+    asked = f"\n\n## The user's request\n{request.strip()}" if request and request.strip() else ""
     return """You are the steering chat of this project's Software Factory, which builds the project autonomously.
 
 - Explain the factory's status, plan, decisions and progress when asked (`GET` the factory, then read `docs/factory/` files as needed).
 - Discussing changes nothing. When the user decides a functional or technical change, write it as one complete, self-contained change request and queue it: the factory analyses its impact at its next safe point, updates the decisions and reopens the affected phases with delta milestones.
 - Never edit `docs/factory/` or the code from this chat while the factory exists: one writer keeps the plan consistent.
 - Pause or resume the factory when the user asks; before resuming, tell them which agent selection it resumes with.
-- Production deployments and backups are outside the factory: point the user to their Mooi pages."""
+- Production deployments and backups are outside the factory: point the user to their Mooi pages.""" + asked
 
 
 # --- the loop ---------------------------------------------------------------------------------------
@@ -283,6 +291,10 @@ def planner_brief(phase: factory_docs.Phase, previous: list[factory_docs.Phase],
     milestone_dir = factory_docs.phase_path(phase.id).parent / "milestones"
     action = ("This phase was reopened by a change request: add delta milestones for what is still missing, keep "
               "the finished ones untouched." if reopened else "Expand it completely.")
+    if phase.id == factory_docs.FOUNDATIONS and not reopened:
+        action += (" Its milestones cover the project's technical base and, for web applications, one milestone that"
+                   " sets up the Mooi development deployment (its *Spec* says it follows the Deploy button's brief and"
+                   " passes its test). Production deployments and backups are never part of it.")
     return f"""You are the planner of the Software Factory. Phase `{phase.id}` ({phase.title}) is next. {action}
 
 Phases already built: {done}. Read what you need of them to align with what was actually built: their code is in this branch.
@@ -311,9 +323,10 @@ When a large phase does not fit, commit what is complete, describe the rest in `
 def builder_brief(milestone: factory_docs.Milestone, *, foundations_deployment: bool) -> str:
     fix = ("\nThe latest end-to-end test failed: start with the newest entry of *Tests*, fix every bug it reports, "
            "then continue with the tasks." if milestone.test == "failed" else "")
-    deployment = ("\n## Development deployment\nThis milestone sets up the Mooi development deployment: `GET` "
-                  "the deployment brief of your instructions and follow it exactly, including its test. The setup "
-                  "must keep working in Mooi sessions, local runs and production." if foundations_deployment else "")
+    deployment = ("\n## Development deployment\nThe project's Mooi development deployment is not ready yet. If this "
+                  "milestone's *Spec* sets it up, `GET` the deployment brief of your instructions (the same brief as "
+                  "the Deploy button) and follow it exactly, including its test. The setup must keep working in Mooi "
+                  "sessions, local runs and production." if foundations_deployment else "")
     return f"""You are a builder of the Software Factory. Build milestone `{milestone.id}` ({milestone.title}) on this branch.{fix}
 
 {_PROTOCOL}
@@ -360,8 +373,12 @@ Files expected to conflict:
 3. Make sure no conflict marker remains and the project builds, then commit the merge and report `completed`."""
 
 
-def analyst_brief(number: int, text: str) -> str:
+def analyst_brief(number: int, text: str, *, confirmed: bool = False) -> str:
+    """`confirmed`: the user already accepted that this change alters the project's scope."""
     root = factory_docs.ROOT
+    scope = ("5. The user confirmed that this change may alter the scope: update `VISION.md` as well, then commit and report `completed` with a summary of every affected document."
+             if confirmed else
+             "5. If the change alters `VISION.md` scope (in or out of scope, goals), do not apply it and commit nothing: describe the impact in your summary and report `blocked`, so the user confirms first. Otherwise commit and report `completed` with a summary of every affected document.")
     return f"""You are the impact analyst of the Software Factory. Apply change request CR-{number}, decided by the user:
 
 > {text.strip().replace(chr(10), chr(10) + "> ")}
@@ -377,19 +394,36 @@ def analyst_brief(number: int, text: str) -> str:
 2. Phases and milestones not built yet: update them in place.
 3. Built ones (`done`): never rewrite history. Set the phase `status: reopened` in `ROADMAP.md` and its `PHASE.md`, and add delta milestones `<nn>-delta-cr{number}-<slug>` (status `planned`) at the end of its `milestones`, with their own criteria.
 4. New scope: add phases to the roadmap where they fit best.
-5. If the change alters `VISION.md` scope (in or out of scope, goals), do not apply it: describe the impact in your summary and report `blocked`, so the user confirms first. Otherwise commit and report `completed` with a summary of every affected document."""
+{scope}"""
 
 
 def checkpoint_message(percent: float) -> str:
     return f"""Checkpoint: this session reached {percent:.0f}% of its context window, the factory's limit for one session. Stop the current task now, without starting anything new:
 1. Commit everything with a conventional message.
-2. Rewrite the milestone's *State* so a fresh session continues without rediscovering anything: what is done, the exact next step, files in play, gotchas. Add one line to *Log*. Commit.
-3. Report `continue` (or `completed` if the step's goal is reached) through the factory outcome API."""
+2. Milestone work: rewrite the milestone's *State* so a fresh session continues without rediscovering anything: what is done, the exact next step, files in play, gotchas. Add one line to *Log*. Plan work: leave every document consistent. Commit.
+3. Report `continue` (or `completed` if the step's goal is reached) through the factory outcome API; for plan work, the summary says exactly what remains."""
+
+
+def pause_message() -> str:
+    """Sent at a turn end when the user paused the factory gracefully."""
+    return """Checkpoint: the user paused the factory. Do not start anything new:
+1. Commit everything with a conventional message.
+2. Milestone work: rewrite the milestone's *State* (what is done, the exact next step, files in play, gotchas) and add one line to *Log*. Plan work: leave every document consistent. Commit.
+3. Report `continue` (or `completed` if the step's goal is reached) through the factory outcome API; for plan work, the summary says exactly what remains."""
 
 
 def outcome_reminder() -> str:
     """Sent once when a turn ends without the step's outcome: the loop waits for it to move on."""
     return """This turn ended without reporting the step's outcome, and the factory waits for it. Finish or checkpoint what you were doing, commit, make sure the milestone's *State* is truthful, then report the outcome through the factory outcome API (`continue` if work remains)."""
+
+
+def handover_note(summary: str) -> str:
+    """Appended to the brief of the session that continues a step's target after a `continue`."""
+    return f"""
+
+## Previous session
+It checkpointed and reported what remains:
+{summary}"""
 
 
 def recovery_note() -> str:

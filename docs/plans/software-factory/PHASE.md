@@ -1,7 +1,7 @@
 ---
 id: software-factory
 status: open
-milestones: [01-persistence-identity, 02-docs-contract, 03-orchestrator-core, 04-context-checkpoints, 05-definition-chat, 06-build-test-merge, 07-control-change-requests, 08-factory-tab, 09-closure]
+milestones: [01-persistence-identity, 02-docs-contract, 03-orchestrator-core, 04-context-checkpoints, 05-definition-chat, 06-build-test-merge, 07-control-change-requests, 08-factory-tab, 09-closure, 10-e2e-verification]
 ---
 
 # Phase: Software Factory
@@ -116,6 +116,12 @@ paused, resumed and steered at any time, and never leaves the plan or the code i
   `fetch --depth 1` + `checkout --force --detach FETCH_HEAD` before every decision.
   `Workspaces.reconcile` only sweeps `sessions/` and `production/`, so it survives restarts. Remove it when
   the factory is deleted.
+- **D5c Milestone progress lives on its branch** (added in session 3). Builders and testers change a
+  milestone's front matter on `factory/<phase>/<milestone>`; the default branch learns it only from the merge
+  squash. Every decision therefore reads the default branch, then overlays the next milestone's front matter
+  from its branch (`Workspaces.branch_file` into the control checkout, `factory_docs.with_branch_progress`).
+  A branch never closes its own milestone: `done` there reads as `testing`. Reason: without it the loop would
+  rebuild the same milestone forever.
 - **D6 Explicit step outcome.** Each step ends with the agent calling `POST /sessions/{id}/factory/agent/outcome`
   `{outcome: "completed" | "continue" | "failed" | "blocked", summary}`. The orchestrator then checks that the
   docs' front matter matches the outcome and that the branch has the expected commit. If they disagree, the
@@ -158,9 +164,10 @@ paused, resumed and steered at any time, and never leaves the plan or the code i
 | 01 | [Persistence and unattended identity](milestones/01-persistence-identity.md) | — | done |
 | 02 | [Docs contract, templates and role prompts](milestones/02-docs-contract.md) | — | done |
 | 03 | [Orchestrator core](milestones/03-orchestrator-core.md) | 01, 02 | done |
-| 04 | [Context checkpoints](milestones/04-context-checkpoints.md) | 03 | planned |
-| 05 | [Definition and factory chat](milestones/05-definition-chat.md) | 03 | planned |
-| 06 | [Build, test and merge loop](milestones/06-build-test-merge.md) | 04, 05 | planned |
-| 07 | [Control: pause, resume, limits, change requests](milestones/07-control-change-requests.md) | 06 | planned |
-| 08 | [Factory tab (SPA)](milestones/08-factory-tab.md) | 03 (API), 07 (full) | planned |
-| 09 | [Closure](milestones/09-closure.md) | all | planned |
+| 04 | [Context checkpoints](milestones/04-context-checkpoints.md) | 03 | done |
+| 05 | [Definition and factory chat](milestones/05-definition-chat.md) | 03 | done |
+| 06 | [Build, test and merge loop](milestones/06-build-test-merge.md) | 04, 05 | done |
+| 07 | [Control: pause, resume, limits, change requests](milestones/07-control-change-requests.md) | 06 | done |
+| 08 | [Factory tab (SPA)](milestones/08-factory-tab.md) | 03 (API), 07 (full) | done |
+| 09 | [Closure](milestones/09-closure.md) | all | done |
+| 10 | [End-to-end verification](milestones/10-e2e-verification.md) | 09 | planned |
