@@ -1,7 +1,8 @@
 """Managed session directories, Git clones, release checkouts and index-preserving diffs.
 
 Only marked directories in sessions/<UUID> and production/<operation UUID> belong to this implementation.
-Legacy caches, workspaces and reservations are never reconciled.
+Legacy caches, workspaces and reservations are never reconciled. factories/<factory UUID> holds each
+Software Factory's control checkout, which must outlive restarts: it is removed only with its factory.
 """
 
 from __future__ import annotations
@@ -455,19 +456,104 @@ class Workspaces:
         code, _, detail = await self._run(*_NO_CREDENTIAL_HELPER, "-C", str(workspace), "push", "--porcelain",
                                           "origin", f"{commit}:refs/heads/{target}", auth=token)
         if code != 0:
-            LOG.warning("git push failed with %s: %s", code, detail or "no output")
-            if "rejected" in detail or "non-fast-forward" in detail or "fetch first" in detail:
-                raise ApiException.conflict(f"{target} changed while merging. Try again.")
-            if "403" in detail or "denied" in detail.lower():
-                raise ApiException.forbidden(
-                    f"GitHub refused the push to {target}. Grant the GitHub App write access to "
-                    "repository contents and check the branch protection rules."
-                )
-            raise ApiException.bad_gateway(detail or "The merge could not be pushed")
+            _raise_push_error(target, detail, f"{target} changed while merging. Try again.",
+                              "The merge could not be pushed")
         await self._git("-C", str(workspace), "reset", "--hard", commit)
         await self._git("-C", str(workspace), "update-ref", f"refs/remotes/origin/{target}", commit)
         LOG.info("Workspace %s squashed into %s at %s", workspace, target, commit[:7])
         return preview, commit
+
+    # --- Software Factory: milestone branches and the plan's control checkout ------------------------
+
+    async def push_branch(self, workspace: Path, branch: str, token: str) -> None:
+        """Publishes HEAD as `branch`, never forced: the only push besides `merge`, and never to the
+        default branch (factory milestone branches are `factory/<phase>/<milestone>`)."""
+        await self.validate_branch(branch)
+        code, _, detail = await self._run(*_NO_CREDENTIAL_HELPER, "-C", str(workspace), "push", "--porcelain",
+                                          "origin", f"HEAD:refs/heads/{branch}", auth=token)
+        if code != 0:
+            _raise_push_error(branch, detail, f"{branch} changed on GitHub meanwhile", f"{branch} could not be pushed")
+        LOG.info("Workspace %s pushed to %s", workspace, branch)
+
+    async def checkpoint_commit(self, workspace: Path, message: str, identity: GitIdentity) -> bool:
+        """Commits whatever the agent left uncommitted, so ending a session never loses work. Skipped
+        during a merge, whose half-resolved state must not be committed as if it were done; project
+        hooks are bypassed, as this is a safety net rather than a reviewed commit."""
+        if await self._git_ok("-C", str(workspace), "rev-parse", "-q", "--verify", "MERGE_HEAD"):
+            return False
+        if not (await self._git("-C", str(workspace), "status", "--porcelain")).strip():
+            return False
+        env = _identity_env(identity)
+        await self._git("-C", str(workspace), "add", "-A", extra_env=env)
+        await self._git("-C", str(workspace), "commit", "-q", "--no-verify", "-m", message, extra_env=env)
+        return True
+
+    async def head_commit(self, workspace: Path) -> str:
+        return (await self._git("-C", str(workspace), "rev-parse", "HEAD")).strip()
+
+    async def merge_in_progress(self, workspace: Path) -> bool:
+        return await self._git_ok("-C", str(workspace), "rev-parse", "-q", "--verify", "MERGE_HEAD")
+
+    async def integrate(self, workspace: Path, target: str, identity: GitIdentity, token: str) -> list[str]:
+        """Brings the freshly fetched `target` into the checked-out branch. Answers the paths that would
+        conflict, leaving the checkout untouched; an empty list means HEAD now contains `target`."""
+        await self._fetch(workspace, target, token)
+        remote = f"refs/remotes/origin/{target}"
+        if await self._git_ok("-C", str(workspace), "merge-base", "--is-ancestor", remote, "HEAD"):
+            return []
+        code, stdout, detail = await self._run("-C", str(workspace), "merge-tree", "--write-tree", "--name-only",
+                                               "--no-messages", "-z", "HEAD", remote)
+        if code not in (0, 1):
+            LOG.warning("git merge-tree failed with %s: %s", code, detail or "no output")
+            raise ApiException.bad_gateway(detail or "The branches could not be compared")
+        if code == 1:
+            return list(dict.fromkeys(field for field in stdout.split("\0")[1:] if field)) or [target]
+        await self._git("-C", str(workspace), "merge", "--no-edit", "--no-verify", remote,
+                        extra_env=_identity_env(identity))
+        LOG.info("Workspace %s integrated %s", workspace, target)
+        return []
+
+    def _factory_directory(self, factory_id: UUID) -> Path:
+        factories = self.root / "factories"
+        if factories.is_symlink():
+            raise RuntimeError("Managed factories root cannot be a symlink")
+        return factories / str(factory_id)
+
+    async def factory_checkout(self, factory_id: UUID, project_full_name: str, branch: str,
+                               token: str) -> tuple[Path, str]:
+        """The factory's control checkout of `branch`, refreshed to its latest commit: shallow, without
+        blobs until read and sparse on `docs/factory`, so reading the plan costs little on any repository.
+        `reconcile` never sweeps it, so it outlives restarts. Answers its path and the commit read."""
+        await self.validate_branch(branch)
+        directory = self._factory_directory(factory_id)
+        checkout = directory / "repository"
+        if not (checkout / ".git").is_dir():
+            await self.remove_factory_checkout(factory_id)
+            directory.mkdir(parents=True)
+            (directory / ".mooi-factory").write_text(str(factory_id))
+            await self._git(*_NO_CREDENTIAL_HELPER, "clone", "--filter=blob:none", "--no-checkout", "--depth", "1",
+                            "--single-branch", "--branch", branch, "--no-tags",
+                            f"https://github.com/{project_full_name}.git", str(checkout), auth=token)
+            await self._git(*_NO_CREDENTIAL_HELPER, "-C", str(checkout), "sparse-checkout", "set", "docs/factory",
+                            auth=token)
+        await self._git(*_NO_CREDENTIAL_HELPER, "-C", str(checkout), "fetch", "--depth", "1", "--filter=blob:none",
+                        "--no-tags", "origin", f"+refs/heads/{branch}:refs/remotes/origin/{branch}", auth=token)
+        remote = f"refs/remotes/origin/{branch}"
+        await self._git(*_NO_CREDENTIAL_HELPER, "-C", str(checkout), "checkout", "--force", "--detach", remote,
+                        auth=token)
+        return checkout, await self.head_commit(checkout)
+
+    async def remove_factory_checkout(self, factory_id: UUID) -> None:
+        directory = self._factory_directory(factory_id)
+        if directory.is_symlink():
+            raise RuntimeError("Refusing a symlink in the factory checkout path")
+        if not directory.exists():
+            return
+        marker = directory / ".mooi-factory"
+        if marker.is_file() and not marker.is_symlink() and marker.read_text() == str(factory_id):
+            await asyncio.to_thread(shutil.rmtree, directory)
+        else:
+            raise RuntimeError("Refusing to remove an unowned factory directory")
 
     # --- inspection ------------------------------------------------------------------------------
 
@@ -712,6 +798,18 @@ class Workspaces:
         return await asyncio.to_thread(store)
 
 
+def _raise_push_error(branch: str, detail: str, rejected: str, failed: str) -> None:
+    LOG.warning("git push failed: %s", detail or "no output")
+    if "rejected" in detail or "non-fast-forward" in detail or "fetch first" in detail:
+        raise ApiException.conflict(rejected)
+    if "403" in detail or "denied" in detail.lower():
+        raise ApiException.forbidden(
+            f"GitHub refused the push to {branch}. Grant the GitHub App write access to "
+            "repository contents and check the branch protection rules."
+        )
+    raise ApiException.bad_gateway(detail or failed)
+
+
 def _visible_pathspec() -> list[str]:
     """Pathspec of the whole tree minus the excluded directories, at any depth."""
     return [".", *(f":(exclude,glob)**/{directory.strip('/')}/**"
@@ -781,3 +879,31 @@ async def merge(
 
 async def set_identity(workspace: Path, identity: GitIdentity) -> None:
     await get_workspaces().set_identity(workspace, identity)
+
+
+async def push_branch(workspace: Path, branch: str, token: str) -> None:
+    await get_workspaces().push_branch(workspace, branch, token)
+
+
+async def checkpoint_commit(workspace: Path, message: str, identity: GitIdentity) -> bool:
+    return await get_workspaces().checkpoint_commit(workspace, message, identity)
+
+
+async def head_commit(workspace: Path) -> str:
+    return await get_workspaces().head_commit(workspace)
+
+
+async def merge_in_progress(workspace: Path) -> bool:
+    return await get_workspaces().merge_in_progress(workspace)
+
+
+async def integrate(workspace: Path, target: str, identity: GitIdentity, token: str) -> list[str]:
+    return await get_workspaces().integrate(workspace, target, identity, token)
+
+
+async def factory_checkout(factory_id: UUID, project_full_name: str, branch: str, token: str) -> tuple[Path, str]:
+    return await get_workspaces().factory_checkout(factory_id, project_full_name, branch, token)
+
+
+async def remove_factory_checkout(factory_id: UUID) -> None:
+    await get_workspaces().remove_factory_checkout(factory_id)

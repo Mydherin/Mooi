@@ -50,7 +50,8 @@ error):
 - [ ] Usage hook in `record()` for factory sessions → runner
 - [ ] Soft-limit flow: interrupt → wait for READY → checkpoint brief
 - [ ] Hard limit and timeout
-- [ ] Safety commit and push helper in `Workspaces` (`checkpoint_commit`)
+- [x] Safety commit and push helper in `Workspaces` (`checkpoint_commit`; done in milestone 03, also used
+  by every step close)
 - [ ] Recovery brief selection
 - [ ] Settings + `.env.example`
 - [ ] Checks: `uvx ruff check src`, import check

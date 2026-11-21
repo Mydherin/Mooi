@@ -55,7 +55,8 @@ becomes a change request.
 ## Tasks
 
 - [ ] Planner, builder and tester briefs (concrete reading lists, following the reading rule of milestone 02)
-- [ ] Default-branch → milestone-branch merge at step start, with the merger step on conflicts
+- [x] Default-branch → milestone-branch merge at step start, with the merger step on conflicts (done in
+  milestone 03: `workspaces.integrate` + `FactoryRunner._merger`, using `merger_brief`)
 - [ ] Test-cycle accounting and the `attention` transition
 - [ ] Merge flow with status updates in the squash
 - [ ] Phase-end drift refresh

@@ -157,7 +157,7 @@ paused, resumed and steered at any time, and never leaves the plan or the code i
 |---|-----------|---------|--------|
 | 01 | [Persistence and unattended identity](milestones/01-persistence-identity.md) | — | done |
 | 02 | [Docs contract, templates and role prompts](milestones/02-docs-contract.md) | — | done |
-| 03 | [Orchestrator core](milestones/03-orchestrator-core.md) | 01, 02 | planned |
+| 03 | [Orchestrator core](milestones/03-orchestrator-core.md) | 01, 02 | done |
 | 04 | [Context checkpoints](milestones/04-context-checkpoints.md) | 03 | planned |
 | 05 | [Definition and factory chat](milestones/05-definition-chat.md) | 03 | planned |
 | 06 | [Build, test and merge loop](milestones/06-build-test-merge.md) | 04, 05 | planned |

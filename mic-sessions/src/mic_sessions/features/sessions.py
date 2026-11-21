@@ -56,7 +56,7 @@ from pydantic import (
     model_validator,
 )
 
-from mic_sessions.shared import images, mooi, previews, traces, workspaces
+from mic_sessions.shared import factory_prompts, images, mooi, previews, traces, workspaces
 from mic_sessions.shared.agents import (
     PROVIDERS,
     RECOVERABLE_DETAIL,
@@ -541,6 +541,8 @@ class SessionPayload(BaseModel):
     baseCommit: str | None
     # Failed with its runtime and workspace intact: `POST /sessions/{id}/recover` reconnects it.
     recoverable: bool = False
+    # Set when the project's Software Factory runs this session (see `FactoryBinding`).
+    factory: dict[str, Any] | None = None
 
 
 class SessionsResponse(BaseModel):
@@ -686,6 +688,24 @@ class PendingInfo:
     request_id: str
 
 
+@dataclass(frozen=True)
+class FactoryBinding:
+    """What a session does for its project's Software Factory: its chat, or one step of the loop.
+    Factory sessions stay plain sessions (`kind="session"`): every session feature keeps working."""
+
+    factory_id: UUID
+    # chat · architect · planner · builder · tester · merger · analyst
+    role: str
+    step_id: UUID | None = None
+    phase_id: str | None = None
+    milestone_id: str | None = None
+
+    def as_payload(self) -> dict[str, Any]:
+        return {"factoryId": str(self.factory_id), "role": self.role,
+                "stepId": str(self.step_id) if self.step_id else None,
+                "phaseId": self.phase_id, "milestoneId": self.milestone_id}
+
+
 @dataclass
 class Session:
     """One live pairing of player, project, provider and workspace.
@@ -757,6 +777,8 @@ class Session:
     usage_refresh_at: float = 0.0
     # The usage the player's lists last received (see `_usage_signature`), so finer changes stay in the transcript.
     usage_signature: tuple[Any, ...] | None = None
+    # The Software Factory runs this session; None for every chat a player opened themselves.
+    factory: FactoryBinding | None = None
 
     def to_payload(self) -> SessionPayload:
         descriptor = describe(self.provider)
@@ -791,6 +813,7 @@ class Session:
             workspacePath=None if self.kind in _PLATFORM_KINDS or self.workspace == _UNSET_PATH else str(self.workspace),
             baseCommit=self.base_commit or None,
             recoverable=self.status == STATUS_FAILED and _recoverable(self),
+            factory=self.factory.as_payload() if self.factory is not None else None,
         )
 
 
@@ -1002,7 +1025,26 @@ def record(session: Session, type_: str, data: dict[str, Any]) -> Event:
     if type_ in _SUMMARY_EVENTS or (type_ == "session.usage"
                                     and _usage_signature(session.usage) != session.usage_signature):
         _announce(session)
+    if session.factory is not None:
+        _notify_observers(session, type_, data)
     return event
+
+
+# Callbacks of the Software Factory orchestrator, told about every event its sessions record (after the
+# fold applied it). They must be quick and never block: they only wake the runner waiting on the session.
+_observers: list[Callable[[Session, str, dict[str, Any]], None]] = []
+
+
+def observe(callback: Callable[[Session, str, dict[str, Any]], None]) -> None:
+    _observers.append(callback)
+
+
+def _notify_observers(session: Session, type_: str, data: dict[str, Any]) -> None:
+    for callback in _observers:
+        try:
+            callback(session, type_, data)
+        except Exception:
+            LOG.exception("A session observer failed on %s", type_)
 
 
 def _record_event(session: Session, event: AgentEvent) -> Event:
@@ -1249,8 +1291,9 @@ async def create_session(
     return (await _open_session(body, caller)).to_payload()
 
 
-async def _open_session(body: CreateSessionRequest, caller: Caller) -> Session:
-    """Opens any chat, from the UI or handed over by another chat's agent: the same path either way."""
+async def _open_session(body: CreateSessionRequest, caller: Caller, factory: FactoryBinding | None = None) -> Session:
+    """Opens any chat, from the UI, handed over by another chat's agent or run by the Software Factory:
+    the same path every time."""
     descriptor = describe(body.provider)
     registry = get_registry()
     # No adapter requested (an agent's handover, an older client) is the platform's default adapter.
@@ -1281,6 +1324,7 @@ async def _open_session(body: CreateSessionRequest, caller: Caller) -> Session:
     session.config = config
     session.adapter = adapter.id
     session.agent_caller = caller
+    session.factory = factory
     project = await mooi.fetch_project(caller, body.projectId)
     session.project_full_name = project.full_name
     session.base_branch = project.default_branch
@@ -2367,7 +2411,14 @@ The project's to-do list is `docs/TODOS.md` on the default branch, shown in the 
 Docker here is the host's shared engine: other projects' live containers, volumes and networks (production ones included) run on it, and the same names may appear in this repository.
 - Compose commands are scoped to this session's project through `COMPOSE_PROJECT_NAME={_compose_project(session)}`; keep it, never pass `--project-name`/`-p` or override it.
 - Only act on resources labelled `com.docker.compose.project={_compose_project(session)}`. Never stop, remove, recreate, prune or attach to anything else, even when a name conflicts: report the conflict to the user instead.
-- Other sessions run the same repository side by side: let the engine pick host ports (`"5432"`, never `"54983:5432"`) and never set `container_name` or explicit volume/network names. Everything in this project is removed when the session is deleted."""
+- Other sessions run the same repository side by side: let the engine pick host ports (`"5432"`, never `"54983:5432"`) and never set `container_name` or explicit volume/network names. Everything in this project is removed when the session is deleted.""" + _factory_instructions(session, root)
+
+
+def _factory_instructions(session: Session, root: str) -> str:
+    if session.factory is None:
+        return ""
+    context = factory_prompts.BriefContext(root, session.agent_token, session.branch, session.base_branch)
+    return "\n\n" + factory_prompts.agent_api(context, chat=session.factory.role == "chat")
 
 
 def _compose_project(session: Session) -> str:
@@ -4500,6 +4551,50 @@ async def _monitor_deployment(session: Session, operation_id: UUID) -> None:
                 _deployment_finish(session, operation_id, "start",
                                    reason=_deployment_reason("health_check_failed"), cleanup=True)
             return
+
+
+# --- Software Factory hooks ----------------------------------------------------------------------
+#
+# The factory orchestrator (`features/factories.py`) drives ordinary sessions through these few public
+# operations, the same primitives the endpoints above use, so it never reaches into this feature's state.
+
+
+async def open_session(body: CreateSessionRequest, caller: Caller, factory: FactoryBinding) -> Session:
+    return await _open_session(body, caller, factory)
+
+
+async def deliver(session: Session, caller: Caller, text: str) -> None:
+    """Sends `text` as the next user message, exactly as `POST /messages` does; refused unless READY."""
+    session.agent_caller = caller
+    async with session.operation_lock:
+        if session.status != STATUS_READY or session.closing or session.deployment.state == "starting":
+            raise ApiException.conflict("The session is not ready to accept a message")
+        runtime = _runtime(session)
+        refresh = getattr(runtime, "refresh_credential", None)
+        if refresh:
+            await refresh(await mooi.fetch_agent_credential(caller, str(session.connection_id)))
+        await runtime.set_configuration(session.config)
+        await _deliver(session, runtime, text)
+
+
+async def interrupt(session: Session) -> None:
+    """Interrupts the running turn, if any; the provider's terminal result makes the session READY."""
+    async with session.operation_lock:
+        if session.status in (STATUS_WORKING, STATUS_WAITING) and not session.closing:
+            await _runtime(session).interrupt()
+
+
+def publish(player_id: UUID, type_: str, data: dict[str, Any]) -> None:
+    """Publishes one event on the player's live channel (`GET /events`)."""
+    _channels.publish(player_id, type_, data)
+
+
+async def agent_access(session_id: UUID, request: Request) -> tuple[Session, Caller]:
+    """The agent-endpoint guard, for sessions the Software Factory runs only."""
+    session, caller = await _agent_access(session_id, request, "session")
+    if session.factory is None or caller is None:
+        raise ApiException.not_found("Not found")
+    return session, caller
 
 
 # --- lifecycle safety --------------------------------------------------------------------------

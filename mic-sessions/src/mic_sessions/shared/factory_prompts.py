@@ -387,6 +387,11 @@ def checkpoint_message(percent: float) -> str:
 3. Report `continue` (or `completed` if the step's goal is reached) through the factory outcome API."""
 
 
+def outcome_reminder() -> str:
+    """Sent once when a turn ends without the step's outcome: the loop waits for it to move on."""
+    return """This turn ended without reporting the step's outcome, and the factory waits for it. Finish or checkpoint what you were doing, commit, make sure the milestone's *State* is truthful, then report the outcome through the factory outcome API (`continue` if work remains)."""
+
+
 def recovery_note() -> str:
     return """
 ## Recovery

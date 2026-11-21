@@ -1,6 +1,6 @@
 ---
 id: 03-orchestrator-core
-status: planned
+status: done
 depends: [01-persistence-identity, 02-docs-contract]
 context: [mic-sessions]
 ---
@@ -115,15 +115,15 @@ payload `update_factory` answered) on the owner's channel.
 
 ## Tasks
 
-- [ ] `FactoryBinding`, `Session.factory`, `SessionPayload.factory`, `_open_session(factory=)`
-- [ ] Observer hook in `record()`, factory section in `_session_instructions`, public helpers
-- [ ] Workspace operations: `push_branch`, `checkpoint_commit`, `head_commit`, `integrate`, control
+- [x] `FactoryBinding`, `Session.factory`, `SessionPayload.factory`, `_open_session(factory=)`
+- [x] Observer hook in `record()`, factory section in `_session_instructions`, public helpers
+- [x] Workspace operations: `push_branch`, `checkpoint_commit`, `head_commit`, `integrate`, control
   checkout
-- [ ] `features/factories.py`: runner, reconcile, decision, step open/wait/close, journal calls
-- [ ] Agent endpoints: state and outcome
-- [ ] Boot and shutdown wiring in `main.py` lifespan; register the router
-- [ ] `factory.updated` events
-- [ ] Checks: `uvx ruff check src` (only new findings matter: `mooi.py` has a pre-existing I001), import
+- [x] `features/factories.py`: runner, reconcile, decision, step open/wait/close, journal calls
+- [x] Agent endpoints: state and outcome
+- [x] Boot and shutdown wiring in `main.py` lifespan; register the router
+- [x] `factory.updated` events
+- [x] Checks: `uvx ruff check src` (only new findings matter: `mooi.py` has a pre-existing I001), import
   check `uv run python -c "import mic_sessions.main"` with 32-byte `SERVICE_TOKEN`/`JWT_SECRET` env
 
 ## Acceptance
@@ -136,8 +136,66 @@ payload `update_factory` answered) on the owner's channel.
 
 ## State
 
-Not started. The hooks and the workspace operations above are fully designed; start with the first task.
-Player endpoints (`/factories/{projectId}/…`: enable, chat, approve, start, pause, resume, change requests)
-belong to milestones 05 and 07, but put them in the same `factories.py` router.
+Done (session 2). Code complete and checked; the *Acceptance* scenarios are verified manually by the user
+once milestones 05/07 provide the start endpoints (until then, a factory runs only if its row is set to
+`running` with a `runConfig` and a grant).
+
+What exists:
+
+- `sessions.py`: `FactoryBinding` (+ `as_payload`), `Session.factory`, `SessionPayload.factory`,
+  `_open_session(..., factory=)`, `observe(callback)` called at the end of `record()` for factory sessions,
+  `_factory_instructions` appended to `_session_instructions`, and the public hooks section (before
+  *lifecycle safety*): `open_session`, `deliver(session, caller, text)`, `interrupt`, `publish`,
+  `agent_access`.
+- `workspaces.py`: `push_branch`, `checkpoint_commit` (skips during a merge, `--no-verify`), `head_commit`,
+  `merge_in_progress`, `integrate`, `factory_checkout` / `remove_factory_checkout` (`factories/<id>/`,
+  marker `.mooi-factory`), module wrappers; push errors share `_raise_push_error` (merge messages unchanged).
+- `factory_prompts.outcome_reminder()`.
+- `features/factories.py`: `FactoryRunner` (cycle: close a pending step → load → control checkout →
+  `read_plan` → save snapshot if changed → decide → step), `_Step`, `launch(factory_id)`, `start()`/`stop()`,
+  agent endpoints `GET /sessions/{id}/factory/agent` (plan read from the session's own checkout) and
+  `POST .../factory/agent/outcome`, `factory.updated` published on every load/save.
+- `main.py`: `factories.start()` after `start_reconciler()`, `factories.stop()` first at shutdown, router.
+
+Local decisions (session 2):
+
+- **`close`**: the platform edits `PHASE.md` and `ROADMAP.md` front matter in the control checkout and
+  publishes with `Workspaces.merge` (works on the sparse, blob-filtered checkout). So `Workspaces.merge`
+  stays the only path to the default branch; conflicts make the cycle retry from a fresh read.
+- **Merger at step start**: when `integrate` reports conflicts, the opened step is journaled `continue` and
+  the **same session** becomes a `merger` step (new step id, binding replaced) with `merger_brief`; the
+  role's own work follows in a fresh session. A merger outcome counts only if no merge is in progress and
+  the default branch is integrated.
+- **D6 check**: an outcome `completed`/`failed` counts only if `next_target` read from the session's own
+  checkout differs from the step's target (planner: also no `plan.issues`); otherwise `continue` + note.
+- **Silent agent**: a turn ending without outcome gets one `outcome_reminder`; a second ends the step as
+  `continue`. After an outcome the agent gets 60 s to finish its turn, then it is interrupted.
+- **Guards**: 3 consecutive steps on one target without a new commit → pause `attention`; cycle errors back
+  off 15/30/60/120/300 s, then pause `error`; a 401/403 on the factory token → pause `revoked` (the open
+  session is kept, nothing can be published without the grant); `blocked` → pause `attention`.
+- **Plan work that conflicts** on publish is pushed to `factory/recovery/<step id>` and the factory pauses
+  `attention`. At shutdown `stop()` cancels runners, then safety-commits and pushes the running step
+  (milestone branch, or the recovery branch for plan roles); nothing is written to mic-mooi.
+- **Recovery**: a target whose last step ended without a matching outcome (or was interrupted by a restart)
+  gets `recovery_note()` appended to its next brief.
+- **Builder deployment**: `foundations_deployment` is true for `00-foundations` milestones of web
+  projects whose development deployment is not ready yet.
+- The tester's preview root is `http://127.0.0.1:<sessions_port>`.
+
+Gotchas for next milestones:
+
+- `merge` target: placeholder pause (`attention`, "merging is not available yet") in `_cycle`; milestone 06
+  replaces it. D10 (`attempts` bound) is not enforced yet (06).
+- `pausing` is only handled at runner start (turned into `paused`/`user`); graceful/immediate pause and the
+  `limits` watcher are milestone 07. The context peak is tracked (`_Step.peak_context`) but the 20 % checkpoint
+  flow is milestone 04 (hook into `FactoryRunner.observe`).
+- Factory step sessions count toward `max_sessions_per_player` (default 4): a full quota makes the cycle
+  back off and finally pause `error`.
+- Player endpoints (`/factories/{projectId}/…`: enable, chat, approve, start, pause, resume, change
+  requests) belong to milestones 05 and 07, in the same `factories.py` router; deleting a factory must call
+  `workspaces.remove_factory_checkout`.
 
 ## Log
+
+- Session 2: hooks in `sessions.py`, workspace operations, `features/factories.py` (runner, agent API, events),
+  lifespan wiring. Ruff: no new findings; import check passes.
