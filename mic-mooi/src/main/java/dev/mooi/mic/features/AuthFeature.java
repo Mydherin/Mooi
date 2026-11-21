@@ -369,6 +369,40 @@ public class AuthFeature {
         }
 
         /**
+         * Opens a sign-in with no refresh token, for platform work the player started and that runs while
+         * none of their devices is connected (a Software Factory). It is an ordinary session: signing out
+         * everywhere, a kick or a ban revoke it, which stops that work at its next renewal.
+         */
+        @Transactional
+        public UUID openDelegatedSession(UUID playerId, String label) {
+            playerRepository.findById(playerId).filter(AuthService::allowed)
+                    .orElseThrow(() -> new Auth.AuthenticationException(SESSION_NOT_ACTIVE));
+            OffsetDateTime now = OffsetDateTime.now(clock);
+            AuthSession session = new AuthSession();
+            session.setPlayerId(playerId);
+            session.setCreatedAt(now);
+            session.setLastUsedAt(now);
+            session.setUserAgent(label);
+            return authSessionRepository.save(session).getId();
+        }
+
+        /**
+         * {@link #renewAccessToken} for a delegated session, which also counts as use: the work it carries
+         * is the player's own activity, so a run lasting weeks does not reach the idle deadline.
+         */
+        @Transactional
+        public AccessTokenPayload renewDelegatedAccessToken(UUID sessionId, UUID playerId) {
+            AccessTokenPayload renewed = renewAccessToken(sessionId, playerId);
+            authSessionRepository.touch(sessionId, OffsetDateTime.now(clock));
+            return renewed;
+        }
+
+        @Transactional
+        public void revokeDelegatedSession(UUID sessionId) {
+            authSessionRepository.revoke(sessionId, OffsetDateTime.now(clock));
+        }
+
+        /**
          * Revokes <em>the session</em> behind a refresh token, not the token: that voids every access
          * token ever minted under it. Silent when the token is unknown.
          */

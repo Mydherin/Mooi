@@ -260,6 +260,81 @@ async def renewed(caller: Caller) -> Caller:
     return verify_access_token((body or {})["accessToken"])
 
 
+# --- software factory: operational state; the plan itself lives in the repository --------------
+
+
+async def fetch_factory(caller: Caller, project_id: UUID) -> dict:
+    return await _get(get_http_client(), f"{get_settings().mooi_api_base_url}/me/projects/{project_id}/factory",
+                      _bearer(caller), "Factory not found")
+
+
+async def create_factory(caller: Caller, project_id: UUID) -> dict:
+    return await _send("POST", f"/me/projects/{project_id}/factory", caller, "Project not found") or {}
+
+
+async def delete_factory(caller: Caller, project_id: UUID) -> None:
+    await _send("DELETE", f"/me/projects/{project_id}/factory", caller, "Factory not found")
+
+
+async def grant_factory(caller: Caller, project_id: UUID) -> Caller:
+    """Opens the unattended sign-in a run acts under from now on, and answers its first caller."""
+    body = await _send("POST", f"/me/projects/{project_id}/factory/grant", caller, "Factory not found")
+    return verify_access_token((body or {})["accessToken"])
+
+
+async def factory_access(factory_id: UUID) -> Caller:
+    """A fresh caller under the factory's grant; refused (401) once the player revoked it."""
+    body = await _send("POST", f"/internal/factories/{factory_id}/access-token", None, "Factory not found")
+    return verify_access_token((body or {})["accessToken"])
+
+
+async def fetch_active_factories() -> list[dict]:
+    body = await _send("GET", "/internal/factories/active", None, "Not found")
+    return list((body or {}).get("factories") or [])
+
+
+async def fetch_internal_factory(factory_id: UUID) -> dict:
+    return await _send("GET", f"/internal/factories/{factory_id}", None, "Factory not found") or {}
+
+
+async def update_factory(factory_id: UUID, changes: dict) -> dict:
+    """Writes against the revision in `changes`; a stale one answers 409."""
+    return await _send("PUT", f"/internal/factories/{factory_id}", None, "Factory not found", changes) or {}
+
+
+async def open_factory_step(factory_id: UUID, step: dict) -> dict:
+    return await _send("POST", f"/internal/factories/{factory_id}/steps", None, "Factory not found", step) or {}
+
+
+async def update_factory_step(factory_id: UUID, step_id: UUID, changes: dict) -> dict:
+    return await _send("PUT", f"/internal/factories/{factory_id}/steps/{step_id}", None, "Step not found",
+                       changes) or {}
+
+
+async def reconcile_factory_steps(active: list[UUID]) -> int:
+    """Interrupts every unfinished step outside `active`: ones a restart of this service orphaned."""
+    body = await _send("POST", "/internal/factories/steps/reconcile", None, "Not found",
+                       {"active": [str(step_id) for step_id in active]})
+    return int((body or {}).get("interrupted", 0))
+
+
+async def fetch_factory_change_requests(caller: Caller, project_id: UUID) -> list[dict]:
+    body = await _get(get_http_client(),
+                      f"{get_settings().mooi_api_base_url}/me/projects/{project_id}/factory/change-requests",
+                      _bearer(caller), "Factory not found")
+    return list(body.get("changeRequests") or [])
+
+
+async def create_factory_change_request(caller: Caller, project_id: UUID, text: str) -> dict:
+    return await _send("POST", f"/me/projects/{project_id}/factory/change-requests", caller, "Factory not found",
+                       {"text": text}) or {}
+
+
+async def update_factory_change_request(factory_id: UUID, change_id: UUID, changes: dict) -> dict:
+    return await _send("PUT", f"/internal/factories/{factory_id}/change-requests/{change_id}", None,
+                       "Change request not found", changes) or {}
+
+
 # --- development: the environment every session of a project shares ---------------------------
 
 

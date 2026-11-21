@@ -11,6 +11,8 @@ from it. Where they differ, this context wins over the current implementation (s
 
 - An AI-native **development platform**: take a GitHub project from first prompt to dev preview, production
   deployment and backups, driven by coding agents (Claude Code, Codex).
+- For large projects, an optional **Software Factory**: once the human approves the definition, it builds the
+  project autonomously, phase by phase and milestone by milestone.
 - Desktop and mobile application (responsive web, mobile shell). Enterprise-grade, startup-modern: awesome
   design, excellent by default in every aspect.
 - Multi-user, multi-tenant: users and tenants are fully isolated; every resource is owned and access-checked.
@@ -153,6 +155,61 @@ from it. Where they differ, this context wins over the current implementation (s
 - Restore into production and into sandbox (disposable, isolated) environments.
 - Buttons and chat converge; changes appear live in both.
 
+## Software Factory
+
+- An optional mode for large projects, living alongside normal sessions: **one factory per project**. The
+  human and an agent define the project together; then the factory builds it on its own in a background
+  loop that may last days or weeks.
+- **Definition** (with the human, in the project's persistent **factory chat**): closed scope, base functional
+  and technical decisions, and high-level phases ordered in the most efficient way. The loop starts only once
+  the human approves them.
+- **Phase 0, Foundations**: the project's technical base and its Mooi dev deployment (same brief and test as
+  the Deploy button), so that every milestone can be tested end to end. Production and backups stay outside
+  the factory: they are set up from their own chats or from a normal session.
+- **Autonomous loop**: the factory expands the next phase by itself (full functional and technical detail,
+  split into self-contained milestones with end-to-end acceptance criteria), then, milestone by milestone:
+  - **Build** in fresh sessions. Unit tests are written only if the project's architecture decides so, and
+    belong to building.
+  - **Test** end to end only, in fresh sessions distinct from the builders, against the milestone's dev
+    preview. A failure records reproducible bugs; builder sessions fix them and testing runs again. After a
+    bounded number of failed cycles the milestone needs attention and the loop waits for the human.
+  - **Merge** into the default branch once the end-to-end test passes (agentic merge when outdated). One
+    branch per milestone, pushed at every checkpoint.
+- **Fresh sessions at 20%**: every factory session stops once it has used 20% of its context window. The
+  platform measures it (each adapter's context KPI) and asks the agent to checkpoint: commit, push and rewrite
+  the milestone's state for the next session. A hard limit and a platform-side safety commit cover a checkpoint
+  that runs long. Each new session resumes from that state and Git without rediscovering anything.
+- **Lives in the repository** under `docs/factory/`, in one homogeneous structure that works without Mooi and
+  travels with merges:
+  - Core files that always exist, with fixed sections: `FACTORY.md` (index of every file with when to read
+    it, conventions, current status), `VISION.md`, `ARCHITECTURE.md`, `DECISIONS.md` (global decisions, each
+    stating what it affects) and `ROADMAP.md`.
+  - `phases/<nn>-<slug>/PHASE.md` (detail, milestones, phase decisions) and
+    `phases/<nn>-<slug>/milestones/<nn>-<slug>.md` (spec, end-to-end criteria, state for the next session,
+    log, test reports), created only when needed.
+  - `context/`: extra files a project needs by its nature (domain, data model, design system,
+    integrations...), created on demand and registered in `FACTORY.md` with their reading rule.
+  - Plan changes are committed to the default branch; milestone work goes to the milestone branch. The
+    platform keeps only operational state (current step, sessions, retries, change requests).
+- **Deterministic orchestrator**: the platform, never an agent, drives the loop as a persisted state machine.
+  Each step is a fresh Mooi session with a role prompt (architect, phase planner, builder, tester, impact
+  analyst), visible live with its chat, changes and trace, and open to the human.
+- **The human can step in at any time without breaking anything**:
+  - Pause (gracefully at the next checkpoint, or immediately) and resume at will. Provider, account, adapter,
+    model and effort are chosen at every start and resume, and apply to every session until the next pause.
+  - Discussing in the factory chat changes nothing. A decided change becomes a **change request**, applied at
+    the next safe point: an impact analysis updates the affected decisions and reopens earlier phases with
+    delta milestones. Scope-level changes ask the human to confirm.
+  - Consistency guarantees: a single writer of the plan, atomic idempotent steps, and on resume the platform
+    reconciles its journal with Git, which wins.
+- **Background**: runs on the server with nobody connected and survives restarts. It pauses when provider
+  limits run out and continues with the same choice once they renew. It flags milestones needing attention,
+  change requests awaiting confirmation and finished phases.
+- After the last phase the factory rests: small additions enter as change requests; large scope changes
+  reopen definition with the human.
+- A **Factory** tab shows the roadmap (phases, milestones, statuses), the active session live, decisions,
+  change requests and controls. All of it is also available from the chat through the platform API.
+
 ## Accounts and administration
 
 - Account area: profile, linked GitHub, provider accounts and other personal settings; secure storage.
@@ -169,6 +226,12 @@ from it. Where they differ, this context wins over the current implementation (s
 
 - **Recipes**: reusable implementation recipes from GitHub marketplaces, applied from the session chat.
 - **Dictation**: local push-to-talk speech-to-text in every agent chat composer.
+
+# Current work
+
+- **Software Factory** implementation is in progress: when asked to continue it, read
+  `docs/plans/software-factory/PHASE.md`, then follow its session protocol (first milestone not `done`).
+  Other requests ignore this pointer.
 
 # Guidelines
 

@@ -1,0 +1,239 @@
+databaseChangeLog:
+  - changeSet:
+      id: 035-software-factory
+      author: mooi
+      comment: >-
+        Operational state of each project's Software Factory. The plan itself lives in the repository
+        (docs/factory/); these tables only hold what the orchestrator needs to run, resume and report.
+      changes:
+        - createTable:
+            tableName: factories
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: project_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    unique: true
+                    uniqueConstraintName: uq_factories_project
+              - column:
+                  name: player_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status
+                  type: varchar(16)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: pause_reason
+                  type: varchar(16)
+              - column:
+                  name: attention
+                  type: varchar(2000)
+                  remarks: Why the factory waits for the human, shown as is; NULL when nothing is asked
+              - column:
+                  name: run_provider
+                  type: varchar(32)
+              - column:
+                  name: run_connection_id
+                  type: varchar(64)
+              - column:
+                  name: run_adapter
+                  type: varchar(32)
+              - column:
+                  name: run_model
+                  type: varchar(128)
+              - column:
+                  name: run_effort
+                  type: varchar(32)
+              - column:
+                  name: chat_session_id
+                  type: uuid
+              - column:
+                  name: grant_session_id
+                  type: uuid
+                  remarks: The auth session the factory acts under while unattended; revoking it stops the factory
+              - column:
+                  name: plan_snapshot
+                  type: text
+                  remarks: Cache of the plan read from the repository front matter, for the UI; Git stays the truth
+              - column:
+                  name: plan_commit
+                  type: varchar(64)
+              - column:
+                  name: revision
+                  type: bigint
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamp with time zone
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamp with time zone
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            constraintName: fk_factories_project
+            baseTableName: factories
+            baseColumnNames: project_id
+            referencedTableName: projects
+            referencedColumnNames: id
+            onDelete: CASCADE
+        - createIndex:
+            indexName: idx_factories_player
+            tableName: factories
+            columns:
+              - column:
+                  name: player_id
+        - createTable:
+            tableName: factory_steps
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: factory_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: role
+                  type: varchar(16)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: phase_id
+                  type: varchar(128)
+              - column:
+                  name: milestone_id
+                  type: varchar(128)
+              - column:
+                  name: session_id
+                  type: uuid
+              - column:
+                  name: branch
+                  type: varchar(255)
+              - column:
+                  name: model
+                  type: varchar(128)
+              - column:
+                  name: base_commit
+                  type: varchar(64)
+              - column:
+                  name: head_commit
+                  type: varchar(64)
+              - column:
+                  name: status
+                  type: varchar(16)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: summary
+                  type: varchar(4000)
+              - column:
+                  name: peak_context_percent
+                  type: int
+              - column:
+                  name: started_at
+                  type: timestamp with time zone
+                  constraints:
+                    nullable: false
+              - column:
+                  name: finished_at
+                  type: timestamp with time zone
+        - addForeignKeyConstraint:
+            constraintName: fk_factory_steps_factory
+            baseTableName: factory_steps
+            baseColumnNames: factory_id
+            referencedTableName: factories
+            referencedColumnNames: id
+            onDelete: CASCADE
+        - createIndex:
+            indexName: idx_factory_steps_factory_started
+            tableName: factory_steps
+            columns:
+              - column:
+                  name: factory_id
+              - column:
+                  name: started_at
+        - sql:
+            sql: >-
+              CREATE INDEX idx_factory_steps_unfinished ON factory_steps (started_at) WHERE finished_at IS NULL;
+        - createTable:
+            tableName: factory_change_requests
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: factory_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: number
+                  type: int
+                  constraints:
+                    nullable: false
+              - column:
+                  name: text
+                  type: varchar(8000)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status
+                  type: varchar(24)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: scope_level
+                  type: boolean
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+              - column:
+                  name: analysis
+                  type: varchar(8000)
+              - column:
+                  name: created_at
+                  type: timestamp with time zone
+                  constraints:
+                    nullable: false
+              - column:
+                  name: resolved_at
+                  type: timestamp with time zone
+        - addForeignKeyConstraint:
+            constraintName: fk_factory_change_requests_factory
+            baseTableName: factory_change_requests
+            baseColumnNames: factory_id
+            referencedTableName: factories
+            referencedColumnNames: id
+            onDelete: CASCADE
+        - addUniqueConstraint:
+            constraintName: uq_factory_change_requests_number
+            tableName: factory_change_requests
+            columnNames: factory_id, number
+      rollback:
+        - dropTable:
+            tableName: factory_change_requests
+        - dropTable:
+            tableName: factory_steps
+        - dropTable:
+            tableName: factories
