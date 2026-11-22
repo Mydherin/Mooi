@@ -72,7 +72,11 @@ export const useLiveStore = create<LiveState>((set) => ({
       return { todos: { ...state.todos, [projectId]: data.todos as TodoList } };
     }
     if (frame.type === 'factory.updated') {
-      return { factories: { ...state.factories, [projectId]: newerFactory(state.factories[projectId], (data.factory as Factory | null) ?? null) } };
+      // Change requests live beside the factory: queuing or deciding one is announced without a new revision.
+      return {
+        factories: { ...state.factories, [projectId]: newerFactory(state.factories[projectId], (data.factory as Factory | null) ?? null) },
+        configurations: bump(state.configurations, `factory:${projectId}`),
+      };
     }
     if (frame.type === 'development.environment') {
       return {

@@ -1,6 +1,6 @@
 ---
 id: 10-e2e-verification
-status: planned
+status: building
 depends: [09-closure]
 context: [mic-sessions, mic-mooi, spa-mooi]
 ---
@@ -104,28 +104,87 @@ Run them in order: later ones reuse the factory the earlier ones built.
 
 ## Tasks
 
-- [ ] Deploy the preview, sign in, link the accounts, add the test project
-- [ ] Scenarios 1–2
-- [ ] Scenarios 3–4
-- [ ] Scenarios 5–6
-- [ ] Scenario 7
-- [ ] Scenario 8
-- [ ] Scenarios 9–11
+- [x] Deploy the preview, sign in, link the accounts, add the test project
+- [x] Scenarios 1–2
+- [ ] Scenarios 3–4 (partial: blocked by the preview having no Docker, see *Tests*)
+- [x] Scenarios 5–6 (5 through the `blocked` path, see *Tests*)
+- [x] Scenario 7
+- [ ] Scenario 8 (partial: no finished phase to reopen, accept path not run)
+- [x] Scenarios 9–11 (10 not forced)
 - [ ] Record the results in *Tests*, update *State*, set `status: done` and remove the *Current work* pointer
   from `AGENTS.md`
 
+## Decisions (local)
+
+- **L1 Platform faults block, they never fail a test.** A tester whose deployment cannot start because of
+  Mooi itself (Docker engine unavailable, capacity) records it and reports `blocked`, leaving `test` and
+  `attempts` untouched. Reason: run 1 burnt three build→test cycles on `docker_unavailable`.
+- **L2 The dev deployment comes first.** For web applications, the first `00-foundations` milestone sets up
+  the dev deployment together with the minimal app it serves, and every milestone's criteria must be testable
+  once it and the earlier ones are built. Reason: the planner put it second, so milestone 1 was untestable.
+
 ## State
 
-Not started. Code of milestones 01–09 is complete on `feat/mooi-a2gpr5`, last commit `1c9611d`. The areas
-most likely to need fixes are the ones never run:
+Session 1 ran scenarios 1–11 against a throwaway private repository (created and deleted by the session)
+with Sonnet/Haiku at low effort. Seven defects were found and fixed (see *Tests*); every fix was redeployed
+and re-run. What is still unverified, all for one environmental reason (the preview's `mic-sessions` has no
+Docker engine, by design of `compose.yml`), plus what small milestones never trigger:
 
-- the agent loop against GitHub (pushes, merges, the default branch moving);
-- interrupt and checkpoint timing per adapter;
-- quota detection per adapter;
-- the delegated sign-in over long runs;
-- Docker access from the preview's `mic-sessions`;
-- the visual layout of the Factory tab.
+- Scenario 3: a checkpoint at 20 % (tiny milestones peak at 2–4 %); the checkpoint path itself ran through
+  the graceful and immediate pauses.
+- Scenario 4: a passing tester, the platform squash merge and the phase close.
+- Scenario 8: a change request reopening a *finished* phase with a delta milestone; accepting a scope-level
+  request (only rejecting was run); waking a `resting` factory.
+- Scenario 10: limits (not forced).
+
+Next step: run scenarios 3, 4 and 8 where the factory's `mic-sessions` reaches a Docker engine (a local run
+through `make`, or production), with a milestone large enough to cross 20 % of context; then close this
+milestone.
 
 ## Tests
 
+### Session 1 — 2026-11-21
+
+Setup: preview deployed with the Deploy brief; mocked Google sign-in; Claude account from the environment
+(Codex has no credential); test repository `Mydherin/mooi-factory-e2e-vpqx52` (private, deleted at the end);
+definition: a static "Click counter" page, `00-foundations` + `01-counter`.
+
+| # | Result | Notes |
+|---|--------|-------|
+| 1 | Passed after fixes 1–3 | Intro shown; architect published the five core files; approving with `DECISIONS.md` missing was refused with the issue listed (tab and chat); approval → `ready`; `ROADMAP.md` starts with `00-foundations`. |
+| 2 | Passed | One planner step, role badge in Sessions, live active step and journal; `PHASE.md` + two milestones on `main`, phase `expanded`. |
+| 3 | Partial | Builder on `factory/00-foundations/00-site-skeleton`, pushed at every step with the user's Git identity; peak context 2–4 %, so the 20 % checkpoint never triggered. |
+| 4 | Blocked by the environment | Tester called the deployment API, got `docker_unavailable`; no preview, so no pass, merge or phase close. |
+| 5 | Passed (via `blocked`) | Two `Test failed` cycles raised `attempts` to 2 (fix 4 then turned platform faults into `blocked`); the factory paused `attention`; badges on the tab, the sidebar, the phone menu button and the project card ("Factory needs you"). |
+| 6 | Passed after fix 5 | Graceful pause let the turn end, then `paused`/`user`; *Stop now* interrupted in 2 s and pushed a safety commit holding the tester's uncommitted *Tests* entry; resume preselected the last run and switched to Haiku; the chat resumed the factory and the tab followed live. |
+| 7 | Passed | A redeploy restarted `mic-sessions` during an analyst step: journaled `Interrupted`, a fresh step on the same target 2 s after boot; the chat was gone and reopening it worked. |
+| 8 | Partial, passed after fixes 6–7 | CR-1 (label rename) applied by an analyst on `main`; CR-2 (accounts and backend) went to *Confirm scope* with its impact and changed nothing; rejected from the tab. |
+| 9 | Passed after fix 8 | *Log out on every device* during a step paused the factory `revoked`; resume opened a new grant. Project deletion not run (the preview was discarded instead). |
+| 10 | Not forced | — |
+| 11 | Passed | Desktop and 360 px, dark and light: no horizontal overflow, controls reachable. |
+
+Defects found and fixed (each redeployed and re-run):
+
+1. **Definition checklist never updated.** Steps: architect publishes. Expected: core files ticked, phases
+   listed. Actual: empty until approval, even after reload. Cause: the plan snapshot was saved only by the
+   runner and at approval. Fix: `agent_publish` (and a refused approval) refresh it; the architect brief's
+   redefinition flag now comes from the redefinition change request instead of the snapshot.
+2. **Stale approval issues.** After a refused approval and a fixed definition, "Still to fix" stayed. Fix:
+   refused issues are tied to the plan commit they read.
+3. **Factory chat had no Git identity.** The architect invented `mooi@localhost` to commit. Fix: every
+   factory session gets the player's identity right after its clone, before its brief.
+4. **Platform faults counted as failed tests** and the planner put the dev deployment second (L1, L2).
+5. **Pause before the brief left a false "Recovery needed" log line** and a safety commit with nothing to
+   recover, and counted as a stalled step. Fix: a step is `briefed` only once its brief is delivered.
+6. **Factory chat invisible once the factory runs.** Opening it created a session the tab never showed. Fix:
+   shared `FactoryChatCard`, shown above the roadmap whenever a chat is open.
+7. **Change requests not live.** One queued from the chat appeared only after a remount (no factory
+   revision change). Fix: every `factory.updated` bumps a live counter the list reads again on.
+8. **Revocation looped on `cycle failed`.** A cached token kept being used after *log out everywhere* (401
+   "Session is no longer active"). Fix: on a 401 the runner mints again; a refused mint pauses `revoked`.
+   Also, a step left open by a revoked run shows "Step on hold" instead of a live dot.
+
 ## Log
+
+- Session 1: ran scenarios 1–11 in the preview, fixed defects 1–8, recorded L1–L2; scenarios 3, 4 and 8
+  remain partial because the preview has no Docker engine.

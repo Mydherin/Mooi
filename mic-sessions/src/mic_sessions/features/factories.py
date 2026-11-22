@@ -160,6 +160,8 @@ class _Step:
     # A graceful pause asks for the checkpoint at the next turn end; provider limits stop the session and
     # record when they renew (epoch seconds, None when unknown).
     pausing: bool = False
+    # The agent got its brief: before that the step did no work, so there is nothing to recover.
+    briefed: bool = False
     limits: bool = False
     limits_reset: float | None = None
     wake: asyncio.Event = field(default_factory=asyncio.Event)
@@ -258,6 +260,22 @@ class FactoryRunner:
                 raise
         return self.caller
 
+    async def _revoked(self) -> bool:
+        """A token minted earlier was refused: revoking the grant ends its sign-in at once, while the token
+        itself has not expired yet. Minting a new one tells a revocation from a token that just lapsed."""
+        self.caller = None
+        revoked = False
+        with suppress(Exception):  # Any other failure is not a revocation: the cycle's retry handles it.
+            try:
+                await self._access()
+            except _Revoked:
+                revoked = True
+        return revoked
+
+    async def _pause_revoked(self) -> None:
+        with suppress(Exception):
+            await self._pause("revoked", "The factory's sign-in was revoked. Resume it to continue.")
+
     # --- the loop -----------------------------------------------------------------------------------
 
     async def run(self) -> None:
@@ -274,10 +292,12 @@ class FactoryRunner:
                 except asyncio.CancelledError:
                     raise
                 except _Revoked:
-                    with suppress(Exception):
-                        await self._pause("revoked", "The factory's sign-in was revoked. Resume it to continue.")
+                    await self._pause_revoked()
                     return
-                except Exception:
+                except Exception as error:
+                    if isinstance(error, ApiException) and error.status_code == 401 and await self._revoked():
+                        await self._pause_revoked()
+                        return
                     LOG.exception("Factory %s cycle failed", self.factory_id)
                     failures += 1
                     if failures > len(_RETRY_SECONDS):
@@ -409,6 +429,7 @@ class FactoryRunner:
                 brief += factory_prompts.recovery_note()
             if step.stop is None and not step.pausing:
                 await sessions.deliver(session, await self._access(), brief)
+                step.briefed = True
                 await self._await_outcome(step)
             else:  # Limits already exhausted at start, or a pause came first: no work starts.
                 step.note = step.stop or "Paused by the user before the step started"
@@ -647,11 +668,14 @@ class FactoryRunner:
                 self.handovers.pop(key, None)
         if step.handed_over:
             self.recovering.discard(key)
-        else:
+        elif step.briefed:
             self.recovering.add(key)
         progressed = head is not None and head != step.base_commit
         count = 0 if progressed else (self.stalled[1] + 1 if self.stalled and self.stalled[0] == key else 1)
-        self.stalled = (key, count)
+        if progressed or step.briefed:
+            self.stalled = (key, count)
+        else:
+            count = 0  # Never briefed (a pause or limits came first): it neither progressed nor stalled.
         if step.attention:
             await self._pause("attention", step.attention)
             return False
@@ -704,7 +728,8 @@ class FactoryRunner:
         `Recovery needed` line in its *Log*, committed with the safety commit, so the next session (or a
         human reading the branch) knows *State* is stale."""
         milestone = step.milestone
-        if milestone is None or step.role == "merger" or step.handed_over or step.base_commit is None:
+        if (milestone is None or step.role == "merger" or step.handed_over or not step.briefed
+                or step.base_commit is None):
             return
         path = workspace / milestone.path
         if not path.is_file() or await workspaces.changed_since(workspace, step.base_commit, milestone.path):
@@ -1069,9 +1094,10 @@ async def open_chat(caller: Caller, project_id: UUID, body: ChatRequest) -> tupl
         await sessions.close_session(chat.id)
     if factory["status"] == "defining":
         # A redefinition after the last phase starts from the built project and the change that reopened it.
+        # The plan snapshot cannot tell: the architect's publications refresh it during a first definition too.
         reopened = next((change for change in await mooi.fetch_factory_change_requests(caller, project_id)
-                         if change.get("analysis") == _REDEFINITION), None) if factory.get("plan") else None
-        brief = factory_prompts.architect_brief(body.request, existing=bool(factory.get("plan")),
+                         if change.get("analysis") == _REDEFINITION), None)
+        brief = factory_prompts.architect_brief(body.request, existing=reopened is not None,
                                                 change=f"CR-{reopened['number']}: {reopened['text']}" if reopened else None)
     else:
         brief = factory_prompts.steering_brief(body.request)
@@ -1101,6 +1127,8 @@ async def approve_definition(caller: Caller, project_id: UUID) -> dict[str, Any]
     _, commit, plan = await _read_plan(UUID(str(factory["id"])), project, token)
     issues = factory_docs.definition_issues(plan)
     if issues:
+        if commit != factory.get("planCommit"):
+            factory = await _write(caller, factory, plan=json.dumps(plan.as_json()), planCommit=commit)
         return {"approved": False, "factory": factory,
                 "issues": [{"path": issue.path, "message": issue.message} for issue in issues]}
     factory = await _write(caller, factory, status="ready", attention=None, plan=json.dumps(plan.as_json()),
@@ -1379,7 +1407,27 @@ async def agent_publish(session_id: UUID, request: Request, body: PublishRequest
     factory = await mooi.fetch_factory(caller, session.project_id)
     if factory["status"] != "defining":
         raise ApiException.conflict("The definition is approved: queue a change request instead of editing the plan")
-    return (await sessions.publish_repository(session, caller, body.message)).model_dump(mode="json")
+    merged = await sessions.publish_repository(session, caller, body.message)
+    await _refresh_definition(caller, session.project_id)
+    return merged.model_dump(mode="json")
+
+
+async def _refresh_definition(caller: Caller, project_id: UUID) -> None:
+    """The Factory tab's checklist shows the definition as published: refresh the plan snapshot (and its
+    issues) after each publication, live on every device."""
+    project = await mooi.fetch_project(caller, project_id)
+    token = await mooi.fetch_github_token(caller)
+    for attempt in range(2):
+        factory = await mooi.fetch_factory(caller, project_id)
+        if factory["status"] != "defining":
+            return
+        _, commit, plan = await _read_plan(UUID(str(factory["id"])), project, token)
+        try:
+            await _write(caller, factory, plan=json.dumps(plan.as_json()), planCommit=commit)
+            return
+        except ApiException as error:
+            if error.status_code != 409 or attempt:
+                raise
 
 
 @router.post("/sessions/{session_id}/factory/agent/approve")

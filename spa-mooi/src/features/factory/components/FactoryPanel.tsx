@@ -6,6 +6,7 @@ import {
 } from '@/features/factory/api/factoryApi';
 import { FactoryActiveStep } from '@/features/factory/components/FactoryActiveStep';
 import { FactoryChangeRequests } from '@/features/factory/components/FactoryChangeRequests';
+import { FactoryChatCard } from '@/features/factory/components/FactoryChatCard';
 import { FactoryDefinition } from '@/features/factory/components/FactoryDefinition';
 import { FactoryHeader } from '@/features/factory/components/FactoryHeader';
 import { FactoryIntro } from '@/features/factory/components/FactoryIntro';
@@ -22,6 +23,7 @@ import type { PlatformChatRequest } from '@/features/platform/types/PlatformChat
 import type { Project } from '@/features/projects/types/Project';
 import { Card } from '@/shared/components/Card';
 import { EmptyState } from '@/shared/components/EmptyState';
+import { useLiveStore } from '@/stores/liveStore';
 import { useSessionsStore } from '@/stores/sessionsStore';
 
 type Dialog = 'chat' | 'start' | 'resume' | 'remove' | null;
@@ -35,10 +37,12 @@ export const FactoryPanel = ({ project }: { project: Project }) => {
   const { connections } = useAgentConnections();
   const chat = useSessionsStore((state) => (factory?.chatSessionId
     ? state.sessions.find((session) => session.id === factory.chatSessionId && session.status !== 'closed') : undefined));
+  const announced = useLiveStore((live) => live.configurations[`factory:${project.id}`] ?? 0);
   const [dialog, setDialog] = useState<Dialog>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [approvalIssues, setApprovalIssues] = useState<FactoryIssue[]>([]);
+  /** A refused approval's issues, valid only while the plan it read is still the published one. */
+  const [refusal, setRefusal] = useState<{ planCommit: string | null; issues: FactoryIssue[] } | null>(null);
 
   const act = async (key: string, action: () => Promise<void>): Promise<boolean> => {
     setBusy(key);
@@ -77,7 +81,7 @@ export const FactoryPanel = ({ project }: { project: Project }) => {
   const approve = () => void act('approve', async () => {
     const approval = await approveFactory(project.id);
     adopt(approval.factory);
-    setApprovalIssues(approval.issues);
+    setRefusal({ planCommit: approval.factory.planCommit, issues: approval.issues });
   });
 
   const pause = (mode: 'graceful' | 'immediate') => void act(mode === 'graceful' ? 'pause' : 'stop', async () => {
@@ -110,7 +114,7 @@ export const FactoryPanel = ({ project }: { project: Project }) => {
   if (factory.status === 'defining' || factory.status === 'ready') {
     return <>
       <FactoryDefinition project={project} factory={factory} chat={chat} approving={busy === 'approve'}
-        approvalIssues={approvalIssues} actionError={dialog ? null : actionError} onOpenChat={() => open('chat')}
+        approvalIssues={refusal?.planCommit === factory.planCommit ? refusal.issues : []} actionError={dialog ? null : actionError} onOpenChat={() => open('chat')}
         onApprove={approve} onStart={() => open('start')} />
       {dialogs}
     </>;
@@ -124,11 +128,13 @@ export const FactoryPanel = ({ project }: { project: Project }) => {
       <FactoryHeader factory={factory} busy={busy === 'pause' || busy === 'stop' ? busy : null}
         actionError={dialog ? null : actionError} onPause={pause} onResume={() => open('resume')}
         onOpenChat={() => open('chat')} onRemove={() => open('remove')} />
+      {chat ? <FactoryChatCard projectId={project.id} title="Factory chat" chat={chat} onOpenChat={() => open('chat')}
+        className="h-[min(60dvh,36rem)] min-h-[22rem]" /> : null}
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_21rem]">
         <FactoryRoadmap phases={factory.plan?.phases ?? []} activeStep={factory.activeStep} />
         <div className="flex min-w-0 flex-col gap-4">
           <FactoryActiveStep factory={factory} />
-          <FactoryChangeRequests projectId={project.id} revision={revision} fullName={project.fullName} branch={branch} />
+          <FactoryChangeRequests projectId={project.id} revision={`${revision}:${announced}`} fullName={project.fullName} branch={branch} />
         </div>
       </div>
       <FactoryJournal projectId={project.id} revision={revision} live={factory.status === 'running' || factory.status === 'pausing'} />

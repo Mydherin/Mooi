@@ -292,9 +292,10 @@ def planner_brief(phase: factory_docs.Phase, previous: list[factory_docs.Phase],
     action = ("This phase was reopened by a change request: add delta milestones for what is still missing, keep "
               "the finished ones untouched." if reopened else "Expand it completely.")
     if phase.id == factory_docs.FOUNDATIONS and not reopened:
-        action += (" Its milestones cover the project's technical base and, for web applications, one milestone that"
-                   " sets up the Mooi development deployment (its *Spec* says it follows the Deploy button's brief and"
-                   " passes its test). Production deployments and backups are never part of it.")
+        action += (" Its milestones cover the project's technical base. For web applications the first milestone sets"
+                   " up the Mooi development deployment (its *Spec* says it follows the Deploy button's brief and passes"
+                   " its test) together with the minimal app it serves, because every milestone is tested end to end in"
+                   " its preview, starting with that one. Production deployments and backups are never part of it.")
     return f"""You are the planner of the Software Factory. Phase `{phase.id}` ({phase.title}) is next. {action}
 
 Phases already built: {done}. Read what you need of them to align with what was actually built: their code is in this branch.
@@ -306,7 +307,7 @@ Phases already built: {done}. Read what you need of them to align with what was 
 
 ## Write (on `{factory_docs.phase_path(phase.id).parent}/`)
 1. `PHASE.md` from the template below: full functional and technical detail, assumptions on earlier phases, the phase decisions and the ordered milestone ids in `milestones`. Set `status: expanded`.
-2. One file per milestone in `{milestone_dir}/` from the milestone template. Each milestone is self-contained and small enough for a few short sessions: concrete *Spec*, numbered *End-to-end criteria* observable in the running preview, ordered *Tasks*, and `context` naming the context files it needs. Use `depends` only for milestones of this phase.
+2. One file per milestone in `{milestone_dir}/` from the milestone template. Each milestone is self-contained and small enough for a few short sessions: concrete *Spec*, numbered *End-to-end criteria* observable in the running preview as soon as this milestone and the earlier ones are built (never relying on a later milestone), ordered *Tasks*, and `context` naming the context files it needs. Use `depends` only for milestones of this phase.
 3. Update `{root / "ROADMAP.md"}`: this phase's `status: expanded`. Add global decisions to `DECISIONS.md` only if the phase forces one, and refresh the *Assumptions* of later phases only when what was built contradicts them.
 
 When a large phase does not fit, commit what is complete, describe the rest in `PHASE.md` › *Milestones* and report `continue`. Report `completed` once every milestone file exists and the front matter is valid (`GET` the factory: `plan.issues` must not mention this phase).
@@ -352,7 +353,7 @@ def tester_brief(milestone: factory_docs.Milestone, preview_root: str) -> str:
 {_files(str(root / "FACTORY.md"), str(root / "ARCHITECTURE.md") + " › Development deployment", str(milestone.path))}
 
 ## Test
-1. Deploy this branch with the development deployment API of your instructions (`POST .../deployment/agent/start`, then `GET .../deployment/agent?wait=120` until it is running). If it fails, that is a failed test: record the output.
+1. Deploy this branch with the development deployment API of your instructions (`POST .../deployment/agent/start`, then `GET .../deployment/agent?wait=120` until it is running). If it fails because of the project (build errors, a missing or invalid Compose file, failing healthchecks), that is a failed test: record the output. If Mooi itself cannot deploy (the Docker engine is unavailable, the deployment capacity is exhausted), the milestone is not at fault: record it in *Tests* and *Log* without touching the front matter, commit and report `blocked` with the platform's reason.
 2. Open the preview in the browser tool at `{preview_root}` followed by the snapshot's `previewUrl`, and run every *End-to-end criterion* as a user would, on desktop and phone viewports.
 3. Write a new entry at the top of *Tests*: date, the result of each criterion and, for each failure, reproducible steps, expected and actual result and evidence (console errors, failing requests).
 4. Front matter: on success `test: passed`; on failure `test: failed`, `status: building` and `attempts` plus one. Add one line to *Log*, commit.

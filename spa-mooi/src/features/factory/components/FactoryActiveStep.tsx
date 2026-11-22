@@ -37,13 +37,17 @@ export const FactoryActiveStep = ({ factory }: { factory: Factory }) => {
   // The gauge spans the handover limit: full means the session is about to hand over.
   const fill = percent === null ? 0 : Math.min(100, (percent / FACTORY_CONTEXT_LIMIT) * 100);
   const near = percent !== null && percent >= FACTORY_CONTEXT_LIMIT * 0.8;
+  // A run that lost its sign-in leaves its step open with the work until the next resume reconciles it.
+  const live = factory.status === 'running' || factory.status === 'pausing';
 
   return (
     <Card as="section" className="flex flex-col gap-3.5 p-4 sm:p-5">
       <div className="flex items-center gap-2">
-        <Eyebrow className="flex-1">Active step</Eyebrow>
-        <StatusDot tone="success" pulse />
-        <span className="text-[11.5px] text-ink-subtle">started {formatRelativeTime(step.startedAt)}</span>
+        <Eyebrow className="flex-1">{live ? 'Active step' : 'Step on hold'}</Eyebrow>
+        <StatusDot tone={live ? 'success' : 'neutral'} pulse={live} />
+        <span className="text-[11.5px] text-ink-subtle">
+          {live ? `started ${formatRelativeTime(step.startedAt)}` : 'resumes with the factory'}
+        </span>
       </div>
       <div className="min-w-0">
         <p className="text-[15px] font-semibold text-ink">{factoryRoleLabel(step.role)}</p>

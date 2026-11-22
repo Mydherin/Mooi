@@ -1357,6 +1357,10 @@ async def _provision(session: Session, caller: Caller, project: mooi.Project,
         workspace = await workspaces.create_workspace(project, session.id, session.branch, github_token)
         session.workspace = workspace.path
         session.base_commit = workspace.base_commit
+        if session.factory is not None:
+            # Factory agents commit on their own (the chat before publishing, steps before each push):
+            # with the player's identity from the first brief on, never one they make up.
+            await workspaces.set_identity(session.workspace, await mooi.fetch_github_identity(caller))
         _sync_deployment_configured(session)
 
         _record_status(session, STATUS_PROVISIONING, f"Starting {descriptor.adapter(session.adapter).label}")

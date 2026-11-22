@@ -170,4 +170,4 @@ paused, resumed and steered at any time, and never leaves the plan or the code i
 | 07 | [Control: pause, resume, limits, change requests](milestones/07-control-change-requests.md) | 06 | done |
 | 08 | [Factory tab (SPA)](milestones/08-factory-tab.md) | 03 (API), 07 (full) | done |
 | 09 | [Closure](milestones/09-closure.md) | all | done |
-| 10 | [End-to-end verification](milestones/10-e2e-verification.md) | 09 | planned |
+| 10 | [End-to-end verification](milestones/10-e2e-verification.md) | 09 | building |
