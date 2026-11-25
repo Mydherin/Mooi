@@ -7,9 +7,9 @@
 - [ ] The user admin dialog sucks in mobile since dialog allow scrolling with no sense and actions buttons are together
 - [ ] Soportar archivar proyectos
 - [ ] Mejorar stt con Go (AllForOne)
+- [ ] Say how diff commits from main to previous release
 - [ ] Microphone expiration
 - [ ] Apply dnd in todos list with better pattern, about grabbing 1.5 secs in any place to enable in the row
-- [ ] Say how diff commits from main to previous release
 - [x] Upgrade playwright
 - [x] Files view, allowing editing files with plain text manually
 - [x] In changes show file name with extension just and as subtitle the full relative path and if you hover it you could see a tooltip with full path if you could not see entrierly as subtitle cause ellipsis
