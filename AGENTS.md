@@ -13,10 +13,11 @@ from it. Where they differ, this context wins over the current implementation (s
   deployment and backups, driven by coding agents (Claude Code, Codex).
 - For large projects, an optional **Software Factory**: once the human approves the definition, it builds the
   project autonomously, phase by phase and milestone by milestone.
-- Desktop and mobile application (responsive web, mobile shell). Enterprise-grade, startup-modern: awesome
-  design, excellent by default in every aspect.
+- Mobile-first application for phones and desktops (responsive web, installable PWA shell). Enterprise-grade,
+  startup-modern: awesome design and a native-feeling phone experience, excellent by default in every
+  aspect (see *UI and UX*).
 - Multi-user, multi-tenant: users and tenants are fully isolated; every resource is owned and access-checked.
-- Engineering bar: efficient, scalable, maintainable, secure, built on proven design patterns.
+- Engineering bar: efficient, scalable, maintainable, secure, built on proven design patterns (see *Code*).
 
 ## What Mooi is not
 
@@ -245,6 +246,56 @@ from it. Where they differ, this context wins over the current implementation (s
 - When a request conflicts with *Context*, follow the request and update *Context* in the same change, so it
   always states the latest vision.
 - When the implementation conflicts with *Context*, align new work with *Context*, never the other way round.
+
+## Code
+
+Applies to every service and language. Existing code that breaks a rule is fixed when touched, never copied.
+
+- **Single responsibility**: each module, class, component, hook and function has one reason to change; split
+  it when it gains a second.
+- **High cohesion**: organise by feature (`features/<name>/` in every service); code moves to `shared/` only
+  when a second feature needs it.
+- **Low coupling**: features and services talk through public contracts (HTTP APIs, events, exported types),
+  never through each other's internals. Dependencies point inwards: UI → state → API client; transport →
+  application logic → domain.
+- **Open for extension**: providers, adapters, deployment targets and storage sit behind interfaces; adding one
+  never changes its callers.
+- **One operation per capability**: UI buttons, chat and platform API call the same backend operation;
+  business rules and access checks live on the server, never only in the client.
+- **Scalable**: every request does bounded work (pagination, indexed queries, no N+1, no unbounded lists or
+  loops); state that must survive restarts or be shared is persisted, not held in memory.
+- **Efficient**: push instead of poll (live streams); load only what is visible (lazy routes, virtualised
+  lists); live data costs nothing while nobody watches; optimise measured hot paths, not guesses.
+- **Maintainable**: reuse before writing; match the surrounding idioms; small, typed, explicit APIs; names
+  state intent; comments explain why, not what; no dead code, no speculative abstractions.
+- **Secure and robust**: validate input at every boundary; least privilege; secrets never logged; errors are
+  handled where they can be acted on and shown to the user in plain words, never swallowed.
+
+## UI and UX
+
+Every screen is built for phones first and must feel like a polished native app, then scales up to desktop.
+
+- **Mobile first**: design at 360 px, then enhance for tablet and desktop. Every feature is fully usable on
+  both; nothing is desktop-only or hover-only.
+- **Modern and consistent**: one design system (shared tokens and `shared/components`), light and dark themes,
+  subtle motion that honours `prefers-reduced-motion`; loading, empty and error states are designed.
+- **Space**: nothing is clipped or overflows. No horizontal page scroll (only deliberate inner strips);
+  flexible layouts (`min-w-0`, wrapping); long text truncates or wraps with the full value reachable; numbers
+  compact (`1.2K`); safe areas respected (`--safe-*`). Primary content first on phones; secondary actions in
+  menus or bottom sheets.
+- **Touch**: targets at least 44×44 px, primary actions within thumb reach, clear pressed and disabled states.
+- **Gestures**: use the native gesture wherever users expect it (swipe to dismiss sheets or switch views,
+  drag to reorder, long press for contextual actions). Gestures lock their axis and never fight scrolling,
+  and each has a visible and keyboard equivalent.
+- **Virtual keyboard**: the shell follows the visual viewport (`useAppViewport`, `keyboard:` and `composing:`
+  variants). When the keyboard opens, the header stays, the focused field stays in view and so does its
+  context (last messages, suggestions, send and validation feedback); nothing sits behind the keyboard.
+  Inputs set `type`, `inputmode`, `enterkeyhint` and `autocomplete`, with text of at least 16 px (no iOS zoom).
+- **Native patterns**: Back closes the topmost overlay before leaving the page; scroll position is kept on
+  return; inner scrollers contain overscroll; live updates never shift what the user is reading or touching.
+- **Accessible**: semantic HTML, labelled controls, visible focus, full keyboard operation, WCAG AA contrast.
+- **Verify** every UI change at 360 px and desktop, in light and dark (by review, or in the browser when
+  testing is requested; see *Testing*).
 
 ## Testing
 
