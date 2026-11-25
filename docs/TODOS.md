@@ -1,5 +1,6 @@
 # TODOs
 
+- [ ] Adjust at ui ux level properly the session context and 5 hour limit
 - [ ] Soportar archivar proyectos
 - [ ] Mejorar stt con Go (AllForOne)
 - [/] Support child sessions
@@ -8,7 +9,6 @@
 - [ ] Apply dnd in todos list with better pattern, about grabbing 1.5 secs in any place to enable in the row
 - [ ] The user admin dialog sucks in mobile since dialog allow scrolling with no sense and actions buttons are together
 - [ ] When you ask the chat for something and chat makes a deterministic deployment in dev session, the deployment set up message appears, and it should not appers cause that message is always when you are setting up the deployment with the agent from fisrt time (triggered from chat or from button)
-- [ ] Adjust at ui ux level properly the session context and 5 hour limit
 - [ ] Say how diff commits from main to previous release
 - [x] Upgrade playwright
 - [x] Files view, allowing editing files with plain text manually
