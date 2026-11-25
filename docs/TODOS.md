@@ -1,5 +1,6 @@
 # TODOs
 
+- [ ] Desvincular de Mooi proyecto
 - [ ] Esquinas blancas en favicon
 - [/] Support child sessions
 - [ ] Adjust at ui ux level properly the session context and 5 hour limit
