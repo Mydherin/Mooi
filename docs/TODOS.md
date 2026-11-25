@@ -1,5 +1,6 @@
 # TODOs
 
+- [ ] Mejorar stt con Go (AllForOne)
 - [/] Support child sessions
 - [ ] Microphone expiration
 - [ ] So times when I make production deployment it says fetching but it do not show more logs until I reload
