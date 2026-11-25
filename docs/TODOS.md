@@ -1,6 +1,5 @@
 # TODOs
 
-- [ ] Software Factory: clean up merged milestone branches (factory/<phase>/<milestone>) on GitHub
 - [ ] Support child sessions
 - [ ] Needs attention phone view in providers account page
 - [ ] Microphone expiration
@@ -14,6 +13,7 @@
 - [ ] Say how diff commits from main to previous release
 - [ ] Upgrade playwright
 - [ ] Shared deployments between some users
+- [x] Software Factory: clean up merged milestone branches (factory/<phase>/<milestone>) on GitHub
 - [x] Software Factory: run independent milestones in parallel using their depends front matter
 - [x] Software Factory: push notifications when a factory needs attention (milestone in attention, scope change to confirm, revoked sign-in), beyond the live badges
 - [x] Langfuse view over session, to debug
