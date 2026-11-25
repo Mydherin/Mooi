@@ -1,6 +1,5 @@
 # TODOs
 
-- [/] Software Factory: push notifications when a factory needs attention (milestone in attention, scope change to confirm, revoked sign-in), beyond the live badges
 - [ ] Software Factory: run independent milestones in parallel using their depends front matter
 - [ ] Software Factory: clean up merged milestone branches (factory/<phase>/<milestone>) on GitHub
 - [ ] Support child sessions
@@ -16,6 +15,7 @@
 - [ ] Say how diff commits from main to previous release
 - [ ] Upgrade playwright
 - [ ] Shared deployments between some users
+- [x] Software Factory: push notifications when a factory needs attention (milestone in attention, scope change to confirm, revoked sign-in), beyond the live badges
 - [x] Langfuse view over session, to debug
 - [x] Do not close session with proper refresh token after 30 days without connection
 - [x] Remove the legacy body refresh token transport (AUTH_LEGACY_BODY_TOKEN_ENABLED, LegacyRefreshRequest, legacyRefreshToken.ts) at least 30 days after the persistent-sessions release
