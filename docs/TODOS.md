@@ -5,13 +5,13 @@
 - [ ] So times when I make production deployment it says fetching but it do not show more logs until I reload
 - [ ] Apply dnd in todos list with better pattern, about grabbing 1.5 secs in any place to enable in the row
 - [ ] The user admin dialog sucks in mobile since dialog allow scrolling with no sense and actions buttons are together
-- [ ] In changes show file name with extension just and as subtitle the full relative path and if you hover it you could see a tooltip with full path if you could not see entrierly as subtitle cause ellipsis
 - [ ] Files view, allowing editing files with plain text manually
 - [ ] When you ask the chat for something and chat makes a deterministic deployment in dev session, the deployment set up message appears, and it should not appers cause that message is always when you are setting up the deployment with the agent from fisrt time (triggered from chat or from button)
 - [ ] Adjust at ui ux level properly the session context and 5 hour limit
 - [ ] Say how diff commits from main to previous release
 - [ ] Upgrade playwright
 - [ ] Shared deployments between some users
+- [x] In changes show file name with extension just and as subtitle the full relative path and if you hover it you could see a tooltip with full path if you could not see entrierly as subtitle cause ellipsis
 - [x] Needs attention phone view in providers account page
 - [x] Software Factory: clean up merged milestone branches (factory/<phase>/<milestone>) on GitHub
 - [x] Software Factory: run independent milestones in parallel using their depends front matter
