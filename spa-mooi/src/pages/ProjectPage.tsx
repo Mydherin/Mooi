@@ -7,7 +7,10 @@ import { useAgentConnections } from '@/features/agents/hooks/useAgentConnections
 import { FactoryPanel } from '@/features/factory/components/FactoryPanel';
 import { factoryNeedsAttention } from '@/features/factory/lib/factoryNeedsAttention';
 import { ProjectHeader } from '@/features/projects/components/ProjectHeader';
-import { DeleteProjectDialog } from '@/features/projects/components/DeleteProjectDialog';
+import {
+  RemoveProjectDialog,
+  type ProjectRemovalAction,
+} from '@/features/projects/components/RemoveProjectDialog';
 import { useProjects } from '@/features/projects/hooks/useProjects';
 import { findProject } from '@/features/projects/lib/findProject';
 import { NewSessionDialog } from '@/features/sessions/components/NewSessionDialog';
@@ -40,12 +43,21 @@ const TABS = new Set([WORKSPACES_TAB, TODOS_TAB, FACTORY_TAB]);
 export const ProjectPage = () => {
   const { projectId } = useParams();
   const navigate = useNavigate();
-  const { projects, status, busy, actionError: deleteError, clearActionError: clearDeleteError, remove } = useProjects();
+  const {
+    projects,
+    status,
+    busy,
+    actionError: removalError,
+    clearActionError: clearRemovalError,
+    unlink,
+    deleteRepository,
+  } = useProjects();
   const project = findProject(projects, projectId);
   const { sessions, busy: sessionBusy, actionError, create, clearActionError } = useProjectSessions(project?.id);
   const { connections } = useAgentConnections();
   const [newSessionOpen, setNewSessionOpen] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [removalOpen, setRemovalOpen] = useState(false);
+  const [removalAction, setRemovalAction] = useState<ProjectRemovalAction | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get('tab');
   const tab = requestedTab && TABS.has(requestedTab) ? requestedTab : 'sessions';
@@ -84,11 +96,15 @@ export const ProjectPage = () => {
     );
   }
 
-  const handleRemove = () => {
-    void remove(project.id).then((removed) => {
+  const handleRemove = (action: ProjectRemovalAction) => {
+    setRemovalAction(action);
+    const request = action === 'unlink' ? unlink(project.id) : deleteRepository(project.id);
+    void request.then((removed) => {
       if (removed) {
         navigate(ROUTES.projects, { replace: true });
       }
+    }).finally(() => {
+      setRemovalAction(null);
     });
   };
 
@@ -107,7 +123,7 @@ export const ProjectPage = () => {
       <ProjectHeader
         project={project}
         busy={busy}
-        onRemove={() => { clearDeleteError(); setDeleteOpen(true); }}
+        onRemove={() => { clearRemovalError(); setRemovalOpen(true); }}
       />
 
       <Tabs
@@ -175,8 +191,16 @@ export const ProjectPage = () => {
         }}
         onCreate={handleCreateSession}
       />
-      {deleteOpen ? <DeleteProjectDialog project={project} busy={busy} error={deleteError}
-        onClose={() => { if (!busy) setDeleteOpen(false); }} onDelete={handleRemove} /> : null}
+      {removalOpen ? (
+        <RemoveProjectDialog
+          project={project}
+          busyAction={removalAction}
+          error={removalError}
+          onClose={() => { if (!busy) setRemovalOpen(false); }}
+          onUnlink={() => handleRemove('unlink')}
+          onDeleteRepository={() => handleRemove('delete-repository')}
+        />
+      ) : null}
     </div>
   );
 };

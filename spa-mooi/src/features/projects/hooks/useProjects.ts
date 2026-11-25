@@ -2,8 +2,9 @@ import { useCallback, useState } from 'react';
 import {
   addProject,
   createProject,
+  deleteProjectRepository,
   fetchProjects,
-  removeProject,
+  unlinkProject,
 } from '@/features/projects/api/projectsApi';
 import type { Project } from '@/features/projects/types/Project';
 import type { ProjectSettings } from '@/features/projects/types/ProjectSettings';
@@ -18,7 +19,8 @@ interface UseProjects {
   actionError: string | null;
   add: (fullName: string, settings: ProjectSettings) => Promise<Project | null>;
   create: (name: string, isPrivate: boolean, settings: ProjectSettings) => Promise<Project | null>;
-  remove: (projectId: string) => Promise<boolean>;
+  unlink: (projectId: string) => Promise<boolean>;
+  deleteRepository: (projectId: string) => Promise<boolean>;
   reload: () => void;
   clearActionError: () => void;
 }
@@ -71,12 +73,15 @@ export const useProjects = (): UseProjects => {
     }
   }, []);
 
-  const remove = useCallback(async (projectId: string): Promise<boolean> => {
+  const remove = useCallback(async (
+    projectId: string,
+    operation: (id: string) => Promise<void>,
+  ): Promise<boolean> => {
     setBusy(true);
     setActionError(null);
 
     try {
-      await removeProject(projectId);
+      await operation(projectId);
       useProjectsStore.getState().removeProject(projectId);
 
       return true;
@@ -88,6 +93,16 @@ export const useProjects = (): UseProjects => {
       setBusy(false);
     }
   }, []);
+
+  const unlink = useCallback(
+    (projectId: string) => remove(projectId, unlinkProject),
+    [remove],
+  );
+
+  const deleteRepository = useCallback(
+    (projectId: string) => remove(projectId, deleteProjectRepository),
+    [remove],
+  );
 
   const reload = useCallback(() => {
     useProjectsStore.getState().setStatus('loading');
@@ -102,5 +117,17 @@ export const useProjects = (): UseProjects => {
 
   const clearActionError = useCallback(() => setActionError(null), []);
 
-  return { projects, status, error, busy, actionError, add, create, remove, reload, clearActionError };
+  return {
+    projects,
+    status,
+    error,
+    busy,
+    actionError,
+    add,
+    create,
+    unlink,
+    deleteRepository,
+    reload,
+    clearActionError,
+  };
 };
