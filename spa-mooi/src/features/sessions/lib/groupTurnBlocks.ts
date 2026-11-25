@@ -10,11 +10,13 @@ export type ActivityBlock = Extract<TranscriptBlock, { kind: 'thinking' | 'step'
  * How a turn reads: what the agent says to the user stands on its own, and everything it does in
  * between — thinking, tool calls, commands — folds into one activity block. Each message the agent
  * writes closes the block before it; the next action opens a new one (as in Codex and Claude Code).
- * A generated image is output, not activity, so it also stands on its own.
+ * A generated image is output, not activity, so it also stands on its own, and so does a session
+ * the agent opened.
  */
 export type TurnSegment =
   | { kind: 'text'; key: string; block: Extract<TranscriptBlock, { kind: 'text' }> }
   | { kind: 'image'; key: string; step: TranscriptStep }
+  | { kind: 'session'; key: string; block: Extract<TranscriptBlock, { kind: 'session' }> }
   | { kind: 'activity'; key: string; blocks: ActivityBlock[] };
 
 export const blockKey = (block: TranscriptBlock): string =>
@@ -25,6 +27,10 @@ export const groupTurnBlocks = (blocks: TranscriptBlock[], showThinking: boolean
   for (const block of blocks) {
     if (block.kind === 'text') {
       if (block.text.trim() && !isProviderPlaceholder(block.text)) segments.push({ kind: 'text', key: blockKey(block), block });
+      continue;
+    }
+    if (block.kind === 'session') {
+      segments.push({ kind: 'session', key: blockKey(block), block });
       continue;
     }
     if (block.kind === 'thinking' && (!showThinking || !block.text.trim())) continue;

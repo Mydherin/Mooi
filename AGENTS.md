@@ -88,6 +88,11 @@ from it. Where they differ, this context wins over the current implementation (s
   renewed token on their next message. It renews every sign-in in the background as Claude Code does, so
   an account stays signed in as long as the provider keeps the grant; an outage never signs it out, and
   an account the provider did sign out is flagged on the account page and signed in again in place.
+- **Sessions opened by agents**: asked in the chat, a session's agent opens a new, fully independent session
+  of the project (own branch, clone and conversation; same account, adapter, model and effort) with the
+  prompt it judges best as its first message. Both stay linked, live: the opening chat shows a card with the
+  new session's state, lists nest each session under the one that opened it, and a session's header lists
+  where it came from and what it opened. Software Factory sessions never open any.
 - **Agentic merge**: merging an outdated branch with conflicts makes the agent resolve them, preserving
   both sides' features.
 

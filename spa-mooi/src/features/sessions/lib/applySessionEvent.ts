@@ -4,6 +4,7 @@ import type { SessionPendingRequest } from '@/features/sessions/types/SessionPen
 import type { AgentQuestion } from '@/features/sessions/types/AgentQuestion';
 import type { ChangesSummary } from '@/features/sessions/types/ChangesSummary';
 import type { ImageAttachment } from '@/features/sessions/types/ImageAttachment';
+import type { OpenedSession } from '@/features/sessions/types/OpenedSession';
 import type { SessionEvent } from '@/features/sessions/types/SessionEvent';
 import type { SessionTranscriptState } from '@/features/sessions/types/SessionTranscriptState';
 import type { TranscriptBlock } from '@/features/sessions/types/TranscriptBlock';
@@ -119,6 +120,18 @@ const withStepBlock = (entries: TranscriptEntry[], seq: number, at: string, step
   }
 
   return [...entries, newTurnEntry(seq, at, [block])];
+};
+
+/** A session the agent opened shows where it happened: inside the open turn, or as a turn of its own. */
+const withOpenedSessionBlock = (entries: TranscriptEntry[], seq: number, at: string, opened: OpenedSession): TranscriptEntry[] => {
+  const block: TranscriptBlock = { kind: 'session', id: `${seq}`, opened };
+  const last = entries[entries.length - 1];
+
+  if (isOpenAssistantEntry(last)) {
+    return [...entries.slice(0, -1), { ...last, blocks: [...last.blocks, block] }];
+  }
+
+  return [...entries, { ...newTurnEntry(seq, at, [block]), streaming: false }];
 };
 
 /** Finds the step by `toolUseId` — searching every turn, not just the open one, since a slow tool
@@ -340,6 +353,15 @@ export const applySessionEvent = (state: SessionTranscriptState, event: SessionE
       lastMerge = { targetBranch: String(data.targetBranch), commit: String(data.commit), seq };
       entries = [...closeOpenEntry(entries), { id: `merge-${seq}`, kind: 'notice', at, tone: 'success',
         title: `Merged into ${String(data.targetBranch)} · ${String(data.commit).slice(0, 7)}`, text: String(data.message ?? '') || null }];
+      break;
+    }
+    case 'session.opened': {
+      entries = withOpenedSessionBlock(entries, seq, at, {
+        sessionId: String(data.sessionId),
+        branch: String(data.branch),
+        title: typeof data.title === 'string' && data.title ? data.title : null,
+        prompt: String(data.prompt ?? ''),
+      });
       break;
     }
     case 'agent.activity': {

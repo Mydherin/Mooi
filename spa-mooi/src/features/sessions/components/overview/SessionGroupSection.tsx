@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { ChevronRight } from 'lucide-react';
 import { projectPath } from '@/app/paths';
 import { SessionListItem } from '@/features/sessions/components/SessionListItem';
+import { sessionTree } from '@/features/sessions/lib/sessionTree';
 import type { SessionGroup } from '@/features/sessions/types/SessionGroup';
 import { Initials } from '@/shared/components/Initials';
 import type { BackLink } from '@/shared/types/BackLink';
@@ -30,8 +31,8 @@ export const SessionGroupSection = ({ group, backLink }: SessionGroupSectionProp
     </div>
 
     <ul className="flex flex-col">
-      {group.sessions.map((session) => (
-        <SessionListItem key={session.id} session={session} backLink={backLink} />
+      {sessionTree(group.sessions).map(({ session, depth }) => (
+        <SessionListItem key={session.id} session={session} backLink={backLink} depth={depth} />
       ))}
     </ul>
   </section>

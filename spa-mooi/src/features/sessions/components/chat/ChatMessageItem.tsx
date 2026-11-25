@@ -4,6 +4,7 @@ import { ActivityGroup } from './ActivityGroup';
 import { ImageGenerationCard } from './ImageGenerationCard';
 import { MessageImageGrid } from './MessageImageGrid';
 import { NoticeItem } from './NoticeItem';
+import { OpenedSessionCard } from './OpenedSessionCard';
 import { TurnFooter } from '@/features/sessions/components/chat/TurnFooter';
 import { groupTurnBlocks } from '@/features/sessions/lib/groupTurnBlocks';
 import type { AgentCapabilities } from '@/features/sessions/types/AgentCapabilities';
@@ -83,6 +84,7 @@ export const ChatMessageItem = memo(function ChatMessageItem({ sessionId, entry,
         <div className="mt-1.5 flex flex-col gap-3">
           {segments.map((segment, index) => segment.kind === 'text' ? <AssistantText key={segment.key} text={segment.block.text} />
             : segment.kind === 'image' ? <ImageGenerationCard key={segment.key} sessionId={sessionId} step={segment.step} />
+              : segment.kind === 'session' ? <OpenedSessionCard key={segment.key} sessionId={sessionId} opened={segment.block.opened} />
               : <ActivityGroup key={segment.key} sessionId={sessionId} blocks={segment.blocks} since={entry.at}
                 active={live && index === segments.length - 1} />)}
           {/* Once the agent has spoken, its next step opens a new block before any tool shows up. */}

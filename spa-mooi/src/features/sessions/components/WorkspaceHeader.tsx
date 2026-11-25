@@ -4,6 +4,7 @@ import type { Project } from '@/features/projects/types/Project';
 import type { Session } from '@/features/sessions/types/Session';
 import { DeployButton } from '@/features/sessions/components/deploy/DeployButton';
 import { MergeButton } from '@/features/sessions/components/merge/MergeButton';
+import { LinkedSessionsMenu } from '@/features/sessions/components/LinkedSessionsMenu';
 import { SessionActionsMenu } from '@/features/sessions/components/SessionActionsMenu';
 import { SessionAccountIdentity } from '@/features/sessions/components/SessionAccountIdentity';
 import { WorkspaceCompactTitle } from '@/features/sessions/components/WorkspaceCompactTitle';
@@ -44,7 +45,9 @@ export const WorkspaceHeader = ({ project, session, back, deployEnabled, onClose
       <WorkspaceCompactTitle project={project} session={session} />
 
       <div className="min-w-0 flex-1 max-sm:hidden">
-        <p className="truncate text-[11px] font-medium text-ink-subtle">{project.name}</p>
+        <p className="truncate text-[11px] font-medium text-ink-subtle">
+          {project.name}{session.title ? <span className="text-ink-muted"> · {session.title}</span> : null}
+        </p>
         <Tooltip content={session.branch} className="flex">
           <h1 className="flex min-w-0 items-center gap-1.5 text-[15px] leading-[1.3] font-semibold tracking-[-0.01em] text-ink">
             <GitBranch className="size-4 shrink-0 text-ink-subtle" />
@@ -56,6 +59,7 @@ export const WorkspaceHeader = ({ project, session, back, deployEnabled, onClose
 
       <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
         <span className="hidden max-w-36 border-r border-line pr-3 sm:block"><SessionAccountIdentity session={session} /></span>
+        <LinkedSessionsMenu session={session} />
         <MergeButton key={`merge-${session.id}`} session={session} disabled={closeBusy} />
         {deploy ? <DeployButton control={deploy} /> : null}
         <SessionActionsMenu session={session} deploy={deploy} onClose={onClose} closeBusy={closeBusy} />

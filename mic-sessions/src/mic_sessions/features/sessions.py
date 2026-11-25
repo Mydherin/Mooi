@@ -33,6 +33,7 @@ import secrets
 import signal
 import tempfile
 import time
+import unicodedata
 import zipfile
 from collections.abc import Awaitable, Callable, Coroutine, Iterable, Sequence
 from contextlib import suppress
@@ -123,6 +124,8 @@ EVENT_PRODUCTION_UPDATED = "production.updated"
 EVENT_SESSION_CLEARED = "session.cleared"
 EVENT_SESSION_COMPACTION = "session.compaction"
 EVENT_MERGE_COMPLETED = "merge.completed"
+# The agent opened another session from this one (see `agent_open_session`).
+EVENT_SESSION_OPENED = "session.opened"
 
 # --- wire contracts ---------------------------------------------------------------------------
 
@@ -549,6 +552,10 @@ class SessionPayload(BaseModel):
     recoverable: bool = False
     # Set when the project's Software Factory runs this session (see `FactoryBinding`).
     factory: dict[str, Any] | None = None
+    # What the session is for, when the agent that opened it named it; null for sessions a player opened.
+    title: str | None = None
+    # The session whose agent opened this one (see `SessionOrigin`); null for sessions a player opened.
+    origin: dict[str, Any] | None = None
 
 
 class SessionsResponse(BaseModel):
@@ -719,6 +726,18 @@ class FactoryBinding:
                 "phaseId": self.phase_id, "milestoneId": self.milestone_id}
 
 
+@dataclass(frozen=True)
+class SessionOrigin:
+    """The session whose agent opened this one. The link outlives its origin: a closed origin still
+    names its branch, so the lineage reads the same before and after it closes."""
+
+    session_id: UUID
+    branch: str
+
+    def as_payload(self) -> dict[str, Any]:
+        return {"sessionId": str(self.session_id), "branch": self.branch}
+
+
 @dataclass
 class Session:
     """One live pairing of player, project, provider and workspace.
@@ -792,6 +811,9 @@ class Session:
     usage_signature: tuple[Any, ...] | None = None
     # The Software Factory runs this session; None for every chat a player opened themselves.
     factory: FactoryBinding | None = None
+    # Set when another session's agent opened this one, with the title it gave the task.
+    origin: SessionOrigin | None = None
+    title: str | None = None
     # Context percent at which a plain session hands its work over (see `_watch_context`); None is off.
     context_handover: int | None = None
     # False once this conversation's handover started; clearing, compacting or a new percent arm it again.
@@ -835,6 +857,8 @@ class Session:
             baseCommit=self.base_commit or None,
             recoverable=self.status == STATUS_FAILED and _recoverable(self),
             factory=self.factory.as_payload() if self.factory is not None else None,
+            title=self.title,
+            origin=self.origin.as_payload() if self.origin is not None else None,
         )
 
 
@@ -1392,9 +1416,10 @@ async def create_session(
     return (await _open_session(body, caller)).to_payload()
 
 
-async def _open_session(body: CreateSessionRequest, caller: Caller, factory: FactoryBinding | None = None) -> Session:
-    """Opens any chat, from the UI, handed over by another chat's agent or run by the Software Factory:
-    the same path every time."""
+async def _open_session(body: CreateSessionRequest, caller: Caller, factory: FactoryBinding | None = None,
+                        origin: SessionOrigin | None = None, title: str | None = None) -> Session:
+    """Opens any chat, from the UI, handed over or opened by another chat's agent or run by the Software
+    Factory: the same path every time."""
     descriptor = describe(body.provider)
     registry = get_registry()
     # No adapter requested (an agent's handover, an older client) is the platform's default adapter.
@@ -1426,6 +1451,8 @@ async def _open_session(body: CreateSessionRequest, caller: Caller, factory: Fac
     session.adapter = adapter.id
     session.agent_caller = caller
     session.factory = factory
+    session.origin = origin
+    session.title = title
     if body.kind == "session" and factory is None:
         session.context_handover = body.contextHandover if "contextHandover" in body.model_fields_set \
             else descriptor.configuration(adapter.id).get("defaultContextHandover")
@@ -2521,7 +2548,7 @@ Every Mooi endpoint below lives inside this pod. Use Python urllib with an inlin
 Mooi previews this session through its development deployment, the root Docker Compose file its Deploy button runs. Whenever the user asks in this chat to set up, change, repair or test the development deployment or the preview, first read the setup brief with `GET {root}/deployment/agent/brief` and follow it exactly: it is the very brief the Deploy button sends, including how to test the deployment. When a message already contains that brief, follow it directly.
 
 ## Production deployments and backups
-Production deployments and backups of this project are prepared in their own Mooi chats, each with its own brief, from the Deployments and Backups pages. When the user asks in this chat to set up, change or repair the production deployment or the backups, hand the request over: `POST {root}/platform/agent/production` (or `/platform/agent/backup`) with JSON `{{"request": "<the user's complete request>"}}`. Mooi opens that chat exactly as the page's button does, and the user follows it there (`location` in the answer). Never write production or backup scripts in this session.
+Production deployments and backups of this project are prepared in their own Mooi chats, each with its own brief, from the Deployments and Backups pages. When the user asks in this chat to set up, change or repair the production deployment or the backups, hand the request over: `POST {root}/platform/agent/production` (or `/platform/agent/backup`) with JSON `{{"request": "<the user's complete request>"}}`. Mooi opens that chat exactly as the page's button does, and the user follows it there (`location` in the answer). Never write production or backup scripts in this session.{_opening_instructions(session, root)}
 
 ## Project development environment
 This project keeps development environment variables named `MOOI_DEVELOPMENT_<NAME>` encrypted in the Mooi platform. Every session of the project shares them: a value saved here is available in every other session, in the Deploy preview and, inherited, in production deployments and backups.
@@ -2546,6 +2573,19 @@ Docker here is the host's shared engine: other projects' live containers, volume
 - Only act on resources labelled `com.docker.compose.project={_compose_project(session)}`. Never stop, remove, recreate, prune or attach to anything else, even when a name conflicts: report the conflict to the user instead.
 - Other sessions run the same repository side by side: let the engine pick host ports (`"5432"`, never `"54983:5432"`) and never set `container_name` or explicit volume/network names. Everything in this project is removed when the session is deleted.""" + (
         "\n\n" + context_handover.agent_api(root) if session.factory is None else "") + _factory_instructions(session, root)
+
+
+def _opening_instructions(session: Session, root: str) -> str:
+    """How a player's session opens others; Software Factory sessions leave that to the orchestrator."""
+    if session.factory is not None:
+        return ""
+    return f"""
+
+## Opening other sessions
+When the user asks you to open, start or launch a new session (for example to work on something in parallel), open it yourself through the Mooi platform API: Mooi opens an independent session of this project, on its own branch and clone, with this session's account, model and effort, lists it in Mooi linked to this session and shows it in this chat. Never simulate it with sub-agents, background processes or another clone.
+- `POST {root}/sessions/agent` with JSON `{{"title": "<short task title, in the user's language>", "prompt": "<first message of the new session>"}}`. Add `"branch": "<existing remote branch>"` only to continue work already pushed there; by default Mooi creates a fresh branch from the default branch.
+- The new agent sees nothing of this conversation: write the prompt you judge best, self-contained, with the goal, the relevant context and decisions, files to look at and what done means. One session per request unless the user asks for several.
+- The answer holds `sessionId`, `branch`, `status` and `location`; tell the user the session is open (they follow it from this chat or the sessions list) and carry on without waiting for it. `GET {root}/sessions/agent` lists the live sessions you opened with their current status."""
 
 
 def _factory_instructions(session: Session, root: str) -> str:
@@ -2729,6 +2769,68 @@ async def agent_platform_handoff(session_id: UUID, kind: Literal["production", "
         projectId=session.project_id, provider=session.provider, adapter=session.adapter or None,
         connectionId=session.connection_id, model=session.config.model, effort=session.config.effort, kind=kind, initialMessage=body.request), caller)
     return {"sessionId": str(chat.id), "location": _PLATFORM_LOCATIONS[kind].format(project=session.project_id)}
+
+
+# --- sessions opened by a session's agent ------------------------------------------------------
+#
+# An agent asked to open another session opens a plain, independent one (own branch, clone, runtime
+# and conversation), exactly as the New session dialog does, with its own prompt as the first message.
+# The new session records where it came from (`SessionOrigin`) and the origin's transcript records the
+# opening (`session.opened`), so every view links both ways, live.
+
+
+class AgentOpenSessionRequest(BaseModel):
+    # The new agent's first message: it sees nothing of the opening conversation.
+    prompt: str = Field(min_length=1, max_length=100_000)
+    title: str = Field(min_length=1, max_length=120)
+    # An existing remote branch continues from it; omitted, a fresh branch from the default branch.
+    branch: str | None = Field(default=None, pattern=_BRANCH_PATTERN)
+
+
+_SESSION_LOCATION = "/projects/{project}/sessions/{session}"
+
+
+def _opened_branch(title: str) -> str:
+    """`feat/<title-slug>-<suffix>`, the shape the New session dialog proposes."""
+    ascii_title = unicodedata.normalize("NFKD", title).encode("ascii", "ignore").decode()
+    slug = re.sub(r"[^a-z0-9]+", "-", ascii_title.lower()).strip("-")[:60].strip("-") or "session"
+    return f"feat/{slug}-{secrets.token_hex(3)}"
+
+
+def _opened_summary(session: Session) -> dict[str, Any]:
+    return {"sessionId": str(session.id), "title": session.title, "branch": session.branch,
+            "status": session.status, "detail": session.detail,
+            "location": _SESSION_LOCATION.format(project=session.project_id, session=session.id)}
+
+
+@router.post("/sessions/{session_id}/sessions/agent", status_code=status.HTTP_201_CREATED)
+async def agent_open_session(session_id: UUID, request: Request, body: AgentOpenSessionRequest) -> dict:
+    """Opens a new session of the same project, account, adapter, model and effort, with the agent's
+    prompt as its first message. Factory sessions never open any: the orchestrator owns their loop."""
+    session, caller = await _agent_access(session_id, request, "session")
+    if session.factory is not None:
+        raise ApiException.conflict("Software Factory sessions cannot open other sessions")
+    branch = body.branch or _opened_branch(body.title)
+    if branch == session.branch:
+        raise ApiException.conflict("This session already works on that branch: choose another one")
+    opened = await _open_session(CreateSessionRequest(
+        projectId=session.project_id, provider=session.provider, adapter=session.adapter or None,
+        connectionId=session.connection_id, branch=branch, model=session.config.model,
+        effort=session.config.effort, contextHandover=session.context_handover,
+        initialMessage=body.prompt), caller,
+        origin=SessionOrigin(session.id, session.branch), title=body.title.strip())
+    record(session, EVENT_SESSION_OPENED, {"sessionId": str(opened.id), "branch": opened.branch,
+                                           "title": opened.title, "prompt": body.prompt})
+    return _opened_summary(opened)
+
+
+@router.get("/sessions/{session_id}/sessions/agent")
+async def agent_opened_sessions(session_id: UUID, request: Request) -> dict:
+    """The live sessions this session's agent opened, newest first."""
+    session, caller = await _agent_access(session_id, request, "session")
+    sessions = get_registry().list_for(caller.player_id, session.project_id)
+    return {"sessions": [_opened_summary(opened) for opened in sessions
+                         if opened.origin is not None and opened.origin.session_id == session.id]}
 
 
 # --- production: project-scoped configuration, deployments and GitHub releases -----------------

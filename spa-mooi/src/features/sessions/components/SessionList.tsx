@@ -1,5 +1,6 @@
 import { Plus } from 'lucide-react';
 import { SessionListItem } from '@/features/sessions/components/SessionListItem';
+import { sessionTree } from '@/features/sessions/lib/sessionTree';
 import type { Session } from '@/features/sessions/types/Session';
 import { Button } from '@/shared/components/Button';
 
@@ -22,8 +23,8 @@ export const SessionList = ({ sessions, onNewSession }: SessionListProps) => (
     </div>
 
     <ul className="flex flex-col">
-      {sessions.map((session) => (
-        <SessionListItem key={session.id} session={session} />
+      {sessionTree(sessions).map(({ session, depth }) => (
+        <SessionListItem key={session.id} session={session} depth={depth} />
       ))}
     </ul>
   </section>

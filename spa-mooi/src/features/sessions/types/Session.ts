@@ -5,6 +5,7 @@ import type { FactoryBinding } from '@/features/factory/types/FactoryBinding';
 import type { AgentCapabilities } from '@/features/sessions/types/AgentCapabilities';
 import type { PendingRequest } from '@/features/sessions/types/PendingRequest';
 import type { SessionKind } from '@/features/sessions/types/SessionKind';
+import type { SessionOrigin } from '@/features/sessions/types/SessionOrigin';
 import type { SessionStatus } from '@/features/sessions/types/SessionStatus';
 
 export interface Session {
@@ -43,4 +44,8 @@ export interface Session {
   recoverable?: boolean;
   /** Set when the session belongs to the project's Software Factory: its chat or one step of the loop. */
   factory?: FactoryBinding | null;
+  /** What the session is for, when another session's agent opened it and named the task. */
+  title?: string | null;
+  /** The session whose agent opened this one; null for sessions the player opened. */
+  origin?: SessionOrigin | null;
 }

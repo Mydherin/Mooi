@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Bot, FolderGit2, GitBranch, Layers } from 'lucide-react';
+import { Bot, CornerDownRight, FolderGit2, GitBranch, Layers, Target } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { Project } from '@/features/projects/types/Project';
 import { SessionAccountIdentity } from '@/features/sessions/components/SessionAccountIdentity';
@@ -30,6 +30,8 @@ export const WorkspaceCompactTitle = ({ project, session }: WorkspaceCompactTitl
       <div className="flex w-[min(22rem,calc(100vw-6rem))] flex-col divide-y divide-line">
         <Detail icon={Layers}><span className="font-bold">{project.name}</span></Detail>
         <Detail icon={GitBranch} mono>{session.branch}</Detail>
+        {session.title ? <Detail icon={Target}>{session.title}</Detail> : null}
+        {session.origin ? <Detail icon={CornerDownRight}>Opened from <span className="font-mono break-all">{session.origin.branch}</span></Detail> : null}
         <Detail icon={Bot}><SessionAccountIdentity session={session} compact /></Detail>
         <Detail icon={FolderGit2} mono>
           {session.workspacePath ?? <span className="font-sans text-ink-subtle italic">Clone not ready yet</span>}

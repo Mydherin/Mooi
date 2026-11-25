@@ -1,3 +1,4 @@
+import type { OpenedSession } from '@/features/sessions/types/OpenedSession';
 import type { TranscriptStep } from '@/features/sessions/types/TranscriptStep';
 
 /**
@@ -8,4 +9,5 @@ import type { TranscriptStep } from '@/features/sessions/types/TranscriptStep';
 export type TranscriptBlock =
   | { kind: 'text'; id: string; text: string }
   | { kind: 'thinking'; id: string; text: string }
-  | { kind: 'step'; step: TranscriptStep };
+  | { kind: 'step'; step: TranscriptStep }
+  | { kind: 'session'; id: string; opened: OpenedSession };

@@ -11,6 +11,7 @@ export type SessionEventType =
   | 'session.cleared'
   | 'session.compaction'
   | 'merge.completed'
+  | 'session.opened'
   | 'agent.activity'
   | 'message.user'
   | 'assistant.delta'
