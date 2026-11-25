@@ -1,5 +1,6 @@
 # TODOs
 
+- [ ] Esquinas blancas en favicon
 - [/] Support child sessions
 - [ ] Adjust at ui ux level properly the session context and 5 hour limit
 - [ ] When you ask the chat for something and chat makes a deterministic deployment in dev session, the deployment set up message appears, and it should not appers cause that message is always when you are setting up the deployment with the agent from fisrt time (triggered from chat or from button)
