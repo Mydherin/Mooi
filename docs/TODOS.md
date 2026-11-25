@@ -1,5 +1,6 @@
 # TODOs
 
+- [ ] Soportar archivar proyectos
 - [ ] Mejorar stt con Go (AllForOne)
 - [/] Support child sessions
 - [ ] Microphone expiration
