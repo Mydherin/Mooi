@@ -8,7 +8,6 @@
 - [ ] Soportar archivar proyectos
 - [ ] Mejorar stt con Go (AllForOne)
 - [ ] Say how diff commits from main to previous release
-- [ ] Microphone expiration
 - [ ] Apply dnd in todos list with better pattern, about grabbing 1.5 secs in any place to enable in the row
 - [x] Upgrade playwright
 - [x] Files view, allowing editing files with plain text manually
