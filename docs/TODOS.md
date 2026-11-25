@@ -1,7 +1,6 @@
 # TODOs
 
 - [/] Support child sessions
-- [/] Needs attention phone view in providers account page
 - [ ] Microphone expiration
 - [ ] So times when I make production deployment it says fetching but it do not show more logs until I reload
 - [ ] Apply dnd in todos list with better pattern, about grabbing 1.5 secs in any place to enable in the row
@@ -13,6 +12,7 @@
 - [ ] Say how diff commits from main to previous release
 - [ ] Upgrade playwright
 - [ ] Shared deployments between some users
+- [x] Needs attention phone view in providers account page
 - [x] Software Factory: clean up merged milestone branches (factory/<phase>/<milestone>) on GitHub
 - [x] Software Factory: run independent milestones in parallel using their depends front matter
 - [x] Software Factory: push notifications when a factory needs attention (milestone in attention, scope change to confirm, revoked sign-in), beyond the live badges
