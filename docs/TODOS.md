@@ -1,5 +1,6 @@
 # TODOs
 
+- [ ] Listado de proyectos al crear la sesion por text input
 - [ ] Desvincular de Mooi proyecto
 - [ ] Soportar archivar proyectos
 - [ ] Esquinas blancas en favicon
