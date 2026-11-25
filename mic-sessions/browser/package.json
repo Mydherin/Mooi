@@ -4,7 +4,7 @@
   "type": "module",
   "engines": { "node": ">=20" },
   "dependencies": {
-    "@playwright/mcp": "0.0.83",
-    "playwright": "1.64.0-alpha-1790635538000"
+    "@playwright/mcp": "0.0.86",
+    "playwright": "1.66.0-alpha-2026-11-18"
   }
 }

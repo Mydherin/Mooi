@@ -583,7 +583,7 @@ public class Agents {
             if (value == null || !value.isString()) {
                 return null;
             }
-            String stripped = value.asText().strip();
+            String stripped = value.asString().strip();
             return stripped.isEmpty() ? null : stripped;
         }
 

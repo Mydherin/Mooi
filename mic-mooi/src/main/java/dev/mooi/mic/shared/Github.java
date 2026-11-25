@@ -715,7 +715,7 @@ public class Github {
             }
             // Past 1 MB the JSON form carries no content; the raw form still does.
             String text = "base64".equals(text(body, "encoding"))
-                    ? new String(Base64.getMimeDecoder().decode(body.path("content").asText("")), StandardCharsets.UTF_8)
+                    ? new String(Base64.getMimeDecoder().decode(body.path("content").asString("")), StandardCharsets.UTF_8)
                     : readFile(owner, name, path, accessToken);
             return Optional.of(new FileContent(sha, text));
         }
@@ -997,7 +997,7 @@ public class Github {
             if (value == null || !value.isString()) {
                 return null;
             }
-            String stripped = value.asText().strip();
+            String stripped = value.asString().strip();
             return stripped.isEmpty() ? null : stripped;
         }
 

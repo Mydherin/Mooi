@@ -2,7 +2,7 @@
 # Mooi's origin (API, sessions and dictation are reverse proxied by path; see nginx.conf).
 
 # ── Build ────────────────────────────────────────────────────
-FROM oven/bun:1.3-alpine AS build
+FROM oven/bun:1.4-alpine AS build
 
 WORKDIR /app
 
@@ -47,7 +47,7 @@ COPY . .
 RUN bun run build
 
 # ── Serve ────────────────────────────────────────────────────
-FROM nginx:1.29-alpine AS runtime
+FROM nginx:1.31-alpine AS runtime
 
 RUN rm /etc/nginx/conf.d/default.conf
 COPY nginx.conf /etc/nginx/conf.d/mooi.conf

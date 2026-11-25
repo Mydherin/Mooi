@@ -27,14 +27,14 @@ from mic_speech.shared.env import Settings, get_settings
 
 LOG = logging.getLogger("speech.engine")
 
-RUNTIME_VERSION = "0.1.0"
+RUNTIME_VERSION = "0.3.0"
 _RELEASE_URL = "https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v{version}/nemo-speech-{version}-{asset}.tar.gz"
 # (system, machine) -> (release asset, pinned SHA-256). Apple Silicon gets the Metal build.
 _ARCHIVES: dict[tuple[str, str], tuple[str, str]] = {
-    ("Darwin", "arm64"): ("macos-aarch64-metal", "f1dff4f9dd9c96214f8cb78b982812459132df8a4ad1a42409fd94de4a366244"),
-    ("Darwin", "x86_64"): ("macos-x86_64-cpu", "042a4612e07460fab6a39b5d862aa1e39d0ac3eaedfdb979f3f5fc12de510c20"),
-    ("Linux", "x86_64"): ("linux-x86_64-cpu", "0f74131d631ad2c694cf0ec53490866bb6461147959589a69fb6fc231944065b"),
-    ("Linux", "aarch64"): ("linux-aarch64-cpu", "0e4112255d566de7bdd142f239e984995c4447103ba8feb41f2bb5c559d561d3"),
+    ("Darwin", "arm64"): ("macos-aarch64-metal", "2b972ed8b5dba07492212acf8cb75cbf34ecb141198ffa1997febe84b7c4d9ed"),
+    ("Darwin", "x86_64"): ("macos-x86_64-cpu", "97e98aa5eb82dffa4f513f26336b5301d792c9fb43f720ac8f9520a0e92ffe3f"),
+    ("Linux", "x86_64"): ("linux-x86_64-cpu", "255f12b722ab15b2a38a51cf125d56e3fa97058b528f7e895b39d6a473deb06e"),
+    ("Linux", "aarch64"): ("linux-aarch64-cpu", "56858eaf50d19b05902c043f65d0057352bdc107ae380c41053bfbddfc204bf1"),
 }
 _STOP_GRACE_SECONDS = 5
 _PROBE_INTERVAL_SECONDS = 0.1
@@ -90,8 +90,8 @@ def _download_runtime(settings: Settings) -> Path:
         extracted = Path(staging) / "extracted"
         with tarfile.open(archive) as bundle:
             bundle.extractall(extracted, filter="data")
-        # Each archive wraps the runtime in one top-level directory named per platform
-        # (`nemo-speech` on macOS, `nemo-speech-<version>-<asset>` on Linux): normalize it.
+        # Each archive wraps the runtime in one top-level directory named per release and platform
+        # (`nemo-speech-<version>-<asset>`): normalize it.
         roots = [entry for entry in extracted.iterdir() if entry.is_dir()]
         if len(roots) != 1:
             raise RuntimeError(f"Unexpected NeMo-Speech.cpp archive layout for {asset}")

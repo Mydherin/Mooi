@@ -7,9 +7,9 @@
 # Bun, Python with uv, Java 25 and the usual shell utilities (ssh, rsync, curl, jq, make, ripgrep).
 
 # ── Python dependencies ──────────────────────────────────────
-FROM python:3.13-slim-trixie AS build
+FROM python:3.15-slim-trixie AS build
 
-COPY --from=ghcr.io/astral-sh/uv:0.8 /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.13 /uv /usr/local/bin/uv
 
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never
 
@@ -22,12 +22,12 @@ COPY src ./src
 RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev --no-editable
 
 # ── Runtime ──────────────────────────────────────────────────
-FROM python:3.13-slim-trixie AS runtime
+FROM python:3.15-slim-trixie AS runtime
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates curl wget git openssh-client rsync jq make ripgrep unzip zip xz-utils \
-        procps less file gnupg libstdc++6 \
+        procps less file gnupg libstdc++6 libatomic1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Docker CLI with the Compose and Buildx plugins (static binaries) at the system plugin path.
@@ -35,18 +35,18 @@ COPY --from=docker:29-cli /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=docker:29-cli /usr/local/libexec/docker/cli-plugins /usr/local/libexec/docker/cli-plugins
 
 # Toolchains for the repositories agents work on.
-COPY --from=node:24-trixie-slim /usr/local/bin/node /usr/local/bin/node
-COPY --from=node:24-trixie-slim /usr/local/lib/node_modules /usr/local/lib/node_modules
-COPY --from=oven/bun:1.3-debian /usr/local/bin/bun /usr/local/bin/bun
-COPY --from=ghcr.io/astral-sh/uv:0.8 /uv /uvx /usr/local/bin/
+COPY --from=node:26-trixie-slim /usr/local/bin/node /usr/local/bin/node
+COPY --from=node:26-trixie-slim /usr/local/lib/node_modules /usr/local/lib/node_modules
+COPY --from=oven/bun:1.4-debian /usr/local/bin/bun /usr/local/bin/bun
+COPY --from=ghcr.io/astral-sh/uv:0.13 /uv /uvx /usr/local/bin/
 COPY --from=eclipse-temurin:25-jdk /opt/java/openjdk /opt/java/openjdk
 
 # RTK compresses the output of the shell commands Claude sessions run (see AGENT_CLAUDE_RTK). The
 # Apache-2.0 `rtk-oss` edition carries every command filter; the binary is pinned and verified.
-ARG RTK_VERSION=1.0.1
+ARG RTK_VERSION=1.2.1
 RUN case "$(dpkg --print-architecture)" in \
-        amd64) target=x86_64-unknown-linux-musl sha=a44e8ffc43981100b4ddf1710399a1649a6c874591aa6d0c0727fe6cbd983c41 ;; \
-        arm64) target=aarch64-unknown-linux-gnu sha=ee24a43dac9162de55fea8460b5efcd56d401ec28b5117c921bffa8a57bc136e ;; \
+        amd64) target=x86_64-unknown-linux-musl sha=44aa460c4827d206d11405c652832c9f7082edccfbc3a9f15a69a851e8a9e8b4 ;; \
+        arm64) target=aarch64-unknown-linux-gnu sha=fc585049fd24e0a603afdedb3a7a1beb3f64032d6c7ccbd5b50e73ab92e610a9 ;; \
         *) echo "rtk: unsupported architecture" >&2; exit 1 ;; \
     esac \
     && curl -fsSL -o /tmp/rtk.tar.gz "https://github.com/rtk-ai/rtk/releases/download/v${RTK_VERSION}/rtk-oss-${target}.tar.gz" \
@@ -61,7 +61,7 @@ RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
 
 # Standalone Claude Code CLI driven by the Claude CLI adapter (AGENT_CLAUDE_CLI); the SDK adapter keeps the
 # copy its pinned SDK bundles. Pinned so both adapters can move independently; never auto-updated.
-ARG CLAUDE_CODE_VERSION=2.1.310
+ARG CLAUDE_CODE_VERSION=2.1.332
 RUN npm install -g --no-audit --no-fund "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
     && claude --version \
     && rm -rf /root/.npm
