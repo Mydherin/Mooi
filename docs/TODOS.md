@@ -2,8 +2,8 @@
 
 - [/] Support child sessions
 - [ ] Microphone expiration
-- [ ] So times when I make production deployment it says fetching but it do not show more logs until I reload
 - [ ] Apply dnd in todos list with better pattern, about grabbing 1.5 secs in any place to enable in the row
+- [ ] So times when I make production deployment it says fetching but it do not show more logs until I reload
 - [ ] The user admin dialog sucks in mobile since dialog allow scrolling with no sense and actions buttons are together
 - [ ] In changes show file name with extension just and as subtitle the full relative path and if you hover it you could see a tooltip with full path if you could not see entrierly as subtitle cause ellipsis
 - [ ] Files view, allowing editing files with plain text manually
