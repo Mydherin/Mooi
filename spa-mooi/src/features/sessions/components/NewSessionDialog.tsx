@@ -4,6 +4,7 @@ import type { AgentConnection } from '@/features/agents/types/AgentConnection';
 import type { Project } from '@/features/projects/types/Project';
 import { AgentModelFields } from '@/features/sessions/components/AgentModelFields';
 import { useAgentModelChoice } from '@/features/sessions/hooks/useAgentModelChoice';
+import { contextHandoverOptions, parseContextHandover } from '@/features/sessions/lib/contextHandover';
 import type { CreateSessionRequest } from '@/features/sessions/types/CreateSessionRequest';
 import { Button } from '@/shared/components/Button';
 import { Modal } from '@/shared/components/Modal';
@@ -59,6 +60,8 @@ export const NewSessionDialog = ({
 }: NewSessionDialogProps) => {
   const [branch, setBranch] = useState('');
   const choice = useAgentModelChoice(open, connections);
+  const [contextHandover, setContextHandover] = useState<number | null>(null);
+  const defaultContextHandover = choice.selectedProvider?.defaultContextHandover ?? null;
   const wasOpenRef = useRef(false);
   const branchEditedRef = useRef(false);
   const projectName = project?.name ?? null;
@@ -74,6 +77,11 @@ export const NewSessionDialog = ({
     wasOpenRef.current = open;
   }, [open, projectName]);
 
+  // Each provider's catalog carries the administrator's default: a new account or adapter starts from it.
+  useEffect(() => {
+    setContextHandover(defaultContextHandover);
+  }, [defaultContextHandover, choice.selectedProvider]);
+
   const canSubmit = Boolean(project) && choice.ready && branch.trim().length > 0;
 
   const handleSubmit = () => {
@@ -88,6 +96,7 @@ export const NewSessionDialog = ({
       connectionId: choice.connectionId,
       model: choice.model,
       effort: choice.effort || null,
+      contextHandover,
       branch: branch.trim(),
     }).then((succeeded) => {
       if (succeeded) {
@@ -121,6 +130,18 @@ export const NewSessionDialog = ({
         </div> : null}
 
         <AgentModelFields choice={choice} onLeave={onClose} />
+
+        {choice.selectedProvider && !choice.selectedProvider.unavailable ? <label className="flex flex-col gap-2">
+          <span className="text-xs font-medium text-ink-muted">Context handover</span>
+          <select aria-label="Context handover" value={contextHandover == null ? '' : String(contextHandover)}
+            onChange={(event) => setContextHandover(parseContextHandover(event.target.value))}
+            className="h-11 min-w-0 rounded-control border border-line bg-surface-2 px-3 text-sm text-ink outline-none focus:border-brand">
+            {contextHandoverOptions(contextHandover).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+          <span className="text-xs text-ink-subtle">
+            Past this context, the agent wraps up and leaves a progress file in docs/progress/ so a fresh conversation continues the task. You can change it later from the chat.
+          </span>
+        </label> : null}
 
         {connections.length > 0 ? <label className="flex flex-col gap-2">
           <span className="text-xs font-medium text-ink-muted">Branch</span>

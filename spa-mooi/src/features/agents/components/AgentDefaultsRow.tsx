@@ -5,6 +5,7 @@ import { modelChoiceIssue } from '@/features/agents/lib/modelChoiceIssue';
 import { providerDefaultModel } from '@/features/agents/lib/providerDefaultModel';
 import type { AdminAgentProvider } from '@/features/agents/types/AdminAgentProvider';
 import type { EngineDefaults } from '@/features/agents/types/EngineDefaults';
+import { contextHandoverOptions, parseContextHandover } from '@/features/sessions/lib/contextHandover';
 import { SegmentedControl } from '@/shared/components/SegmentedControl';
 
 interface AgentDefaultsRowProps {
@@ -52,7 +53,8 @@ export const AgentDefaultsRow = ({ defaults, provider, catalog: state, loadCatal
   const persist = (change: Partial<EngineDefaults>) => {
     const next = { ...defaults, ...change };
     if (next.sessionModel === defaults.sessionModel && next.sessionEffort === defaults.sessionEffort
-      && next.sessionAdapter === defaults.sessionAdapter) return;
+      && next.sessionAdapter === defaults.sessionAdapter
+      && next.sessionContextHandover === defaults.sessionContextHandover) return;
     setSaveState('saving');
     setError(null);
     save(next).then(() => setSaveState('saved')).catch((failure: Error) => {
@@ -74,7 +76,7 @@ export const AgentDefaultsRow = ({ defaults, provider, catalog: state, loadCatal
       </div>
 
       <div className="min-w-0 space-y-2">
-        <div className="grid gap-3 sm:grid-cols-[auto_minmax(0,1fr)_minmax(0,10rem)] sm:items-end">
+        <div className="grid gap-3 sm:grid-cols-[auto_minmax(0,1fr)_minmax(0,10rem)_minmax(0,9rem)] sm:items-end">
           {adapters.length > 1 && adapter ? (
             <div className={labelClass}>
               <span id={`${defaults.provider}-adapter`}>Adapter</span>
@@ -134,6 +136,16 @@ export const AgentDefaultsRow = ({ defaults, provider, catalog: state, loadCatal
               </label>
             </>
           )}
+
+          <label className={labelClass} title="Past this context, a new session's agent wraps up and leaves a progress file in docs/progress/ for the next conversation.">
+            Context handover
+            <select className={fieldClass} value={defaults.sessionContextHandover == null ? '' : String(defaults.sessionContextHandover)}
+              disabled={saveState === 'saving'}
+              onChange={(event) => persist({ sessionContextHandover: parseContextHandover(event.target.value) })}>
+              {contextHandoverOptions(defaults.sessionContextHandover).map((option) =>
+                <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+          </label>
         </div>
 
         {error ? <p role="alert" className="text-xs text-danger">{error}</p>

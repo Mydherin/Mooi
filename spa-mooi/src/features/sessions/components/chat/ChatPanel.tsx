@@ -27,6 +27,7 @@ interface ChatPanelProps {
   onCompact: () => Promise<boolean>;
   onClear: () => Promise<boolean>;
   onConfigurationChange: (configuration: SessionConfiguration) => void;
+  onContextHandoverChange?: (percent: number | null) => void;
   onAllowPermission: (requestId: string, updatedInput?: Record<string, unknown>) => void;
   onDenyPermission: (requestId: string, message?: string) => void;
   onAnswerQuestion: (requestId: string, answers: Record<string, string | string[]>) => void;
@@ -53,6 +54,7 @@ export const ChatPanel = ({
   onCompact,
   onClear,
   onConfigurationChange,
+  onContextHandoverChange,
   onAllowPermission,
   onDenyPermission,
   onAnswerQuestion,
@@ -127,6 +129,9 @@ export const ChatPanel = ({
       onCompact={onCompact}
       onClear={onClear}
       onConfigurationChange={onConfigurationChange}
+      // Factory sessions hand over through their own checkpoints; platform chats have no session branch.
+      contextHandover={session.contextHandover ?? null}
+      onContextHandoverChange={session.kind === 'session' && !session.factory ? onContextHandoverChange : undefined}
       actions={session.kind === 'session' ? <RecipesButton disabled={!canSend} onApply={(text) => send(text)} /> : null}
     />
   </div>

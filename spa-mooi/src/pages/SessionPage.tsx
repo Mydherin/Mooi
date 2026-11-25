@@ -41,6 +41,7 @@ export const SessionPage = () => {
     modelLoading,
     modelError,
     updateConfiguration,
+    updateContextHandover,
   } = useSession(sessionId);
   useSessionStream(sessionId);
   const { close, busy: closing } = useProjectSessions(projectId);
@@ -133,6 +134,7 @@ export const SessionPage = () => {
               onCompact={compact}
               onClear={clearConversation}
               onConfigurationChange={(configuration) => void updateConfiguration(configuration)}
+              onContextHandoverChange={(percent) => void updateContextHandover(percent)}
               onAllowPermission={(requestId, updatedInput) => void allowPermission(requestId, updatedInput)}
               onDenyPermission={(requestId, message) => void denyPermission(requestId, message)}
               onAnswerQuestion={(requestId, answers) => void answer(requestId, answers)}

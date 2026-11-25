@@ -116,6 +116,21 @@ export const updateSessionConfiguration = async (sessionId: string, configuratio
   return (await response.json()) as Session;
 };
 
+/** `null` turns the handover off; it applies at once, even during a turn. */
+export const updateSessionContextHandover = async (sessionId: string, contextHandover: number | null): Promise<Session> => {
+  const response = await sessionsFetch(configurationPath(sessionId), {
+    method: 'PATCH',
+    headers: jsonHeaders,
+    body: JSON.stringify({ contextHandover }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await apiErrorMessage(response, 'Could not change the context handover.'));
+  }
+
+  return (await response.json()) as Session;
+};
+
 export const interruptSession = async (sessionId: string): Promise<void> => {
   const response = await sessionsFetch(interruptPath(sessionId), { method: 'POST' });
 

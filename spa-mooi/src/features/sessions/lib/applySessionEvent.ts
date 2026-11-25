@@ -343,7 +343,10 @@ export const applySessionEvent = (state: SessionTranscriptState, event: SessionE
       break;
     }
     case 'agent.activity': {
-      if (data.kind === 'conversation_reset') {
+      if (data.kind === 'context_handover') {
+        entries = [...closeOpenEntry(entries), { id: `handover-${seq}`, kind: 'notice', at, tone: 'info',
+          title: 'Context handover', text: String(data.description ?? '') || null }];
+      } else if (data.kind === 'conversation_reset') {
         entries = withTextBlock(entries, seq, at, 'text', `activity-${seq}`,
           String(data.description ?? data.summary ?? ''), 'replace');
       }

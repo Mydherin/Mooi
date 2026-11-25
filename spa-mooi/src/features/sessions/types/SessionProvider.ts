@@ -6,6 +6,8 @@ export interface SessionProvider {
   defaultModel: string;
   providerDefaultModel?: string;
   defaultEffort: string | null;
+  /** The platform's context handover percent for new sessions of this provider; `null` is off. */
+  defaultContextHandover?: number | null;
   unavailable?: string;
   /** The adapter this catalog belongs to, and every adapter the provider offers (the first is its default). */
   adapter?: string;

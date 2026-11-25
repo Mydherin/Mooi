@@ -56,7 +56,7 @@ from pydantic import (
     model_validator,
 )
 
-from mic_sessions.shared import factory_prompts, images, mooi, previews, traces, workspaces
+from mic_sessions.shared import context_handover, factory_prompts, images, mooi, previews, traces, workspaces
 from mic_sessions.shared.agents import (
     PROVIDERS,
     RECOVERABLE_DETAIL,
@@ -240,6 +240,10 @@ class CreateSessionRequest(BaseModel):
     kind: SessionKind = "session"
     # Delivered as the first user message once the agent is ready, exactly as if the user sent it.
     initialMessage: str | None = Field(default=None, min_length=1, max_length=100_000)
+    # Context percent at which a plain session hands its work over (see `_watch_context`): omitted is the
+    # platform's default for the provider, null turns it off.
+    contextHandover: int | None = Field(default=None, ge=context_handover.MIN_PERCENT,
+                                        le=context_handover.MAX_PERCENT)
 
 
 class ProductionSnapshot(BaseModel):
@@ -533,6 +537,8 @@ class SessionPayload(BaseModel):
     capabilities: dict[str, bool]
     model: str
     effort: str | None
+    # Context percent at which the session hands its work over; None is off (and always for other chats).
+    contextHandover: int | None = None
     deployment: DeploymentSnapshot
     deploymentSetup: DeploymentSetup | None = None
     deploymentConfigured: bool = False
@@ -597,6 +603,13 @@ class UpdateSessionConfigurationRequest(BaseModel):
     # null effort, which is how clients select a model with no effort setting.
     model: str | None = Field(default=None, min_length=1, max_length=120)
     effort: str | None = Field(default=None, max_length=40)
+    # Plain sessions only; null turns the handover off.
+    contextHandover: int | None = Field(default=None, ge=context_handover.MIN_PERCENT,
+                                        le=context_handover.MAX_PERCENT)
+
+
+class ContextHandoverRequest(BaseModel):
+    percent: int | None = Field(default=None, ge=context_handover.MIN_PERCENT, le=context_handover.MAX_PERCENT)
 
 
 class SendMessageResponse(BaseModel):
@@ -779,6 +792,13 @@ class Session:
     usage_signature: tuple[Any, ...] | None = None
     # The Software Factory runs this session; None for every chat a player opened themselves.
     factory: FactoryBinding | None = None
+    # Context percent at which a plain session hands its work over (see `_watch_context`); None is off.
+    context_handover: int | None = None
+    # False once this conversation's handover started; clearing, compacting or a new percent arm it again.
+    context_handover_armed: bool = True
+    context_handover_task: asyncio.Task[None] | None = None
+    # Set exactly while the session is READY, so a waiter wakes at the end of a turn without polling.
+    ready: asyncio.Event = field(default_factory=asyncio.Event, repr=False)
 
     def to_payload(self) -> SessionPayload:
         descriptor = describe(self.provider)
@@ -807,6 +827,7 @@ class Session:
             capabilities=adapter.capabilities.as_payload(),
             model=self.config.model,
             effort=self.config.effort,
+            contextHandover=self.context_handover,
             deployment=self.deployment,
             deploymentSetup=self.deployment_setup,
             deploymentConfigured=self.deployment_configured,
@@ -1007,12 +1028,14 @@ def record(session: Session, type_: str, data: dict[str, Any]) -> Event:
         session.usage = {**session.usage, "context": None}
         session.platform_briefed = False
         session.deployment_setup = None
+        session.context_handover_armed = True
     elif type_ == EVENT_DEPLOYMENT_SETUP:
         session.deployment_setup = data.get("state")
     elif type_ == EVENT_DEPLOYMENT_CONFIGURED:
         session.deployment_configured = bool(data.get("configured"))
     elif type_ == EVENT_SESSION_COMPACTION and data.get("phase") == "completed":
         session.platform_briefed = False
+        session.context_handover_armed = True
     elif type_ == EVENT_SESSION_CONFIGURATION:
         if data.get("model") and data["model"] != session.config.model:
             session.usage = {**session.usage, "context": None}
@@ -1020,14 +1043,92 @@ def record(session: Session, type_: str, data: dict[str, Any]) -> Event:
             model=str(data.get("model") or session.config.model),
             effort=data.get("effort"),
         )
+        if "contextHandover" in data:
+            session.context_handover = data["contextHandover"]
+            session.context_handover_armed = True
 
+    if session.status == STATUS_READY:
+        session.ready.set()
+    else:
+        session.ready.clear()
     _observe_changes(session, type_, data)
     if type_ in _SUMMARY_EVENTS or (type_ == "session.usage"
                                     and _usage_signature(session.usage) != session.usage_signature):
         _announce(session)
     if session.factory is not None:
         _notify_observers(session, type_, data)
+    if type_ in ("session.usage", EVENT_SESSION_CONFIGURATION):
+        _watch_context(session)
     return event
+
+
+# --- context handover ----------------------------------------------------------------------------
+#
+# A plain session configured with a context percent hands its work over once its context crosses it.
+# The watcher is the fold itself: one comparison per usage event, no polling. Crossing interrupts the
+# running turn and sends the handover brief as a priority message (see `shared/context_handover.py`).
+
+# How long the handover waits for the interrupted turn to end before giving up.
+_CONTEXT_HANDOVER_WAIT_SECONDS = 180.0
+
+
+def _watch_context(session: Session) -> None:
+    threshold = session.context_handover
+    context = session.usage.get("context")
+    percent = context.get("percent") if isinstance(context, dict) else None
+    if (threshold is None or not session.context_handover_armed or session.closing
+            or session.kind != "session" or session.factory is not None
+            or not isinstance(percent, int | float) or percent < threshold
+            or (session.context_handover_task is not None and not session.context_handover_task.done())):
+        return
+    session.context_handover_armed = False
+    session.context_handover_task = _spawn(session, _hand_over_context(session, threshold, float(percent)))
+
+
+async def _hand_over_context(session: Session, threshold: int, percent: float) -> None:
+    """Interrupts whatever turn runs (again if the user started another meanwhile), then delivers the
+    brief at the first READY, under the operation lock like any message."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + _CONTEXT_HANDOVER_WAIT_SECONDS
+    interrupted: str | None = None
+    record(session, "agent.activity", {
+        "kind": "context_handover",
+        "description": f"Context reached {round(percent)}% (handover at {threshold}%): Mooi asks the agent "
+                       "to wrap up and leave a progress file for the next conversation.",
+    })
+    while not session.closing:
+        async with session.operation_lock:
+            if session.closing or session.status in (STATUS_FAILED, "closed"):
+                return
+            if session.status == STATUS_READY and session.deployment.state != "starting":
+                try:
+                    caller = await _agent_caller(session)
+                    if caller is not None:
+                        await _prepare_and_deliver(session, caller,
+                                                   context_handover.handover_message(percent, threshold))
+                except ApiException:
+                    pass  # A failed delivery is already recorded on the session.
+                except Exception:
+                    LOG.warning("Session %s could not send its context handover", session.id, exc_info=True)
+                    record(session, "error", {"message": "The context handover could not be sent to the agent."})
+                return
+            if session.status in (STATUS_WORKING, STATUS_WAITING) and session.turn_id != interrupted:
+                interrupted = session.turn_id
+                try:
+                    await _runtime(session).interrupt()
+                except Exception:
+                    LOG.warning("Session %s could not interrupt its turn for the context handover",
+                                session.id, exc_info=True)
+        remaining = deadline - loop.time()
+        if remaining <= 0:
+            LOG.warning("Session %s gave up its context handover: the turn did not end in time", session.id)
+            record(session, "error", {"message": "The context handover could not interrupt the agent in time."})
+            return
+        if session.ready.is_set():
+            await asyncio.sleep(min(1.0, remaining))  # READY but a deployment is starting.
+        else:
+            with suppress(TimeoutError):
+                await asyncio.wait_for(session.ready.wait(), remaining)
 
 
 # Callbacks of the Software Factory orchestrator, told about every event its sessions record (after the
@@ -1325,6 +1426,9 @@ async def _open_session(body: CreateSessionRequest, caller: Caller, factory: Fac
     session.adapter = adapter.id
     session.agent_caller = caller
     session.factory = factory
+    if body.kind == "session" and factory is None:
+        session.context_handover = body.contextHandover if "contextHandover" in body.model_fields_set \
+            else descriptor.configuration(adapter.id).get("defaultContextHandover")
     project = await mooi.fetch_project(caller, body.projectId)
     session.project_full_name = project.full_name
     session.base_branch = project.default_branch
@@ -1871,9 +1975,11 @@ async def update_session_configuration(
 
         changed_fields = body.model_fields_set
         if not changed_fields:
-            raise ApiException.bad_request("Provide a model or effort to change")
+            raise ApiException.bad_request("Provide a model, effort or context handover to change")
         if "model" in changed_fields and body.model is None:
             raise ApiException.bad_request("Model cannot be null")
+        if "contextHandover" in changed_fields and (session.kind != "session" or session.factory is not None):
+            raise ApiException.bad_request("Only a development session hands over its context")
 
         model = body.model if "model" in changed_fields else session.config.model
         effort = body.effort if "effort" in changed_fields else (
@@ -1883,8 +1989,31 @@ async def update_session_configuration(
         # Never touch a running turn or a runtime still being provisioned.
         # send_message applies the latest selection under this same lock.
         _touch(session)
-        _record_event(session, session_configuration(candidate.model, candidate.effort))
+        event = session_configuration(candidate.model, candidate.effort)
+        if "contextHandover" in changed_fields:
+            event["data"]["contextHandover"] = body.contextHandover
+        _record_event(session, event)
         return session.to_payload()
+
+
+@router.get("/sessions/{session_id}/context-handover/agent")
+async def agent_context_handover(session_id: UUID, request: Request) -> ContextHandoverRequest:
+    session, _ = await _agent_access(session_id, request, "session")
+    return ContextHandoverRequest(percent=session.context_handover)
+
+
+@router.put("/sessions/{session_id}/context-handover/agent")
+async def agent_save_context_handover(session_id: UUID, request: Request,
+                                      body: ContextHandoverRequest) -> ContextHandoverRequest:
+    """The chat's side of the composer's setting: the same configuration event, live on every view."""
+    session, _ = await _agent_access(session_id, request, "session")
+    if session.factory is not None:
+        raise ApiException.not_found("Not found")
+    event = session_configuration(session.config.model, session.config.effort)
+    event["data"]["contextHandover"] = body.percent
+    _touch(session)
+    _record_event(session, event)
+    return ContextHandoverRequest(percent=session.context_handover)
 
 
 @router.post("/sessions/{session_id}/interrupt", status_code=status.HTTP_202_ACCEPTED)
@@ -2415,7 +2544,8 @@ The project's to-do list is `docs/TODOS.md` on the default branch, shown in the 
 Docker here is the host's shared engine: other projects' live containers, volumes and networks (production ones included) run on it, and the same names may appear in this repository.
 - Compose commands are scoped to this session's project through `COMPOSE_PROJECT_NAME={_compose_project(session)}`; keep it, never pass `--project-name`/`-p` or override it.
 - Only act on resources labelled `com.docker.compose.project={_compose_project(session)}`. Never stop, remove, recreate, prune or attach to anything else, even when a name conflicts: report the conflict to the user instead.
-- Other sessions run the same repository side by side: let the engine pick host ports (`"5432"`, never `"54983:5432"`) and never set `container_name` or explicit volume/network names. Everything in this project is removed when the session is deleted.""" + _factory_instructions(session, root)
+- Other sessions run the same repository side by side: let the engine pick host ports (`"5432"`, never `"54983:5432"`) and never set `container_name` or explicit volume/network names. Everything in this project is removed when the session is deleted.""" + (
+        "\n\n" + context_handover.agent_api(root) if session.factory is None else "") + _factory_instructions(session, root)
 
 
 def _factory_instructions(session: Session, root: str) -> str:
@@ -4573,12 +4703,18 @@ async def deliver(session: Session, caller: Caller, text: str) -> None:
     async with session.operation_lock:
         if session.status != STATUS_READY or session.closing or session.deployment.state == "starting":
             raise ApiException.conflict("The session is not ready to accept a message")
-        runtime = _runtime(session)
-        refresh = getattr(runtime, "refresh_credential", None)
-        if refresh:
-            await refresh(await mooi.fetch_agent_credential(caller, str(session.connection_id)))
-        await runtime.set_configuration(session.config)
-        await _deliver(session, runtime, text)
+        await _prepare_and_deliver(session, caller, text)
+
+
+async def _prepare_and_deliver(session: Session, caller: Caller, text: str) -> None:
+    """A platform-sent message: the latest credential and configuration first, as `POST /messages`
+    applies them; the caller holds the operation lock."""
+    runtime = _runtime(session)
+    refresh = getattr(runtime, "refresh_credential", None)
+    if refresh:
+        await refresh(await mooi.fetch_agent_credential(caller, str(session.connection_id)))
+    await runtime.set_configuration(session.config)
+    await _deliver(session, runtime, text)
 
 
 async def publish_repository(session: Session, caller: Caller, message: str) -> MergePayload:

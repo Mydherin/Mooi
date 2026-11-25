@@ -2560,7 +2560,8 @@ class ProviderDescriptor:
                 credential.session_effort, entry.get("defaultEffort") if entry else None,
                 catalog["defaultEffort"], *efforts) if value and value in efforts), None)
             runtime_class._catalog.set({**catalog, "providerDefaultModel": catalog["defaultModel"],
-                                        "defaultModel": selected, "defaultEffort": preferred_effort})
+                                        "defaultModel": selected, "defaultEffort": preferred_effort,
+                                        "defaultContextHandover": credential.session_context_handover})
         return prepared
 
     def configuration(self, adapter: str | None = None) -> dict[str, Any]:

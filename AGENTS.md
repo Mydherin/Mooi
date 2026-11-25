@@ -66,6 +66,13 @@ from it. Where they differ, this context wins over the current implementation (s
   side by side, phones show them one after the other.
 - KPIs per session and provider account: context size, session limits, weekly limits, other usage metrics.
 - Model and thinking-effort selection per session.
+- **Context handover**: a development session can hand its work over once its context passes a percent,
+  chosen when it starts (preselected from the Admin defaults, off unless set there) and changed live from
+  the chat (composer or agent). The platform watches each adapter's context KPI with no polling; crossing
+  it interrupts the turn with a priority brief: close the step in flight consistently and fast, and when
+  work remains write a temporary `docs/progress/<date>-<task>.md` (request, done, in progress, pending,
+  context) and point the root `AGENTS.md` at it, so a fresh conversation resumes without rediscovering
+  anything and removes both once the task is done. Factory sessions keep their own checkpoints.
 - A **Trace** tab, like Langfuse / LangSmith, shows every internal step of the agent: prompts, turns (one
   agent-loop iteration each: an LLM call with tokens, cache and context size, then the tools it requested),
   nested sub-agents, skills, hooks, injected context, compactions and errors, as a live timeline with an
@@ -223,8 +230,8 @@ from it. Where they differ, this context wins over the current implementation (s
     devices), their live sessions and what each agent is doing, projects, provider accounts and devices,
     all updated in real time. Admins close a user's sessions, sign them out everywhere, and ban (sign out,
     close sessions, block sign-in) or unban them. Live data costs nothing while no admin watches.
-  - **Agents**: minimal per-provider session defaults (adapter, model, thinking effort) preselected for
-    every user; saved on change.
+  - **Agents**: minimal per-provider session defaults (adapter, model, thinking effort, context handover)
+    preselected for every user; saved on change.
   - Other platform settings as they come.
 
 ## Other capabilities

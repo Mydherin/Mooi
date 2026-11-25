@@ -313,7 +313,7 @@ public class AgentConnectionFeature {
             return new CredentialPayload(agentProvider.id(), connection.getMode(),
                     secretBox.decrypt(connection.getAccessToken()), connection.getAccessTokenExpiresAt(),
                     connection.getCredentialId(), defaults.getSessionModel(), defaults.getSessionEffort(),
-                    defaults.getSessionAdapter());
+                    defaults.getSessionAdapter(), defaults.getSessionContextHandover());
         }
 
         /**
@@ -407,6 +407,7 @@ public class AgentConnectionFeature {
             defaults.setSessionModel(cleanModel(request.sessionModel()));
             defaults.setSessionEffort(cleanEffort(request.sessionEffort()));
             defaults.setSessionAdapter(cleanAdapter(request.sessionAdapter()));
+            defaults.setSessionContextHandover(cleanContextHandover(request.sessionContextHandover()));
             return toDefaultsPayload(engineDefaultsRepository.save(defaults));
         }
 
@@ -428,7 +429,15 @@ public class AgentConnectionFeature {
 
         private EngineDefaultsPayload toDefaultsPayload(EngineDefaults defaults) {
             return new EngineDefaultsPayload(defaults.getProvider(), defaults.getSessionModel(), defaults.getSessionEffort(),
-                    defaults.getSessionAdapter());
+                    defaults.getSessionAdapter(), defaults.getSessionContextHandover());
+        }
+
+        /** The context percent at which a session hands its work over to a fresh one; {@code null} turns it off. */
+        private Integer cleanContextHandover(Integer value) {
+            if (value == null) return null;
+            if (value < 10 || value > 95)
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Context handover must be between 10% and 95%");
+            return value;
         }
 
         /**
@@ -730,6 +739,9 @@ public class AgentConnectionFeature {
         private String sessionEffort;
         @Column(name = "session_adapter", length = 32)
         private String sessionAdapter;
+        /** Context percent at which new sessions hand over their work (see mic-sessions); NULL is off. */
+        @Column(name = "session_context_handover")
+        private Integer sessionContextHandover;
     }
 
     public interface EngineDefaultsRepository extends JpaRepository<EngineDefaults, String> { }
@@ -811,7 +823,8 @@ public class AgentConnectionFeature {
      * payload in this feature, where a raw token is ever serialized.
      */
     public record CredentialPayload(String provider, String mode, String token, OffsetDateTime expiresAt, UUID connectionId,
-                                    String sessionModel, String sessionEffort, String sessionAdapter) {
+                                    String sessionModel, String sessionEffort, String sessionAdapter,
+                                    Integer sessionContextHandover) {
     }
 
     /** One provider this application knows how to link, and whether OAuth is actually usable for it. */
@@ -850,8 +863,9 @@ public class AgentConnectionFeature {
     public record DefaultAccountRequest(UUID connectionId) { }
 
     public record EngineDefaultsPayload(String provider, String sessionModel, String sessionEffort,
-                                        String sessionAdapter) { }
+                                        String sessionAdapter, Integer sessionContextHandover) { }
 
-    public record DefaultModelsRequest(String sessionModel, String sessionEffort, String sessionAdapter) {
+    public record DefaultModelsRequest(String sessionModel, String sessionEffort, String sessionAdapter,
+                                       Integer sessionContextHandover) {
     }
 }

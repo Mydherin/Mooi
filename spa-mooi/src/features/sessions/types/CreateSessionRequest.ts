@@ -8,6 +8,8 @@ export interface CreateSessionRequest {
   connectionId: string;
   model?: string;
   effort?: string | null;
+  /** Context handover percent; the platform's default when omitted, `null` turns it off. */
+  contextHandover?: number | null;
   branch?: string;
   kind?: SessionKind;
   /** Sent as the first user message as soon as the agent is ready. */

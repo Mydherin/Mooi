@@ -3,6 +3,7 @@ import { Activity, Eraser, Layers3, LoaderCircle } from 'lucide-react';
 import { useOnClickOutside } from '@/shared/hooks/useOnClickOutside';
 import { useOnEscape } from '@/shared/hooks/useOnEscape';
 import { cn } from '@/shared/utils/cn';
+import { contextHandoverOptions, parseContextHandover } from '@/features/sessions/lib/contextHandover';
 import { fiveHourLimit } from '@/features/sessions/lib/fiveHourLimit';
 import type { SessionUsage } from '@/features/sessions/types/SessionUsage';
 import type { UsageMetric } from '@/features/sessions/types/UsageMetric';
@@ -37,9 +38,14 @@ interface ChatUsageIndicatorsProps {
   actionsDisabled: boolean;
   onCompact: () => Promise<boolean>;
   onClear: () => Promise<boolean>;
+  /** The context percent that makes the agent hand its work over; offered only with a change handler. */
+  contextHandover?: number | null;
+  contextHandoverDisabled?: boolean;
+  onContextHandoverChange?: (percent: number | null) => void;
 }
 
-export const ChatUsageIndicators = ({ usage, loading = false, actionsDisabled, onCompact, onClear }: ChatUsageIndicatorsProps) => {
+export const ChatUsageIndicators = ({ usage, loading = false, actionsDisabled, onCompact, onClear, contextHandover = null,
+  contextHandoverDisabled = false, onContextHandoverChange }: ChatUsageIndicatorsProps) => {
   const quotas = usage?.quota ?? {};
   const fiveHour = fiveHourLimit(usage);
   const weekly = quotas.seven_day ?? quotas.secondary;
@@ -84,6 +90,15 @@ export const ChatUsageIndicators = ({ usage, loading = false, actionsDisabled, o
             <Eraser className="size-4" aria-hidden="true" />
           </button>
         </span>
+        {onContextHandoverChange && <label className="flex items-center gap-3"
+          title="Past this context, the agent wraps up and leaves a progress file in docs/progress/ for the next conversation.">
+          <span className="mr-auto font-semibold text-ink-subtle">Handover</span>
+          <select aria-label="Context handover" value={contextHandover == null ? '' : String(contextHandover)}
+            disabled={contextHandoverDisabled} onChange={(event) => onContextHandoverChange(parseContextHandover(event.target.value))}
+            className="h-8 rounded-lg border border-line bg-surface-2 px-2 text-xs font-semibold text-ink outline-none focus:border-brand disabled:cursor-not-allowed disabled:opacity-40">
+            {contextHandoverOptions(contextHandover).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+        </label>}
         {known.length > 0 && <span className="h-px bg-line" />}
         <QuotaRow label="5 hour limit" metric={fiveHour} />
         <QuotaRow label="Weekly limit" metric={weekly} />

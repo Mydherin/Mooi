@@ -16,6 +16,8 @@ export interface Session {
   connectionId: string;
   model: string;
   effort?: string | null;
+  /** Context percent at which the session hands its work over to a fresh conversation; `null` is off. */
+  contextHandover?: number | null;
   providerLabel: string;
   /** The provider adapter the agent runs on, e.g. `cli` labelled "Claude CLI". */
   adapter?: string;

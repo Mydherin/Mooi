@@ -55,6 +55,8 @@ class Credential:
     session_effort: str | None = None
     # The platform's default adapter for this provider; None is the provider's first one.
     session_adapter: str | None = None
+    # The context percent at which the platform's new sessions hand their work over; None is off.
+    session_context_handover: int | None = None
 
 
 @dataclass(frozen=True)
@@ -501,6 +503,7 @@ async def fetch_agent_credential(caller: Caller, connection_id: str) -> Credenti
         session_model=body.get("sessionModel"),
         session_effort=body.get("sessionEffort"),
         session_adapter=body.get("sessionAdapter"),
+        session_context_handover=body.get("sessionContextHandover"),
         save=save if body["provider"] == "codex" else None,
         expire=expire if body["provider"] == "codex" else None,
         expires_at=datetime.fromisoformat(expires_at) if expires_at else None,

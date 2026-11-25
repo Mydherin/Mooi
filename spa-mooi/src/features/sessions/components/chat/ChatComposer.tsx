@@ -40,6 +40,9 @@ interface ChatComposerProps {
   onCompact: (instructions?: string) => Promise<boolean>;
   onClear: () => Promise<boolean>;
   onConfigurationChange: (configuration: SessionConfiguration) => void;
+  /** Development sessions only: the context percent that makes the agent hand its work over. */
+  contextHandover?: number | null;
+  onContextHandoverChange?: (percent: number | null) => void;
   /** Extra toolbar actions next to the context indicator, e.g. applying a recipe. */
   actions?: ReactNode;
 }
@@ -73,6 +76,8 @@ export const ChatComposer = ({
   onCompact,
   onClear,
   onConfigurationChange,
+  contextHandover,
+  onContextHandoverChange,
   actions,
 }: ChatComposerProps) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -262,7 +267,9 @@ export const ChatComposer = ({
         <div className="relative flex items-center gap-1 px-1.5 pb-1.5 sm:gap-2 sm:px-2 sm:pb-2">
           <ChatUsageIndicators usage={usage} loading={status === 'provisioning' || status === 'compacting'}
             actionsDisabled={busy || deploying || status !== 'ready' || !hasConversation}
-            onCompact={onCompact} onClear={onClear} />
+            onCompact={onCompact} onClear={onClear} contextHandover={contextHandover}
+            contextHandoverDisabled={busy || status === 'closed' || status === 'failed'}
+            onContextHandoverChange={onContextHandoverChange} />
           {actions}
           {modelOptions.length > 0 ? (
             <div className="flex min-w-0 flex-1 sm:hidden">

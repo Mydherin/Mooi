@@ -40,6 +40,7 @@ export const applySessionToSession = (session: Session, event: SessionEvent): Se
     patch.model = String(data.model ?? session.model);
     if (patch.model !== session.model) patch.usage = { ...session.usage, context: null };
     patch.effort = (data.effort as string | null | undefined) ?? null;
+    if ('contextHandover' in data) patch.contextHandover = (data.contextHandover as number | null | undefined) ?? null;
   } else if (type === 'permission.request' || type === 'question.request') {
     patch.status = 'waiting';
     patch.pending = {

@@ -5,4 +5,6 @@ export interface EngineDefaults {
   sessionEffort: string | null;
   /** The adapter new sessions use unless they pick one; `null` is the provider's first adapter. */
   sessionAdapter: string | null;
+  /** Context percent at which new sessions hand their work over to a fresh conversation; `null` is off. */
+  sessionContextHandover: number | null;
 }
