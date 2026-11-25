@@ -3,11 +3,11 @@
 - [/] Support child sessions
 - [ ] Adjust at ui ux level properly the session context and 5 hour limit
 - [ ] When you ask the chat for something and chat makes a deterministic deployment in dev session, the deployment set up message appears, and it should not appers cause that message is always when you are setting up the deployment with the agent from fisrt time (triggered from chat or from button)
+- [ ] So times when I make production deployment it says fetching but it do not show more logs until I reload
 - [ ] The user admin dialog sucks in mobile since dialog allow scrolling with no sense and actions buttons are together
 - [ ] Soportar archivar proyectos
 - [ ] Mejorar stt con Go (AllForOne)
 - [ ] Microphone expiration
-- [ ] So times when I make production deployment it says fetching but it do not show more logs until I reload
 - [ ] Apply dnd in todos list with better pattern, about grabbing 1.5 secs in any place to enable in the row
 - [ ] Say how diff commits from main to previous release
 - [x] Upgrade playwright
