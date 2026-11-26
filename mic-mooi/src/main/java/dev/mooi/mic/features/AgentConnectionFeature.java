@@ -7,6 +7,8 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -739,7 +741,11 @@ public class AgentConnectionFeature {
         private String sessionEffort;
         @Column(name = "session_adapter", length = 32)
         private String sessionAdapter;
-        /** Context percent at which new sessions hand over their work (see mic-sessions); NULL is off. */
+        /**
+         * Context percent at which new sessions hand over their work (see mic-sessions); NULL is off. The column
+         * is a {@code smallint} (changeset 036), which schema validation rejects as {@code Integer}'s default type.
+         */
+        @JdbcTypeCode(SqlTypes.SMALLINT)
         @Column(name = "session_context_handover")
         private Integer sessionContextHandover;
     }
