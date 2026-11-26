@@ -819,6 +819,8 @@ class Session:
     # False once this conversation's handover started; clearing, compacting or a new percent arm it again.
     context_handover_armed: bool = True
     context_handover_task: asyncio.Task[None] | None = None
+    # The fresh conversation that resolves the conflicts of a merge the agent asked for, once scheduled.
+    conflict_resolution_task: asyncio.Task[None] | None = None
     # Set exactly while the session is READY, so a waiter wakes at the end of a turn without polling.
     ready: asyncio.Event = field(default_factory=asyncio.Event, repr=False)
 
@@ -1092,8 +1094,8 @@ def record(session: Session, type_: str, data: dict[str, Any]) -> Event:
 # The watcher is the fold itself: one comparison per usage event, no polling. Crossing interrupts the
 # running turn and sends the handover brief as a priority message (see `shared/context_handover.py`).
 
-# How long the handover waits for the interrupted turn to end before giving up.
-_CONTEXT_HANDOVER_WAIT_SECONDS = 180.0
+# How long a platform brief waits for the interrupted turn to end before giving up.
+_TURN_END_WAIT_SECONDS = 180.0
 
 
 def _watch_context(session: Session) -> None:
@@ -1110,43 +1112,54 @@ def _watch_context(session: Session) -> None:
 
 
 async def _hand_over_context(session: Session, threshold: int, percent: float) -> None:
-    """Interrupts whatever turn runs (again if the user started another meanwhile), then delivers the
-    brief at the first READY, under the operation lock like any message."""
-    loop = asyncio.get_running_loop()
-    deadline = loop.time() + _CONTEXT_HANDOVER_WAIT_SECONDS
-    interrupted: str | None = None
     record(session, "agent.activity", {
         "kind": "context_handover",
         "description": f"Context reached {round(percent)}% (handover at {threshold}%): Mooi asks the agent "
                        "to wrap up and leave a progress file for the next conversation.",
     })
+
+    async def deliver() -> None:
+        caller = await _agent_caller(session)
+        if caller is not None:
+            await _prepare_and_deliver(session, caller, context_handover.handover_message(percent, threshold))
+
+    await _after_turn(session, deliver, "context handover")
+
+
+async def _after_turn(session: Session, action: Callable[[], Awaitable[None]], what: str, *,
+                      grace_seconds: float = 0.0) -> None:
+    """Runs `action` (a platform brief for the agent) at the first READY, under the operation lock like
+    any message. The running turn gets `grace_seconds` to end on its own; then it is interrupted (again
+    if the user started another meanwhile)."""
+    loop = asyncio.get_running_loop()
+    if grace_seconds and not session.ready.is_set():
+        with suppress(TimeoutError):
+            await asyncio.wait_for(session.ready.wait(), grace_seconds)
+    deadline = loop.time() + _TURN_END_WAIT_SECONDS
+    interrupted: str | None = None
     while not session.closing:
         async with session.operation_lock:
             if session.closing or session.status in (STATUS_FAILED, "closed"):
                 return
             if session.status == STATUS_READY and session.deployment.state != "starting":
                 try:
-                    caller = await _agent_caller(session)
-                    if caller is not None:
-                        await _prepare_and_deliver(session, caller,
-                                                   context_handover.handover_message(percent, threshold))
+                    await action()
                 except ApiException:
                     pass  # A failed delivery is already recorded on the session.
                 except Exception:
-                    LOG.warning("Session %s could not send its context handover", session.id, exc_info=True)
-                    record(session, "error", {"message": "The context handover could not be sent to the agent."})
+                    LOG.warning("Session %s could not send its %s", session.id, what, exc_info=True)
+                    record(session, "error", {"message": f"The {what} could not be sent to the agent."})
                 return
             if session.status in (STATUS_WORKING, STATUS_WAITING) and session.turn_id != interrupted:
                 interrupted = session.turn_id
                 try:
                     await _runtime(session).interrupt()
                 except Exception:
-                    LOG.warning("Session %s could not interrupt its turn for the context handover",
-                                session.id, exc_info=True)
+                    LOG.warning("Session %s could not interrupt its turn for the %s", session.id, what, exc_info=True)
         remaining = deadline - loop.time()
         if remaining <= 0:
-            LOG.warning("Session %s gave up its context handover: the turn did not end in time", session.id)
-            record(session, "error", {"message": "The context handover could not interrupt the agent in time."})
+            LOG.warning("Session %s gave up its %s: the turn did not end in time", session.id, what)
+            record(session, "error", {"message": f"The {what} could not interrupt the agent in time."})
             return
         if session.ready.is_set():
             await asyncio.sleep(min(1.0, remaining))  # READY but a deployment is starting.
@@ -1480,18 +1493,15 @@ async def _provision(session: Session, caller: Caller, project: mooi.Project,
         session.base_branch = project.default_branch
 
         _record_status(session, STATUS_PROVISIONING, f"Loading {descriptor.label} and repository credentials")
-        credential, github_token = await asyncio.gather(
+        credential, github_token, identity = await asyncio.gather(
             mooi.fetch_agent_credential(caller, str(session.connection_id)),
             mooi.fetch_github_token(caller),
+            mooi.fetch_github_identity(caller),
         )
         _record_status(session, STATUS_PROVISIONING, f"Cloning {project.full_name}")
-        workspace = await workspaces.create_workspace(project, session.id, session.branch, github_token)
+        workspace = await workspaces.create_workspace(project, session.id, session.branch, github_token, identity)
         session.workspace = workspace.path
         session.base_commit = workspace.base_commit
-        if session.factory is not None:
-            # Factory agents commit on their own (the chat before publishing, steps before each push):
-            # with the player's identity from the first brief on, never one they make up.
-            await workspaces.set_identity(session.workspace, await mooi.fetch_github_identity(caller))
         _sync_deployment_configured(session)
 
         _record_status(session, STATUS_PROVISIONING, f"Starting {descriptor.adapter(session.adapter).label}")
@@ -2346,13 +2356,15 @@ async def save_file_content(
 # --- merge into the default branch -------------------------------------------------------------
 
 
-def _require_mergeable(session: Session) -> None:
-    """Merging reads the whole working tree, so no turn, question or deployment may be mid-flight."""
+def _require_mergeable(session: Session, *, by_agent: bool = False) -> None:
+    """Merging reads the whole working tree, so no turn, question or deployment may be mid-flight. The
+    one turn allowed is the agent's own when it merges: it stops editing to call the merge."""
     if session.kind in _PLATFORM_KINDS:
         raise ApiException.conflict("Platform chats publish their documents after a successful test")
     if session.workspace == _UNSET_PATH:
         raise ApiException.conflict("The workspace is still being prepared")
-    if (session.status != STATUS_READY or session.closing or session.pending is not None
+    turn_done = session.status == STATUS_WORKING if by_agent else session.status == STATUS_READY
+    if (not turn_done or session.closing or session.pending is not None
             or session.deployment.state == "starting"):
         raise ApiException.conflict("Wait for the agent to finish before merging")
 
@@ -2363,10 +2375,16 @@ def _merge_payload(preview: workspaces.MergePreview, commit: str | None = None) 
     return MergePayload(state=state, targetBranch=preview.target, conflicts=preview.conflicts, commit=commit)
 
 
-def _conflict_prompt(session: Session, preview: workspaces.MergePreview) -> str:
+def _conflict_prompt(session: Session, preview: workspaces.MergePreview, merge_title: str | None = None) -> str:
+    """The brief of a fresh conversation that merges the fetched target in. `merge_title` is set when the
+    user asked the chat to merge: the agent then finishes that merge itself once the conflicts are gone."""
     target = f"origin/{preview.target}"
     base = preview.merge_base or f"$(git merge-base HEAD {target})"
     files = "\n".join(f"- `{path}`" for path in preview.conflicts) or "- (none reported)"
+    finish = (f"6. Then merge this session into `{preview.target}` as the user asked, through the Mooi platform API "
+              f"(`POST .../merge/agent`) with the title `{merge_title}`, and finish with a short summary of the "
+              "decisions you took and the merge result."
+              if merge_title else "6. Finish with a short summary of the decisions you took.")
     return f"""Resolve the merge conflicts between this branch `{session.branch}` and `{preview.target}`.
 
 `{target}` has just been fetched; do not fetch, pull, push, rebase, reset or switch branches. Both branches were last in sync at commit `{base}`.
@@ -2379,7 +2397,7 @@ Files expected to conflict:
 3. Run `git merge --no-ff --no-commit {target}`.
 4. Resolve every conflict preserving the features of both branches, making whatever technical and functional decisions are needed so both keep working. When both sides implement the same feature, keep the most complete version using the cleanest, most maintainable and scalable approach.
 5. Make sure no conflict markers remain and the project still builds and its checks pass where practical, then commit the merge.
-6. Finish with a short summary of the decisions you took."""
+{finish}"""
 
 
 async def _reset_conversation(session: Session, caller: Caller) -> AgentRuntime:
@@ -2429,21 +2447,30 @@ async def merge_session(
     """Squashes the session's work onto the default branch as one commit and pushes it. Conflicts
     that appeared since the check are answered, not raised: the client offers resolution instead."""
     session = get_registry().get_for(caller, session_id)
-    message = body.message.strip()
+    return _merge_payload(*await _merge_into_base(session, caller, body.message))
+
+
+async def _merge_into_base(session: Session, caller: Caller, message: str, *,
+                           by_agent: bool = False) -> tuple[workspaces.MergePreview, str | None]:
+    """The one merge of a session into its default branch, from the Merge button or from its agent: the
+    working tree squashed as one commit, pushed with the player's own GitHub grant and announced live,
+    so every view shows the session merged whichever side asked."""
+    message = message.strip()
     if not message:
         raise ApiException.bad_request("The commit title cannot be blank")
     token, identity = await asyncio.gather(mooi.fetch_github_token(caller), mooi.fetch_github_identity(caller))
     async with session.operation_lock:
-        _require_mergeable(session)
+        _require_mergeable(session, by_agent=by_agent)
         _touch(session)
         async with session.changes_lock:
             preview, commit = await workspaces.merge(session.workspace, session.base_branch, message, identity, token)
         if commit is not None:
             session.base_commit = commit
             record(session, EVENT_MERGE_COMPLETED, {"targetBranch": preview.target, "commit": commit, "message": message})
-            _record_status(session, STATUS_READY)
+            if not by_agent:  # the agent's turn goes on and ends on its own
+                _record_status(session, STATUS_READY)
             _schedule_changes_refresh(session, debounce=False)
-        return _merge_payload(preview, commit)
+        return preview, commit
 
 
 @router.post("/sessions/{session_id}/merge/resolve", status_code=status.HTTP_202_ACCEPTED)
@@ -2452,15 +2479,48 @@ async def resolve_merge_conflicts(
 ) -> SendMessageResponse:
     """Clears the conversation and asks the agent to merge the default branch in, resolving conflicts."""
     session = get_registry().get_for(caller, session_id)
-    token, identity = await asyncio.gather(mooi.fetch_github_token(caller), mooi.fetch_github_identity(caller))
     async with session.operation_lock:
         _require_mergeable(session)
-        preview = await workspaces.preview_merge(session.workspace, session.base_branch, token)
-        if not preview.conflicts:
-            raise ApiException.conflict(f"There are no conflicts with {preview.target} anymore; merge it directly")
-        await workspaces.set_identity(session.workspace, identity)
-        runtime = await _reset_conversation(session, caller)
-        return await _deliver(session, runtime, _conflict_prompt(session, preview))
+        return await _restart_to_resolve(session, caller)
+
+
+async def _restart_to_resolve(session: Session, caller: Caller, merge_title: str | None = None) -> SendMessageResponse:
+    """The one conflict resolution, from the Resolve button or after a merge the agent asked for: a fresh
+    conversation on the same workspace with the conflict brief. The caller holds the operation lock.
+    The button refuses when the conflicts are gone; the chat's merge goes on, so its brief merges anyway."""
+    token, identity = await asyncio.gather(mooi.fetch_github_token(caller), mooi.fetch_github_identity(caller))
+    preview = await workspaces.preview_merge(session.workspace, session.base_branch, token)
+    if not preview.conflicts and merge_title is None:
+        raise ApiException.conflict(f"There are no conflicts with {preview.target} anymore; merge it directly")
+    await workspaces.set_identity(session.workspace, identity)
+    runtime = await _reset_conversation(session, caller)
+    return await _deliver(session, runtime, _conflict_prompt(session, preview, merge_title))
+
+
+# How long the agent that asked for a conflicting merge gets to end its turn before Mooi interrupts it.
+_CONFLICT_RESTART_GRACE_SECONDS = 30.0
+
+
+def _schedule_conflict_resolution(session: Session, preview: workspaces.MergePreview, merge_title: str) -> None:
+    """Once the asking turn ends, restarts the session on the conflict brief, as the Resolve button does.
+    One at a time: asking again while it is scheduled changes nothing."""
+    if session.conflict_resolution_task is not None and not session.conflict_resolution_task.done():
+        return
+    record(session, "agent.activity", {
+        "kind": "merge_conflicts",
+        "description": f"{preview.target} changed in the same files ({', '.join(preview.conflicts[:5])}). Mooi "
+                       "restarts this session in a fresh conversation that resolves the conflicts, keeping both "
+                       "sides' features, and then merges.",
+    })
+
+    async def restart() -> None:
+        caller = await _agent_caller(session)
+        if caller is not None and not session.closing:
+            _require_mergeable(session)
+            await _restart_to_resolve(session, caller, merge_title)
+
+    session.conflict_resolution_task = _spawn(session, _after_turn(
+        session, restart, "conflict resolution", grace_seconds=_CONFLICT_RESTART_GRACE_SECONDS))
 
 
 # Capacity also includes orphaned/failed resources after a session leaves the registry.
@@ -2576,10 +2636,18 @@ Docker here is the host's shared engine: other projects' live containers, volume
 
 
 def _opening_instructions(session: Session, root: str) -> str:
-    """How a player's session opens others; Software Factory sessions leave that to the orchestrator."""
+    """How a player's session merges itself and opens others; Software Factory sessions leave both to
+    the orchestrator."""
     if session.factory is not None:
         return ""
     return f"""
+
+## Committing and merging this session
+Mooi publishes this session's work with its Merge button: the whole working tree squashed onto `{session.base_branch}` as one commit, pushed with the user's own GitHub access. Whenever the user asks in this chat to commit, push, publish or merge the session's work, do exactly that through the Mooi platform API; never `git push` (this clone holds no credentials and needs none) and never ask the user for any.
+- Read the session's changes (`git status` and `git diff origin/{session.base_branch}`) and write the commit title yourself, one Conventional Commits line that sums them up, unless the user gave one.
+- `POST {root}/merge/agent` with JSON `{{"message": "<conventional commit title>"}}`. Uncommitted edits are included; there is no need to commit locally first.
+- The answer's `state`: `merged` (with `commit` and `targetBranch`): tell the user the session is merged into `{session.base_branch}`, as the Merge button would; `up_to_date`: `{session.base_branch}` already holds every change, nothing to merge; `conflicts`: `{session.base_branch}` changed in the same files (`conflicts`); Mooi restarts this session in a fresh conversation that resolves them, keeping both sides' features, and merges with your title. Do not resolve them yourself: end your turn at once, telling the user in one short line.
+- A 409 names what blocks the merge (for example a running deployment start): tell the user in plain words.
 
 ## Opening other sessions
 When the user asks you to open, start or launch a new session (for example to work on something in parallel), open it yourself through the Mooi platform API: Mooi opens an independent session of this project, on its own branch and clone, with this session's account, model and effort, lists it in Mooi linked to this session and shows it in this chat. Never simulate it with sub-agents, background processes or another clone.
@@ -2833,6 +2901,20 @@ async def agent_opened_sessions(session_id: UUID, request: Request) -> dict:
                          if opened.origin is not None and opened.origin.session_id == session.id]}
 
 
+@router.post("/sessions/{session_id}/merge/agent")
+async def agent_merge(session_id: UUID, request: Request, body: MergeRequest) -> dict:
+    """The Merge button, asked for in the chat: same squash, push and live `merge.completed`. Conflicts
+    restart the session on the Resolve button's brief once this turn ends, and that conversation merges
+    with the same title. Factory sessions never merge themselves: the orchestrator does."""
+    session, caller = await _agent_access(session_id, request, "session")
+    if session.factory is not None:
+        raise ApiException.conflict("Software Factory sessions are merged by the factory")
+    preview, commit = await _merge_into_base(session, caller, body.message, by_agent=True)
+    if preview.conflicts:
+        _schedule_conflict_resolution(session, preview, body.message.strip())
+    return _merge_payload(preview, commit).model_dump(mode="json")
+
+
 # --- production: project-scoped configuration, deployments and GitHub releases -----------------
 #
 # A project's production configuration (DEPLOYMENT.md, deploy.sh, status.sh and environment values)
@@ -3011,7 +3093,7 @@ Use Python urllib with an inline JSON body, never a temporary file, and send the
 - `PATCH {base}/documents` with any of the JSON keys `manifest`, `script`, `statusScript`: saves those documents into the draft and keeps the others.
 - `GET {base}/environment`: `values` (the project's stored `MOOI_PRODUCTION_` and inherited `MOOI_DEVELOPMENT_` values the scripts receive) and `serverProvided` (names of server-wide values whose values you cannot read).
 - `PUT {base}/environment` with JSON `{{"values": {{"MOOI_PRODUCTION_NAME": "value"}}}}` (null removes a variable).
-- `POST {base}/repository/commit` with JSON `{{"message": "<commit title>"}}`: commits every repository change onto `{branch}` as one commit and pushes it. It answers 409 with the conflicting files when `{branch}` moved in a conflicting way.
+- `POST {base}/repository/commit` with JSON `{{"message": "<conventional commit title>"}}`: commits every repository change onto `{branch}` as one commit and pushes it. It answers 409 with the conflicting files when `{branch}` moved in a conflicting way.
 - `GET {base}/deployments/{{operationId}}`: read-only detail of a past attempt (files, result, redacted output).
 - `POST {base}/deployments` with an empty JSON body `{{}}`: runs a real test deployment of the draft (or the active configuration when there is no draft) with the release chosen as described in Releases. It returns the deployment snapshot.
 - `GET {base}/deployment?wait=120`: waits up to 120 seconds while a deployment runs, then returns its snapshot (state running, succeeded or failed; message; releaseTag) and the latest redacted output. Repeat it while the state is running.
@@ -3917,7 +3999,7 @@ Use Python urllib with an inline JSON body, never a temporary file, and send the
 - `GET {base}/environment`: `values` (the project's stored `MOOI_BACKUP_` values plus the inherited `MOOI_PRODUCTION_` and `MOOI_DEVELOPMENT_` ones the scripts receive) and `serverProvided` (names of server-wide values whose values you cannot read).
 - `PUT {base}/environment` with JSON `{{"values": {{"MOOI_BACKUP_NAME": "value"}}}}` (null removes a variable).
 - `GET {base}/production`: the production deployment documents, the deployed release and its environment variable names (read-only).
-- `POST {base}/repository/commit` with JSON `{{"message": "<commit title>"}}`: commits every repository change onto `{branch}` as one commit and pushes it.
+- `POST {base}/repository/commit` with JSON `{{"message": "<conventional commit title>"}}`: commits every repository change onto `{branch}` as one commit and pushes it.
 - `GET {base}/backups`: the latest backups (id, release, state, dates).
 - `GET {base}/backups/{{backupId}}`: one backup with every operation run on it, its script, result and redacted output.
 - `POST {base}/backups` with an empty JSON body `{{}}`: runs a real backup of production with the draft (or the active documents when there is no draft) for the release currently deployed. It returns the operation snapshot with the new `backupId` and `backupKey`.

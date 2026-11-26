@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { GitCommitHorizontal, LoaderCircle } from 'lucide-react';
+import { COMMIT_TYPES, isConventionalCommit } from '@/features/sessions/lib/conventionalCommit';
 import type { ChangesSummary } from '@/features/sessions/types/ChangesSummary';
 import { Button } from '@/shared/components/Button';
 import { Modal } from '@/shared/components/Modal';
@@ -19,7 +20,8 @@ const MAX_TITLE = 200;
 /** Asks for the one mandatory input of a merge: the title of the single commit pushed to the target. */
 export const MergeDialog = ({ targetBranch, branch, changes, merging, error, onCancel, onCommit }: MergeDialogProps) => {
   const [title, setTitle] = useState('');
-  const valid = title.trim().length > 0;
+  const conventional = isConventionalCommit(title.trim());
+  const valid = title.trim().length > 0 && conventional;
   const submit = () => {
     if (valid && !merging) onCommit(title.trim());
   };
@@ -40,7 +42,13 @@ export const MergeDialog = ({ targetBranch, branch, changes, merging, error, onC
           <input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={MAX_TITLE} autoCapitalize="none"
             onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); submit(); } }}
             disabled={merging} required autoFocus placeholder="e.g. feat: add project search"
-            className="h-12 rounded-control border border-line bg-surface-2 px-3 text-sm text-ink outline-none transition focus:border-brand disabled:opacity-60" />
+            enterKeyHint="send" autoComplete="off" aria-invalid={title.trim().length > 0 && !conventional}
+            aria-describedby="merge-title-hint"
+            className="h-12 rounded-control border border-line bg-surface-2 px-3 text-base text-ink outline-none transition focus:border-brand disabled:opacity-60 sm:text-sm" />
+          <span id="merge-title-hint"
+            className={`text-xs [overflow-wrap:anywhere] ${title.trim().length > 0 && !conventional ? 'text-danger' : 'text-ink-muted'}`}>
+            Conventional Commits: <span className="font-mono">type(scope): description</span>, with type {COMMIT_TYPES.join(', ')}.
+          </span>
         </label>
         {changes ? (
           <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-muted">

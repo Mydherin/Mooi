@@ -23,6 +23,7 @@ from functools import lru_cache
 from pathlib import Path
 from uuid import UUID, uuid4
 
+from mic_sessions.shared import conventional_commits
 from mic_sessions.shared.env import get_settings
 from mic_sessions.shared.mooi import GitIdentity, Project
 from mic_sessions.shared.web import ApiException
@@ -242,7 +243,7 @@ class Workspaces:
             raise ApiException.bad_request("Invalid branch name")
 
     async def create_workspace(
-        self, project: Project, session_id: UUID, branch: str, token: str,
+        self, project: Project, session_id: UUID, branch: str, token: str, identity: GitIdentity,
     ) -> SessionWorkspace:
         await self.validate_branch(branch)
         await self.validate_branch(project.default_branch)
@@ -255,6 +256,8 @@ class Workspaces:
             path = directory / "repository"
             url = f"https://github.com/{project.full_name}.git"
             await self._git(*_NO_CREDENTIAL_HELPER, "clone", "--no-checkout", url, str(path), auth=token)
+            # Every agent, whatever its provider, commits as the player from its first turn on.
+            await self.set_identity(path, identity)
             remote = f"refs/remotes/origin/{branch}"
             if await self._git_ok("-C", str(path), "show-ref", "--verify", "--quiet", remote):
                 await self._git("-C", str(path), "checkout", "-B", branch, "--track", f"origin/{branch}")
@@ -403,7 +406,7 @@ class Workspaces:
             await self._git("-C", str(workspace), "add", "-A", extra_env=env)
             tree = (await self._git("-C", str(workspace), "write-tree", extra_env=env)).strip()
             return (await self._git("-C", str(workspace), "commit-tree", tree, "-p", "HEAD",
-                                    "-m", "Mooi snapshot", extra_env=env)).strip()
+                                    "-m", "chore: mooi snapshot", extra_env=env)).strip()
         finally:
             index.unlink(missing_ok=True)
 
@@ -445,8 +448,11 @@ class Workspaces:
 
         The push is a plain fast-forward of the fetched target: if someone pushed in between it is
         rejected, never forced. On success the session branch is moved onto the published commit,
-        so the workspace keeps working from what the target now holds.
+        so the workspace keeps working from what the target now holds. Every caller publishes through
+        here, so this is where the commit convention is enforced.
         """
+        if not conventional_commits.is_conventional(message):
+            raise ApiException.bad_request(f"The commit title must follow {conventional_commits.describe_rule()}")
         preview = await self.preview_merge(workspace, target, token)
         if preview.conflicts or preview.up_to_date:
             return preview, None
@@ -882,9 +888,9 @@ def get_workspaces() -> Workspaces:
 
 
 async def create_workspace(
-    project: Project, session_id: UUID, branch: str, token: str,
+    project: Project, session_id: UUID, branch: str, token: str, identity: GitIdentity,
 ) -> SessionWorkspace:
-    return await get_workspaces().create_workspace(project, session_id, branch, token)
+    return await get_workspaces().create_workspace(project, session_id, branch, token, identity)
 
 
 async def remove_workspace(session_id: UUID) -> None:

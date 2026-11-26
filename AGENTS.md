@@ -52,6 +52,16 @@ from it. Where they differ, this context wins over the current implementation (s
 
 - Many sessions per project, technically independent: each has its own branch and its own repository copy
   (worktree/clone), so features progress in parallel without interfering.
+- Every clone (development, production, backup and factory sessions) commits as the user's linked GitHub
+  account, name and noreply email, configured by the platform when it clones, for every provider and
+  adapter. Every commit Mooi or its agents write follows **Conventional Commits**; the platform rejects any
+  other title it would publish.
+- **Merge from the chat**: asked to commit, push or merge, a session's agent runs the Merge button's own
+  operation: it writes the conventional title from the changes, the platform squashes and pushes with the
+  user's GitHub grant (no credential in the clone, nothing asked again) and every view shows the session
+  merged. Conflicts restart the session like the **Resolve conflicts** button: once the asking turn ends
+  (interrupted after a short grace), a fresh conversation gets the agentic-merge brief, resolves them and
+  merges with the same title.
 - Chat UX like Claude Code / Codex. Supported providers: **Claude** and **Codex**.
 - Live view of what the agent does and of changed files on the session branch.
 - Provider integration through **adapters** behind one provider-agnostic API: a provider may offer
