@@ -1,5 +1,6 @@
 # TODOs
 
+- [ ] Refactor mobile
 - [ ] Iconos pequeños
 - [/] Auto restart cuando rate limit
 - [/] Support child sessions
