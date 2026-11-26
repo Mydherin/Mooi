@@ -1,5 +1,6 @@
 # TODOs
 
+- [ ] Reordenar en mi projects view
 - [ ] Refactor mobile
 - [ ] Iconos pequeños
 - [/] Auto restart cuando rate limit
