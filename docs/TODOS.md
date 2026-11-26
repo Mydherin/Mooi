@@ -5,10 +5,10 @@
 - [ ] HOrario utc+1 en formato del cliente
 - [ ] Agregar nuevo proyecto, listado de busqueda libre con pestaña de mis proyectos, permite buscar cualquier repo publico de otro autor o privado con acceso, si no esta en mis personales antes de agregarlo a Mooi hace un fork
 - [ ] Listado de proyectos al crear la sesion por text input
+- [/] Support child sessions
 - [ ] Desvincular de Mooi proyecto
 - [ ] Soportar archivar proyectos
 - [ ] Esquinas blancas en favicon
-- [/] Support child sessions
 - [ ] Adjust at ui ux level properly the session context and 5 hour limit
 - [ ] When you ask the chat for something and chat makes a deterministic deployment in dev session, the deployment set up message appears, and it should not appers cause that message is always when you are setting up the deployment with the agent from fisrt time (triggered from chat or from button)
 - [ ] So times when I make production deployment it says fetching but it do not show more logs until I reload
