@@ -1,5 +1,6 @@
 # TODOs
 
+- [ ] Micrófono Pausa y evitar borrado en movil
 - [ ] Cuadro de texto menor en chat tras movimientos
 - [ ] Reordenar en mi projects view
 - [ ] Refactor mobile
