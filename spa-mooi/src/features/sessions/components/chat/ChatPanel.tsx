@@ -4,6 +4,7 @@ import type { SessionProvider } from '@/features/sessions/types/SessionProvider'
 import { CircleAlert, LoaderCircle } from 'lucide-react';
 import { ChatComposer } from '@/features/sessions/components/chat/ChatComposer';
 import { ChatMessageList } from '@/features/sessions/components/chat/ChatMessageList';
+import { LimitsWaitBar } from '@/features/sessions/components/chat/LimitsWaitBar';
 import { RecipesButton } from '@/features/recipes/components/RecipesButton';
 import type { SessionStreamState } from '@/features/sessions/lib/openSessionStream';
 import type { PreparedImage } from '@/features/sessions/types/PreparedImage';
@@ -28,6 +29,7 @@ interface ChatPanelProps {
   onClear: () => Promise<boolean>;
   onConfigurationChange: (configuration: SessionConfiguration) => void;
   onContextHandoverChange?: (percent: number | null) => void;
+  onLimitsResumeChange: (autoResume: boolean) => void;
   onAllowPermission: (requestId: string, updatedInput?: Record<string, unknown>) => void;
   onDenyPermission: (requestId: string, message?: string) => void;
   onAnswerQuestion: (requestId: string, answers: Record<string, string | string[]>) => void;
@@ -55,6 +57,7 @@ export const ChatPanel = ({
   onClear,
   onConfigurationChange,
   onContextHandoverChange,
+  onLimitsResumeChange,
   onAllowPermission,
   onDenyPermission,
   onAnswerQuestion,
@@ -107,6 +110,9 @@ export const ChatPanel = ({
         {actionError}
       </p>
     ) : null}
+
+    {session.limitsWait && session.status === 'ready'
+      ? <LimitsWaitBar wait={session.limitsWait} busy={busy} onAutoResumeChange={onLimitsResumeChange} /> : null}
 
     <ChatComposer
       key={`composer-${session.id}`}

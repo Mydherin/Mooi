@@ -12,6 +12,7 @@ export type SessionEventType =
   | 'session.compaction'
   | 'merge.completed'
   | 'session.opened'
+  | 'session.limits'
   | 'agent.activity'
   | 'message.user'
   | 'assistant.delta'

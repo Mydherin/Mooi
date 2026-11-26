@@ -1,3 +1,4 @@
+import type { LimitsWait } from '@/features/sessions/types/LimitsWait';
 import type { SessionUsage } from '@/features/sessions/types/SessionUsage';
 import { mergeDeployment } from './mergeDeployment';
 import type { DeploymentSetup } from '@/features/sessions/types/DeploymentSetup';
@@ -32,6 +33,7 @@ export const applySessionToSession = (session: Session, event: SessionEvent): Se
     patch.status = (data.status as SessionStatus | undefined) ?? session.status;
     patch.detail = (data.detail as string | null | undefined) ?? null;
     patch.recoverable = data.recoverable === true;
+    if (patch.status === 'failed' || patch.status === 'closed') patch.limitsWait = null;
     if (typeof data.workspacePath === 'string') {
       patch.workspacePath = data.workspacePath;
       patch.baseCommit = (data.baseCommit as string | null | undefined) ?? session.baseCommit;
@@ -54,8 +56,13 @@ export const applySessionToSession = (session: Session, event: SessionEvent): Se
     patch.deploymentSetup = (data.state as DeploymentSetup | null | undefined) ?? null;
   } else if (type === 'deployment.configured') {
     patch.deploymentConfigured = Boolean(data.configured);
+  } else if (type === 'session.limits') {
+    patch.limitsWait = (data.wait as LimitsWait | null | undefined) ?? null;
+  } else if (type === 'message.user') {
+    patch.limitsWait = null;
   } else if (type === 'session.cleared') {
     patch.pending = null;
+    patch.limitsWait = null;
     patch.usage = { ...session.usage, context: null };
     patch.deploymentSetup = null;
   } else if (type === 'turn.result') {

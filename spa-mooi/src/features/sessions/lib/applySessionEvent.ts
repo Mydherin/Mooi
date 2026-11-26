@@ -368,6 +368,9 @@ export const applySessionEvent = (state: SessionTranscriptState, event: SessionE
       if (data.kind === 'context_handover') {
         entries = [...closeOpenEntry(entries), { id: `handover-${seq}`, kind: 'notice', at, tone: 'info',
           title: 'Context handover', text: String(data.description ?? '') || null }];
+      } else if (data.kind === 'limits_resumed') {
+        entries = [...closeOpenEntry(entries), { id: `limits-${seq}`, kind: 'notice', at, tone: 'info',
+          title: 'Usage limits renewed', text: String(data.description ?? '') || null }];
       } else if (data.kind === 'merge_conflicts') {
         entries = [...closeOpenEntry(entries), { id: `conflicts-${seq}`, kind: 'notice', at, tone: 'info',
           title: 'Merge conflicts', text: String(data.description ?? '') || null }];

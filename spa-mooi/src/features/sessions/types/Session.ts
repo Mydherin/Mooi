@@ -1,6 +1,7 @@
 import type { SessionUsage } from './SessionUsage';
 import type { DeploymentSnapshot } from './DeploymentSnapshot';
 import type { DeploymentSetup } from './DeploymentSetup';
+import type { LimitsWait } from './LimitsWait';
 import type { FactoryBinding } from '@/features/factory/types/FactoryBinding';
 import type { AgentCapabilities } from '@/features/sessions/types/AgentCapabilities';
 import type { PendingRequest } from '@/features/sessions/types/PendingRequest';
@@ -48,4 +49,6 @@ export interface Session {
   title?: string | null;
   /** The session whose agent opened this one; null for sessions the player opened. */
   origin?: SessionOrigin | null;
+  /** Set while a turn stopped on spent provider usage limits waits for them to renew. */
+  limitsWait?: LimitsWait | null;
 }

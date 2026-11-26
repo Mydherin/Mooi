@@ -86,6 +86,11 @@ from it. Where they differ, this context wins over the current implementation (s
   work remains write a temporary `docs/progress/<date>-<task>.md` (request, done, in progress, pending,
   context) and point the root `AGENTS.md` at it, so a fresh conversation resumes without rediscovering
   anything and removes both once the task is done. Factory sessions keep their own checkpoints.
+- **Resume after usage limits**: a turn stopped by spent provider limits (development sessions, production
+  and backup chats) shows a notice with **Resume automatically** checked; the platform continues the
+  conversation itself right after the renewal the provider announced (one timer per wait, no polling),
+  live on every device. Unchecking it leaves the conversation to the user. Factory sessions pause and resume
+  through the factory.
 - A **Trace** tab, like Langfuse / LangSmith, shows every internal step of the agent: prompts, turns (one
   agent-loop iteration each: an LLM call with tokens, cache and context size, then the tools it requested),
   nested sub-agents, skills, hooks, injected context, compactions and errors, as a live timeline with an

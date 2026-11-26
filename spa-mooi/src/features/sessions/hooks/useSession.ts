@@ -13,6 +13,7 @@ import {
   sendSessionMessage,
   updateSessionConfiguration,
   updateSessionContextHandover,
+  updateSessionLimitsResume,
 } from '@/features/sessions/api/sessionsApi';
 import { seedSessionImage } from '@/features/sessions/lib/sessionImageCache';
 import type { PreparedImage } from '@/features/sessions/types/PreparedImage';
@@ -39,6 +40,7 @@ interface UseSession {
   modelError: string | null;
   updateConfiguration: (configuration: SessionConfiguration) => Promise<boolean>;
   updateContextHandover: (percent: number | null) => Promise<boolean>;
+  updateLimitsResume: (autoResume: boolean) => Promise<boolean>;
   clearActionError: () => void;
 }
 
@@ -250,6 +252,18 @@ export const useSession = (sessionId: string | undefined): UseSession => {
     [sessionId, runAction],
   );
 
+  const updateLimitsResume = useCallback(
+    (autoResume: boolean) => {
+      const current = useSessionsStore.getState().sessions.find((candidate) => candidate.id === sessionId);
+      if (!sessionId || !current?.limitsWait) return Promise.resolve(false);
+      return runAction(async () => {
+        const updated = await updateSessionLimitsResume(sessionId, autoResume);
+        useSessionsStore.getState().upsertSession(updated);
+      });
+    },
+    [sessionId, runAction],
+  );
+
   const clearActionError = useCallback(() => setActionError(null), []);
 
   return {
@@ -271,6 +285,7 @@ export const useSession = (sessionId: string | undefined): UseSession => {
     modelError,
     updateConfiguration,
     updateContextHandover,
+    updateLimitsResume,
     clearActionError,
   };
 };

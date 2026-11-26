@@ -22,6 +22,7 @@ const sessionPath = (sessionId: string) => `/sessions/${sessionId}`;
 const messagesPath = (sessionId: string) => `/sessions/${sessionId}/messages`;
 const imagePath = (sessionId: string, imageId: string) => `/sessions/${sessionId}/images/${imageId}`;
 const configurationPath = (sessionId: string) => `/sessions/${sessionId}/configuration`;
+const limitsResumePath = (sessionId: string) => `/sessions/${sessionId}/limits-resume`;
 const interruptPath = (sessionId: string) => `/sessions/${sessionId}/interrupt`;
 const recoverPath = (sessionId: string) => `/sessions/${sessionId}/recover`;
 const compactPath = (sessionId: string) => `/sessions/${sessionId}/compact`;
@@ -128,6 +129,17 @@ export const updateSessionContextHandover = async (sessionId: string, contextHan
     throw new Error(await apiErrorMessage(response, 'Could not change the context handover.'));
   }
 
+  return (await response.json()) as Session;
+};
+
+/** Whether a turn stopped on spent usage limits continues by itself once they renew. */
+export const updateSessionLimitsResume = async (sessionId: string, autoResume: boolean): Promise<Session> => {
+  const response = await sessionsFetch(limitsResumePath(sessionId), {
+    method: 'PUT',
+    headers: jsonHeaders,
+    body: JSON.stringify({ autoResume }),
+  });
+  if (!response.ok) throw new Error(await apiErrorMessage(response, 'Could not change the automatic resume.'));
   return (await response.json()) as Session;
 };
 

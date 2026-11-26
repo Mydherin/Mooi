@@ -33,7 +33,7 @@ from fastapi import APIRouter, Depends, Request, status
 from pydantic import BaseModel, Field
 
 from mic_sessions.features import sessions
-from mic_sessions.shared import factory_docs, factory_prompts, mooi, workspaces
+from mic_sessions.shared import factory_docs, factory_prompts, mooi, usage_limits, workspaces
 from mic_sessions.shared.agents import STATUS_FAILED, STATUS_READY, describe
 from mic_sessions.shared.auth import Caller, current_caller
 from mic_sessions.shared.env import get_settings
@@ -85,38 +85,6 @@ def _target_key(target: factory_docs.Target | None) -> tuple[str, str | None, st
 
 def _label(target: factory_docs.Target) -> str:
     return f"{target.phase.id}/{target.milestone.id}" if target.milestone else target.phase.id
-
-
-def _epoch(value: Any) -> float | None:
-    """A quota window's `resetsAt`: epoch seconds (or milliseconds) or an ISO 8601 date, as providers send it."""
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float)):
-        return float(value) / 1000 if value > 1e11 else float(value)
-    if isinstance(value, str) and value:
-        with suppress(ValueError):
-            parsed = datetime.fromisoformat(value)
-            return (parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)).timestamp()
-    return None
-
-
-def _quota_exhausted(quota: Any) -> tuple[bool, float | None]:
-    """Whether a provider usage window is spent (the same KPI every adapter reports), and when the last
-    spent one renews."""
-    if not isinstance(quota, dict):
-        return False, None
-    resets: list[float] = []
-    exhausted = False
-    for window in quota.values():
-        if not isinstance(window, dict):
-            continue
-        percent = window.get("percent")
-        if window.get("status") == "rejected" or (isinstance(percent, (int, float)) and not isinstance(percent, bool)
-                                                  and percent >= 100):
-            exhausted = True
-            if (reset := _epoch(window.get("resetsAt"))) is not None:
-                resets.append(reset)
-    return exhausted, max(resets) if resets else None
 
 
 def _confirmation_message(change: dict[str, Any]) -> str:
@@ -717,7 +685,7 @@ class FactoryRunner:
 
     def _check_limits(self, step: _Step, session: sessions.Session) -> bool:
         """Marks the step as stopped by provider limits when a quota window of its account is exhausted."""
-        exhausted, reset = _quota_exhausted(session.usage.get("quota"))
+        exhausted, reset = usage_limits.exhausted(session.usage.get("quota"))
         if exhausted:
             step.limits, step.limits_reset = True, reset
             step.stop = step.stop or "The provider's usage limits ran out; Mooi stopped the session and saved its work"

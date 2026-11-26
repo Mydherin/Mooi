@@ -37,7 +37,7 @@ import unicodedata
 import zipfile
 from collections.abc import Awaitable, Callable, Coroutine, Iterable, Sequence
 from contextlib import suppress
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
@@ -57,7 +57,16 @@ from pydantic import (
     model_validator,
 )
 
-from mic_sessions.shared import context_handover, factory_prompts, images, mooi, previews, traces, workspaces
+from mic_sessions.shared import (
+    context_handover,
+    factory_prompts,
+    images,
+    mooi,
+    previews,
+    traces,
+    usage_limits,
+    workspaces,
+)
 from mic_sessions.shared.agents import (
     PROVIDERS,
     RECOVERABLE_DETAIL,
@@ -126,6 +135,8 @@ EVENT_SESSION_COMPACTION = "session.compaction"
 EVENT_MERGE_COMPLETED = "merge.completed"
 # The agent opened another session from this one (see `agent_open_session`).
 EVENT_SESSION_OPENED = "session.opened"
+# A turn stopped on spent provider usage limits, or that wait ended (see `_watch_limits`).
+EVENT_SESSION_LIMITS = "session.limits"
 
 # --- wire contracts ---------------------------------------------------------------------------
 
@@ -556,6 +567,8 @@ class SessionPayload(BaseModel):
     title: str | None = None
     # The session whose agent opened this one (see `SessionOrigin`); null for sessions a player opened.
     origin: dict[str, Any] | None = None
+    # Set while a turn stopped on spent provider usage limits waits for them to renew (see `LimitsWait`).
+    limitsWait: dict[str, Any] | None = None
 
 
 class SessionsResponse(BaseModel):
@@ -617,6 +630,10 @@ class UpdateSessionConfigurationRequest(BaseModel):
 
 class ContextHandoverRequest(BaseModel):
     percent: int | None = Field(default=None, ge=context_handover.MIN_PERCENT, le=context_handover.MAX_PERCENT)
+
+
+class LimitsResumeRequest(BaseModel):
+    autoResume: bool
 
 
 class SendMessageResponse(BaseModel):
@@ -738,6 +755,27 @@ class SessionOrigin:
         return {"sessionId": str(self.session_id), "branch": self.branch}
 
 
+@dataclass(frozen=True)
+class LimitsWait:
+    """A turn stopped because the provider's usage limits ran out. With `auto_resume` (the default) the
+    platform continues the conversation by itself at `resume_at`, once the spent windows renew."""
+
+    # When the last spent window renews (epoch seconds); None when the provider did not say.
+    resets_at: float | None
+    resume_at: float
+    auto_resume: bool = True
+
+    def as_payload(self) -> dict[str, Any]:
+        return {"resetsAt": self.resets_at, "resumeAt": self.resume_at, "autoResume": self.auto_resume}
+
+    @classmethod
+    def from_payload(cls, data: Any) -> LimitsWait | None:
+        if not isinstance(data, dict):
+            return None
+        return cls(usage_limits.reset_epoch(data.get("resetsAt")), float(data["resumeAt"]),
+                   bool(data.get("autoResume", True)))
+
+
 @dataclass
 class Session:
     """One live pairing of player, project, provider and workspace.
@@ -823,6 +861,9 @@ class Session:
     conflict_resolution_task: asyncio.Task[None] | None = None
     # Set exactly while the session is READY, so a waiter wakes at the end of a turn without polling.
     ready: asyncio.Event = field(default_factory=asyncio.Event, repr=False)
+    # The turn stopped on spent provider limits (see `_watch_limits`); its timer resumes it at the renewal.
+    limits_wait: LimitsWait | None = None
+    limits_task: asyncio.Task[None] | None = None
 
     def to_payload(self) -> SessionPayload:
         descriptor = describe(self.provider)
@@ -861,6 +902,7 @@ class Session:
             factory=self.factory.as_payload() if self.factory is not None else None,
             title=self.title,
             origin=self.origin.as_payload() if self.origin is not None else None,
+            limitsWait=self.limits_wait.as_payload() if self.limits_wait is not None else None,
         )
 
 
@@ -1016,6 +1058,7 @@ def record(session: Session, type_: str, data: dict[str, Any]) -> Event:
 
     if type_ == "message.user":
         session.turn_id = uuid4().hex
+        session.limits_wait = None  # Whoever sent it (the user, the platform's resume) ends the wait.
     if type_ == EVENT_SESSION_STATUS and data.get("status") == STATUS_FAILED:
         data = {**data, "recoverable": _recoverable(session)}
     event = session.log.append(type_, {**data, "turnId": session.turn_id})
@@ -1032,6 +1075,7 @@ def record(session: Session, type_: str, data: dict[str, Any]) -> Event:
         if session.status in (STATUS_FAILED, "closed"):
             session.interactions.clear()
             session.pending = None
+            session.limits_wait = None
     elif type_ in (EVENT_PERMISSION_REQUEST, EVENT_QUESTION_REQUEST):
         kind = PENDING_KIND_PERMISSION if type_ == EVENT_PERMISSION_REQUEST else PENDING_KIND_QUESTION
         session.status = STATUS_WAITING
@@ -1055,6 +1099,9 @@ def record(session: Session, type_: str, data: dict[str, Any]) -> Event:
         session.platform_briefed = False
         session.deployment_setup = None
         session.context_handover_armed = True
+        session.limits_wait = None  # Nothing is left to continue.
+    elif type_ == EVENT_SESSION_LIMITS:
+        session.limits_wait = LimitsWait.from_payload(data.get("wait"))
     elif type_ == EVENT_DEPLOYMENT_SETUP:
         session.deployment_setup = data.get("state")
     elif type_ == EVENT_DEPLOYMENT_CONFIGURED:
@@ -1085,6 +1132,10 @@ def record(session: Session, type_: str, data: dict[str, Any]) -> Event:
         _notify_observers(session, type_, data)
     if type_ in ("session.usage", EVENT_SESSION_CONFIGURATION):
         _watch_context(session)
+    if type_ == EVENT_TURN_RESULT:
+        _watch_limits(session, data)
+    if session.limits_wait is None and session.limits_task is not None:
+        _cancel_limits_resume(session)
     return event
 
 
@@ -1166,6 +1217,85 @@ async def _after_turn(session: Session, action: Callable[[], Awaitable[None]], w
         else:
             with suppress(TimeoutError):
                 await asyncio.wait_for(session.ready.wait(), remaining)
+
+
+# --- usage limits resume --------------------------------------------------------------------------
+#
+# A turn of a plain session or a platform chat that fails on spent provider limits (the quota KPI every
+# adapter reports before its turn result) waits for them to renew: one timer per wait, set at the renewal
+# the provider announced, sends the resume brief like any message. No polling: a still spent account just
+# fails the resumed turn, which arms the next wait. Factory sessions pause and resume through their runner.
+
+# Provider and server clocks differ slightly: resuming a little after the announced renewal avoids a
+# resumed turn that fails on the very limit that was about to reset.
+_LIMITS_RESUME_MARGIN_SECONDS = 30.0
+# When the provider announced no future renewal, the wait tries again after this long.
+_LIMITS_RETRY_SECONDS = 600.0
+# A deployment start holds the session: the resume tries again shortly after.
+_LIMITS_BUSY_RETRY_SECONDS = 30.0
+_LIMITS_RESUME_MESSAGE = (
+    "[Mooi] The provider's usage limits ran out during your last turn and have renewed now. Continue the "
+    "task exactly where you stopped, without repeating work already done; check the working tree first if "
+    "you are unsure what your last step left behind.")
+
+
+def _watch_limits(session: Session, data: dict[str, Any]) -> None:
+    if data.get("terminalReason") != "error" or session.factory is not None or session.closing:
+        return
+    spent, reset = usage_limits.exhausted(session.usage.get("quota"))
+    if not spent:
+        return
+    now = time.time()
+    resume_at = reset + _LIMITS_RESUME_MARGIN_SECONDS if reset is not None and reset > now \
+        else now + _LIMITS_RETRY_SECONDS
+    record(session, EVENT_SESSION_LIMITS, {"wait": LimitsWait(reset, resume_at).as_payload()})
+    _schedule_limits_resume(session)
+
+
+def _schedule_limits_resume(session: Session) -> None:
+    _cancel_limits_resume(session)
+    wait = session.limits_wait
+    if wait is not None and wait.auto_resume and not session.closing:
+        session.limits_task = _spawn(session, _resume_after_limits(session, wait))
+
+
+def _cancel_limits_resume(session: Session) -> None:
+    """The resume itself ends its wait by sending the message: never cancel it from inside."""
+    task, session.limits_task = session.limits_task, None
+    if task is not None and task is not asyncio.current_task():
+        task.cancel()
+
+
+async def _resume_after_limits(session: Session, wait: LimitsWait) -> None:
+    await asyncio.sleep(max(0.0, wait.resume_at - time.time()))
+    async with session.operation_lock:
+        if session.closing or session.limits_wait is not wait:
+            return
+        if session.deployment.state == "starting":
+            record(session, EVENT_SESSION_LIMITS, {"wait": LimitsWait(
+                wait.resets_at, time.time() + _LIMITS_BUSY_RETRY_SECONDS).as_payload()})
+            _schedule_limits_resume(session)
+            return
+        if session.status != STATUS_READY:
+            record(session, EVENT_SESSION_LIMITS, {"wait": None})
+            return
+        record(session, "agent.activity", {
+            "kind": "limits_resumed",
+            "description": "The provider's usage limits renewed: Mooi continues the conversation.",
+        })
+        try:
+            caller = await _agent_caller(session)
+            if caller is None:
+                raise RuntimeError("the session has no caller to act for")
+            await _prepare_and_deliver(session, caller, _LIMITS_RESUME_MESSAGE)
+        except ApiException:
+            pass  # A failed delivery is already recorded on the session.
+        except Exception:
+            LOG.warning("Session %s could not resume after its usage limits", session.id, exc_info=True)
+            record(session, "error", {"message": "The conversation could not resume by itself after the usage "
+                                                 "limits renewed. Send a message to continue."})
+        if session.limits_wait is wait:
+            record(session, EVENT_SESSION_LIMITS, {"wait": None})
 
 
 # Callbacks of the Software Factory orchestrator, told about every event its sessions record (after the
@@ -1680,7 +1810,7 @@ EVENT_PROJECT_TODOS = "project.todos"
 _SUMMARY_EVENTS = frozenset({
     EVENT_SESSION_STATUS, EVENT_PERMISSION_REQUEST, EVENT_QUESTION_REQUEST, EVENT_PERMISSION_RESOLVED,
     EVENT_QUESTION_RESOLVED, EVENT_TURN_RESULT, EVENT_SESSION_CONFIGURATION, EVENT_SESSION_CLEARED,
-    EVENT_DEPLOYMENT_UPDATED, "deployment.setup", "deployment.configured", "merge.completed",
+    EVENT_DEPLOYMENT_UPDATED, "deployment.setup", "deployment.configured", "merge.completed", EVENT_SESSION_LIMITS,
 })
 
 
@@ -2051,6 +2181,21 @@ async def agent_save_context_handover(session_id: UUID, request: Request,
     _touch(session)
     _record_event(session, event)
     return ContextHandoverRequest(percent=session.context_handover)
+
+
+@router.put("/sessions/{session_id}/limits-resume")
+async def update_limits_resume(session_id: UUID, body: LimitsResumeRequest,
+                               caller: Annotated[Caller, Depends(current_caller)]) -> SessionPayload:
+    """The limit notice's checkbox: whether the stopped turn continues by itself once the limits renew."""
+    session = get_registry().get_for(caller, session_id)
+    wait = session.limits_wait
+    if wait is None or session.closing:
+        raise ApiException.conflict("The session is not waiting for its usage limits")
+    session.agent_caller = caller  # The resume acts for whoever chose it last.
+    if wait.auto_resume != body.autoResume:
+        record(session, EVENT_SESSION_LIMITS, {"wait": replace(wait, auto_resume=body.autoResume).as_payload()})
+        _schedule_limits_resume(session)
+    return session.to_payload()
 
 
 @router.post("/sessions/{session_id}/interrupt", status_code=status.HTTP_202_ACCEPTED)

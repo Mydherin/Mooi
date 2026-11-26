@@ -49,6 +49,7 @@ export const PlatformChatPanel = ({ sessionId, completion, loadingLabel }: Platf
           onCompact={chat.compact}
           onClear={chat.clearConversation}
           onConfigurationChange={(configuration) => void chat.updateConfiguration(configuration)}
+          onLimitsResumeChange={(autoResume) => void chat.updateLimitsResume(autoResume)}
           onAllowPermission={(requestId, updatedInput) => void chat.allowPermission(requestId, updatedInput)}
           onDenyPermission={(requestId, message) => void chat.denyPermission(requestId, message)}
           onAnswerQuestion={(requestId, answers) => void chat.answer(requestId, answers)}
