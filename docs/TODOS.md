@@ -1,7 +1,7 @@
 # TODOs
 
 - [/] Auto restart cuando rate limit
-- [/] HOrario utc+1 en formato del cliente
+- [ ] HOrario utc+1 en formato del cliente
 - [ ] Agregar nuevo proyecto, listado de busqueda libre con pestaña de mis proyectos, permite buscar cualquier repo publico de otro autor o privado con acceso, si no esta en mis personales antes de agregarlo a Mooi hace un fork
 - [ ] Listado de proyectos al crear la sesion por text input
 - [ ] Desvincular de Mooi proyecto
