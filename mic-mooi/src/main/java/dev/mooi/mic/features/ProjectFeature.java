@@ -2,7 +2,9 @@ package dev.mooi.mic.features;
 
 import java.time.Clock;
 import java.time.OffsetDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -11,6 +13,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -89,6 +92,16 @@ public class ProjectFeature {
                 request.webApplication());
     }
 
+    /**
+     * Re-reads every project's metadata from GitHub, on demand only: a rename, transfer or new
+     * default branch upstream reaches Mooi when the player asks, never through polling.
+     */
+    @PostMapping("/me/projects/refresh")
+    @Auth.Authenticated
+    public ProjectsResponse refreshProjects(Auth.Principal principal) {
+        return new ProjectsResponse(projectService.refresh(principal.player().id()));
+    }
+
     /** Only the player-owned setting is editable; GitHub metadata is never taken from a request body. */
     @PatchMapping("/me/projects/{projectId}")
     @Auth.Authenticated
@@ -140,6 +153,7 @@ public class ProjectFeature {
         private final Crypto.SecretBox secretBox;
         private final Clock clock;
         private final FactoryFeature.FactoryService factories;
+        private final TransactionTemplate transactions;
 
         /** Most recently added first: the list is read as a history of what the player brought in. */
         @Transactional(readOnly = true)
@@ -180,10 +194,62 @@ public class ProjectFeature {
             return save(playerId, repository, webApplication);
         }
 
+        /**
+         * Brings every project's GitHub metadata up to date, looked up by numeric id so a renamed or
+         * transferred repository is found under its new name.
+         *
+         * <p>GitHub is read outside any transaction, so no connection is held across network calls,
+         * and the rows are then rewritten in one short transaction from a fresh read: a setting the
+         * player changed meanwhile is kept. A repository GitHub no longer shows the player (deleted,
+         * or no longer granted) keeps its last known metadata rather than vanishing from the list.
+         */
+        public List<ProjectPayload> refresh(UUID playerId) {
+            List<Project> projects = projectRepository.findByPlayerIdOrderByAddedAtDesc(playerId);
+            if (!projects.isEmpty()) {
+                String token = accessToken(playerId);
+                Map<Long, Github.Repository> current = new HashMap<>();
+                for (Project project : projects) {
+                    try {
+                        current.put(project.getGithubRepoId(), oauthClient.fetchRepository(project.getGithubRepoId(), token));
+                    } catch (Github.GithubException exception) {
+                        if (!HttpStatus.NOT_FOUND.equals(exception.getStatusCode())) {
+                            throw exception;
+                        }
+                        Github.LOG.info("Repository {} is no longer reachable for player {}; keeping its metadata",
+                                project.getFullName(), playerId);
+                    }
+                }
+                transactions.executeWithoutResult(status -> projectRepository
+                        .findByPlayerIdOrderByAddedAtDesc(playerId)
+                        .forEach(project -> {
+                            Github.Repository repository = current.get(project.getGithubRepoId());
+                            if (repository != null) {
+                                if (!repository.fullName().equals(project.getFullName())) {
+                                    Github.LOG.info("Player {} repository {} is now {}", playerId,
+                                            project.getFullName(), repository.fullName());
+                                }
+                                applyMetadata(project, repository);
+                            }
+                        }));
+            }
+            return list(playerId);
+        }
+
         private ProjectPayload save(UUID playerId, Github.Repository repository, boolean webApplication) {
             Project project = new Project();
             project.setPlayerId(playerId);
             project.setGithubRepoId(repository.id());
+            applyMetadata(project, repository);
+            project.setWebApplication(webApplication);
+            project.setAddedAt(OffsetDateTime.now(clock));
+
+            Project saved = projectRepository.save(project);
+            Github.LOG.info("Player {} added repository {}", playerId, repository.fullName());
+            return toPayload(saved);
+        }
+
+        /** GitHub's columns only: the player's and the platform's own settings are never touched here. */
+        private static void applyMetadata(Project project, Github.Repository repository) {
             project.setOwner(repository.owner());
             project.setName(repository.name());
             project.setFullName(repository.fullName());
@@ -193,12 +259,6 @@ public class ProjectFeature {
             project.setHtmlUrl(repository.htmlUrl());
             project.setLanguage(repository.language());
             project.setStars(repository.stars());
-            project.setWebApplication(webApplication);
-            project.setAddedAt(OffsetDateTime.now(clock));
-
-            Project saved = projectRepository.save(project);
-            Github.LOG.info("Player {} added repository {}", playerId, repository.fullName());
-            return toPayload(saved);
         }
 
         /** Scoped by player like every other write: someone else's id reads as not found. */
@@ -223,21 +283,24 @@ public class ProjectFeature {
             }
         }
 
-        /** Refuses to delete a repository if its saved name now resolves to another GitHub id. */
+        /**
+         * Resolves the repository by GitHub id, never by its saved name: a renamed one is deleted under
+         * its current name, and another repository now holding the old name is never touched.
+         */
         @Transactional
         public void delete(UUID playerId, UUID projectId) {
             Project project = projectRepository.findByIdAndPlayerId(projectId, playerId)
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Project not found"));
             String token = accessToken(playerId);
-            Github.Repository current = oauthClient.fetchRepository(project.getOwner(), project.getName(), token);
+            Github.Repository current = oauthClient.fetchRepository(project.getGithubRepoId(), token);
             if (current.id() != project.getGithubRepoId()) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT,
                         "This repository has changed on GitHub. Refresh the project before deleting it");
             }
-            oauthClient.deleteRepository(project.getOwner(), project.getName(), token);
+            oauthClient.deleteRepository(current.owner(), current.name(), token);
             factories.forgetProject(project.getId());
             projectRepository.delete(project);
-            Github.LOG.info("Player {} deleted GitHub repository {}", playerId, project.getFullName());
+            Github.LOG.info("Player {} deleted GitHub repository {}", playerId, current.fullName());
         }
 
         @Transactional

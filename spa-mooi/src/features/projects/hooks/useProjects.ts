@@ -3,6 +3,7 @@ import {
   addProject,
   createProject,
   fetchProjects,
+  refreshProjects,
   removeProject,
 } from '@/features/projects/api/projectsApi';
 import type { Project } from '@/features/projects/types/Project';
@@ -20,6 +21,8 @@ interface UseProjects {
   create: (name: string, isPrivate: boolean, settings: ProjectSettings) => Promise<Project | null>;
   remove: (projectId: string) => Promise<boolean>;
   reload: () => void;
+  refreshing: boolean;
+  refresh: () => Promise<void>;
   clearActionError: () => void;
 }
 
@@ -36,6 +39,7 @@ export const useProjects = (): UseProjects => {
   const error = useProjectsStore((state) => state.error);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   const add = useCallback(async (fullName: string, settings: ProjectSettings): Promise<Project | null> => {
     setBusy(true);
@@ -100,7 +104,20 @@ export const useProjects = (): UseProjects => {
       });
   }, []);
 
+  // Like add and remove, a failed refresh keeps the list on screen and reports beside the button.
+  const refresh = useCallback(async (): Promise<void> => {
+    setRefreshing(true);
+    setActionError(null);
+    try {
+      useProjectsStore.getState().setProjects(await refreshProjects());
+    } catch (failure) {
+      setActionError((failure as Error).message);
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
+
   const clearActionError = useCallback(() => setActionError(null), []);
 
-  return { projects, status, error, busy, actionError, add, create, remove, reload, clearActionError };
+  return { projects, status, error, busy, actionError, add, create, remove, reload, refreshing, refresh, clearActionError };
 };

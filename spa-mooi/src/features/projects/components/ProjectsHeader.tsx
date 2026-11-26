@@ -54,8 +54,8 @@ export const ProjectsHeader = ({
           type="button"
           onClick={onRefresh}
           disabled={busy}
-          aria-label="Refresh projects"
-          title="Refresh projects"
+          aria-label="Refresh projects from GitHub"
+          title="Refresh projects from GitHub"
           className={iconAction}
         >
           <RefreshCw className={cn('size-4', busy && 'animate-spin')} />

@@ -19,6 +19,22 @@ export const fetchProjects = async (): Promise<Project[]> => {
 };
 
 /**
+ * Re-reads every project's metadata from GitHub by repository id, so a rename, transfer or new
+ * default branch upstream shows up. On demand only: the list is never polled.
+ */
+export const refreshProjects = async (): Promise<Project[]> => {
+  const response = await authenticatedFetch(`${PROJECTS_PATH}/refresh`, { method: 'POST' });
+
+  if (!response.ok) {
+    throw new Error(await apiErrorMessage(response, 'Could not refresh your projects from GitHub.'));
+  }
+
+  const body = (await response.json()) as ProjectsResponse;
+
+  return body.projects;
+};
+
+/**
  * Adds a repository by its `owner/name` plus the player's own settings, and nothing else.
  *
  * The client sends no GitHub metadata: the API reads the repository from GitHub with the player's

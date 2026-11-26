@@ -30,7 +30,7 @@ const Skeleton = () => (
  */
 export const ProjectsPage = () => {
   const { linked, resolved } = useGithubLinked();
-  const { projects, status, error, reload } = useProjects();
+  const { projects, status, error, reload, refreshing, refresh, actionError } = useProjects();
   const [query, setQuery] = useState('');
   const [isDialogOpen, setDialogOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -65,8 +65,8 @@ export const ProjectsPage = () => {
       <ProjectsHeader
         onAdd={() => setDialogOpen(true)}
         onCreate={() => setCreateOpen(true)}
-        onRefresh={reload}
-        busy={status === 'loading'}
+        onRefresh={() => void refresh()}
+        busy={status === 'loading' || refreshing}
         canAdd={linked}
         query={query}
         onQueryChange={setQuery}
@@ -83,6 +83,12 @@ export const ProjectsPage = () => {
       ) : null}
 
       <div className="mt-6">
+        {actionError ? (
+          <p role="alert" className="mb-4 rounded-card border border-danger/30 bg-danger-soft px-4 py-3.5 text-sm text-danger">
+            {actionError}
+          </p>
+        ) : null}
+
         {status === 'loading' && projects.length === 0 ? <Skeleton /> : null}
 
         {status === 'error' ? (

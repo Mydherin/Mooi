@@ -47,6 +47,9 @@ from it. Where they differ, this context wins over the current implementation (s
 - Signed-in devices stay signed in while used: a 30-day sliding refresh token in an `HttpOnly` cookie is
   renewed on every use; 30 days without use requires signing in again.
 - Add repositories to Mooi as projects; iterate on them from there.
+- Projects reference repositories by GitHub's numeric id, so renames and transfers never break them: the
+  Projects page's **Refresh** re-reads every project's metadata (name, owner, default branch...) from
+  GitHub on demand, never by polling.
 
 ## Development sessions
 

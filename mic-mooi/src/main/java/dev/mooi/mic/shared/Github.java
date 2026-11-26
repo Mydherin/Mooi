@@ -658,6 +658,14 @@ public class Github {
         }
 
         /**
+         * One repository by GitHub's numeric id, which survives renames and transfers: the way to
+         * learn a stored repository's current name when the old one may no longer answer.
+         */
+        public Repository fetchRepository(long id, String accessToken) {
+            return toRepository(readJson(get("/repositories/" + id, accessToken, "GET /repositories/" + id)));
+        }
+
+        /**
          * The entries of one directory on the repository's default branch, read with the player's
          * own grant. A missing directory answers like a missing repository: 404, for the caller to
          * word in its own terms.
