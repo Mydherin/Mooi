@@ -1,8 +1,8 @@
 # TODOs
 
 - [/] Refactor mobile
-- [ ] Ver correctamente las sesiones hijas
 - [ ] When you ask the chat for something and chat makes a deterministic deployment in dev session, the deployment set up message appears, and it should not appers cause that message is always when you are setting up the deployment with the agent from fisrt time (triggered from chat or from button)
+- [ ] Ver correctamente las sesiones hijas
 - [ ] Micrófono Pausa y evitar borrado en movil
 - [ ] Cuadro de texto menor en chat tras movimientos
 - [ ] Reordenar en mi projects view
