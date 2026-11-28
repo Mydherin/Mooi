@@ -1,4 +1,6 @@
 import type { SessionProvider } from '@/features/sessions/types/SessionProvider';
+import { Alert } from '@/shared/components/feedback/Alert';
+import { SelectField } from '@/shared/components/forms/select/SelectField';
 
 interface SessionModelFieldsProps {
   provider?: SessionProvider;
@@ -8,24 +10,21 @@ interface SessionModelFieldsProps {
   onEffortChange: (value: string) => void;
 }
 
+/** Model and reasoning effort from the provider's catalog; effort only when the model offers several. */
 export const SessionModelFields = ({ provider, model, effort, onModelChange, onEffortChange }: SessionModelFieldsProps) => {
   if (!provider) return null;
-  if (provider.unavailable) return <p role="alert" className="text-sm text-danger">{provider.unavailable}</p>;
+  if (provider.unavailable) return <Alert tone="danger">{provider.unavailable}</Alert>;
   const efforts = provider.models.find((entry) => entry.id === model)?.efforts ?? [];
-  const style = 'h-11 min-w-0 rounded-control border border-line bg-surface-2 px-3 text-sm text-ink outline-none focus:border-brand';
-  return <div className="grid grid-cols-2 gap-3 sm:gap-4">
-    <label className={`flex min-w-0 flex-col gap-2 ${efforts.length === 0 ? 'col-span-2' : ''}`}>
-      <span className="text-xs font-medium text-ink-muted">Model</span>
-      <select aria-label="Session model" className={style} value={model} onChange={(event) => onModelChange(event.target.value)}>
-        <option value="" disabled>Select a model</option>
-        {provider.models.map((entry) => <option key={entry.id} value={entry.id}>{entry.label}</option>)}
-      </select>
-    </label>
-    {efforts.length > 0 && <label className="flex min-w-0 flex-col gap-2">
-      <span className="text-xs font-medium text-ink-muted">Effort</span>
-      <select aria-label="Reasoning effort" className={style} value={effort} onChange={(event) => onEffortChange(event.target.value)}>
-        {efforts.map((entry) => <option key={entry} value={entry}>{entry}</option>)}
-      </select>
-    </label>}
-  </div>;
+
+  return (
+    <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
+      <SelectField label="Model" value={model || null} onChange={onModelChange} placeholder="Select a model"
+        fieldClassName={efforts.length === 0 ? 'sm:col-span-2' : undefined}
+        options={provider.models.map((entry) => ({ value: entry.id, label: entry.label, keywords: entry.id }))} />
+      {efforts.length > 0 ? (
+        <SelectField label="Effort" value={effort || null} onChange={onEffortChange}
+          options={efforts.map((entry) => ({ value: entry, label: entry.charAt(0).toUpperCase() + entry.slice(1) }))} />
+      ) : null}
+    </div>
+  );
 };

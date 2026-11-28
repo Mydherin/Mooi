@@ -65,7 +65,7 @@ export const AgentAccountRow = memo(({ connection, provider, busy, onAction }: A
         ]} />
       </div>
       {connection.stale || legacy ? (
-        <AgentAccountRepairNotice providerLabel={connection.label} stale={connection.stale} legacy={legacy}
+        <AgentAccountRepairNotice providerLabel={connection.label} stale={connection.stale}
           onSignInAgain={repairable ? act('signInAgain') : undefined} busy={busy} />
       ) : null}
     </li>

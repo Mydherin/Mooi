@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { Link2 } from 'lucide-react';
 import { Button } from '@/shared/components/actions/Button';
+import { Alert } from '@/shared/components/feedback/Alert';
+import { TextField } from '@/shared/components/forms/TextField';
 import { Dialog } from '@/shared/components/overlays/dialog/Dialog';
 
 interface AddRecipeMarketplaceDialogProps {
@@ -10,38 +12,36 @@ interface AddRecipeMarketplaceDialogProps {
   onAdd: (url: string) => Promise<boolean>;
 }
 
+const FORM_ID = 'add-recipe-marketplace';
+
+/** Links a GitHub repository with a `recipes/` folder of Markdown recipes, public or private. */
 export const AddRecipeMarketplaceDialog = ({ busy, actionError, onClose, onAdd }: AddRecipeMarketplaceDialogProps) => {
+  const input = useRef<HTMLInputElement>(null);
   const [url, setUrl] = useState('');
-  const submit = () => {
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
     if (!url.trim() || busy) return;
     void onAdd(url.trim()).then((added) => { if (added) onClose(); });
   };
 
   return (
-    <Dialog open onClose={onClose} title="Add recipe marketplace"
-      description="Link a GitHub repository your account can read, public or private, with a recipes folder of Markdown recipes."
+    <Dialog open onClose={onClose} title="Add recipe marketplace" dismissible={!busy} initialFocus={input}
+      description="A GitHub repository your account can read, with a recipes folder of Markdown recipes."
       footer={<>
         <Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
-        <Button variant="brand" type="submit" form="add-recipe-marketplace" disabled={busy || !url.trim()}>
-          {busy ? 'Checking repository…' : 'Add marketplace'}
-        </Button>
+        <Button variant="brand" type="submit" form={FORM_ID} loading={busy} disabled={!url.trim()}>Add marketplace</Button>
       </>}>
-      <form id="add-recipe-marketplace" className="flex flex-col gap-4" onSubmit={(event) => { event.preventDefault(); submit(); }}>
-        <label className="flex flex-col gap-2">
-          <span className="text-xs font-semibold text-ink-muted">Repository URL <span className="text-danger">*</span></span>
-          <span className="flex h-12 items-center gap-2 rounded-control border border-line bg-surface-2 px-3 focus-within:border-brand">
-            <Link2 className="size-4 shrink-0 text-ink-subtle" aria-hidden="true" />
-            <input value={url} onChange={(event) => setUrl(event.target.value)} maxLength={512} required autoFocus
-              inputMode="url" autoComplete="off" autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="https://github.com/owner/agent-recipes"
-              className="h-full min-w-0 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-ink-subtle" />
-          </span>
-        </label>
-        <div className="rounded-xl border border-line bg-surface-2/60 px-4 py-3 text-xs leading-relaxed text-ink-muted">
+      <form id={FORM_ID} className="flex flex-col gap-4" onSubmit={submit}>
+        <TextField ref={input} label="Repository URL" type="url" inputMode="url" value={url} onChange={setUrl} maxLength={512} required
+          autoComplete="off" autoCapitalize="none" spellCheck={false} enterKeyHint="go" placeholder="https://github.com/owner/agent-recipes"
+          leading={<Link2 aria-hidden className="size-4" />} />
+        <div className="rounded-control border border-line bg-surface-2 px-4 py-3 text-footnote text-ink-muted">
           <p className="font-semibold text-ink">Expected layout</p>
-          <pre className="mt-2 font-mono text-[11px] text-ink-subtle">{'recipes/\n  google_sso_login.md\n  rate_limiting.md'}</pre>
-          <p className="mt-2">Each recipe starts with a front matter holding its <code>name</code> and <code>description</code>.</p>
+          <pre className="mt-2 overflow-x-auto font-mono text-mono text-ink-subtle">{'recipes/\n  google_sso_login.md\n  rate_limiting.md'}</pre>
+          <p className="mt-2">Each recipe starts with a front matter holding its <code className="font-mono">name</code> and <code className="font-mono">description</code>.</p>
         </div>
-        {actionError ? <p role="alert" className="rounded-control border border-danger/30 bg-danger-soft px-4 py-2.5 text-sm text-danger">{actionError}</p> : null}
+        {actionError ? <Alert tone="danger">{actionError}</Alert> : null}
       </form>
     </Dialog>
   );

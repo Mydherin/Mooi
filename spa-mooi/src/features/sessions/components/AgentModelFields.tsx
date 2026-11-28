@@ -4,6 +4,9 @@ import { AgentAccountSelect } from '@/features/agents/components/AgentAccountSel
 import { AgentAdapterSelect } from '@/features/sessions/components/AgentAdapterSelect';
 import { SessionModelFields } from '@/features/sessions/components/SessionModelFields';
 import type { AgentModelChoice } from '@/features/sessions/hooks/useAgentModelChoice';
+import { Alert } from '@/shared/components/feedback/Alert';
+import { Spinner } from '@/shared/components/feedback/Spinner';
+import { buttonStyles } from '@/shared/styles/buttonStyles';
 
 interface AgentModelFieldsProps {
   choice: AgentModelChoice;
@@ -18,39 +21,25 @@ export const AgentModelFields = ({ choice, onLeave }: AgentModelFieldsProps) => 
 
   if (connections.length === 0) {
     return (
-      <div className="rounded-control border border-warning/30 bg-warning-soft px-4 py-3.5 text-sm leading-relaxed text-ink">
-        <p>
-          <span className="font-medium">Add an agent account first.</span>{' '}
-          <span className="text-ink-muted">A session needs one to run.</span>
-        </p>
-        <Link
-          to={`${ROUTES.account}?tab=agents`}
-          onClick={onLeave}
-          className="mt-2 inline-block font-medium text-brand underline-offset-4 hover:underline"
-        >
-          Go to account settings
-        </Link>
-      </div>
+      <Alert tone="warning" title="Add an agent account first"
+        action={<Link to={`${ROUTES.account}?tab=agents`} onClick={onLeave} className={buttonStyles('secondary', 'sm')}>Add account</Link>}>
+        A session needs a Claude or Codex account to run.
+      </Alert>
     );
   }
 
+  const defaultUnavailable = selectedProvider && !selectedProvider.unavailable && !selectedProvider.defaultModel
+    && selectedProvider.models.length > 0 && !model;
+
   return (
-    <div className="flex flex-col gap-4">
-      <label className="flex flex-col gap-2">
-        <span className="text-xs font-medium text-ink-muted">Agent account</span>
-        <AgentAccountSelect connections={connections} value={connectionId} onChange={setConnectionId} />
-      </label>
-
-      {adapters.length > 1 && <AgentAdapterSelect adapters={adapters} value={adapter} onChange={setAdapter} />}
-
+    <div className="flex min-w-0 flex-col gap-4">
+      <AgentAccountSelect connections={connections} value={connectionId} onChange={setConnectionId} />
+      {adapters.length > 1 ? <AgentAdapterSelect adapters={adapters} value={adapter} onChange={setAdapter} /> : null}
       <SessionModelFields provider={selectedProvider} model={model} effort={effort}
         onModelChange={selectModel} onEffortChange={setEffort} />
-      {selectedProvider && !selectedProvider.unavailable && !selectedProvider.defaultModel && selectedProvider.models.length > 0 && !model &&
-        <p role="status" className="rounded-xl border border-warning/30 bg-warning-soft px-3 py-2 text-xs text-ink">
-          The configured default model is unavailable. Select a model to continue.
-        </p>}
-      {catalogError ? <p role="alert" className="text-sm text-danger">{catalogError}</p> :
-        !selectedProvider ? <p role="status" className="text-xs text-ink-muted">Loading models…</p> : null}
+      {defaultUnavailable ? <Alert tone="warning">The configured default model is unavailable. Select a model to continue.</Alert> : null}
+      {catalogError ? <Alert tone="danger">{catalogError}</Alert>
+        : !selectedProvider ? <p role="status" className="flex items-center gap-2 text-footnote text-ink-muted"><Spinner /> Loading models…</p> : null}
     </div>
   );
 };

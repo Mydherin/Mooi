@@ -5,14 +5,13 @@ import { Alert } from '@/shared/components/feedback/Alert';
 interface AgentAccountRepairNoticeProps {
   providerLabel: string;
   stale: boolean;
-  legacy: boolean;
   busy: boolean;
   /** Absent when the provider's sign-in is not offered, so the account cannot be repaired here. */
   onSignInAgain?: () => void;
 }
 
 /** Why an account needs attention, and the in-place repair: its title and default choice are kept. */
-export const AgentAccountRepairNotice = ({ providerLabel, stale, legacy, busy, onSignInAgain }: AgentAccountRepairNoticeProps) => (
+export const AgentAccountRepairNotice = ({ providerLabel, stale, busy, onSignInAgain }: AgentAccountRepairNoticeProps) => (
   <div className="px-4 pb-3 sm:pl-17">
     <Alert tone="warning" title={stale ? `${providerLabel} signed this account out` : 'Linked with a deprecated token'}>
       <p className="text-ink-muted">
