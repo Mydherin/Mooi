@@ -1,8 +1,8 @@
 import { lazy, Suspense } from 'react';
 import { ExternalLink, FileWarning, Sparkles } from 'lucide-react';
 import type { TodoList } from '@/features/todos/types/TodoList';
-import { Button } from '@/shared/components/Button';
-import { Card } from '@/shared/components/Card';
+import { Button } from '@/shared/components/actions/Button';
+import { Card } from '@/shared/components/data-display/Card';
 import { buttonStyles } from '@/shared/styles/buttonStyles';
 
 const MarkdownContent = lazy(() => import('@/features/sessions/components/chat/MarkdownContent'));

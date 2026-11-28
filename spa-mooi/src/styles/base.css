@@ -1,0 +1,110 @@
+@layer base {
+  html {
+    color-scheme: light;
+  }
+
+  html.dark { color-scheme: dark; }
+
+  /* An app shell, not a document: the page never scrolls, bounces or zooms; #root fits the visible
+     viewport and every screen scrolls inside its own container. */
+  html,
+  body {
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
+  html {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    touch-action: manipulation;
+  }
+
+  body {
+    margin: 0;
+    min-width: 320px;
+    background-color: var(--canvas);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-feature-settings: 'ss01', 'cv11';
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    -webkit-touch-callout: none;
+  }
+
+  #root {
+    position: relative;
+    top: var(--app-offset);
+    height: var(--app-height, 100dvh);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  /* Every overlay (dialogs, sheets, menus, popovers, toasts, tooltips) renders here, above the app. */
+  #overlays {
+    position: relative;
+    z-index: var(--z-overlay);
+  }
+
+  /* Inner scrollers never chain their overscroll to the shell. */
+  [data-scroller] {
+    overscroll-behavior: contain;
+  }
+
+  /* Controls behave like native ones: a long press never selects their label or opens a preview. */
+  button, a, label, nav, [role="tab"], [role="menuitem"], [role="option"], [role="button"], img, svg {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  input, textarea, [contenteditable="true"] {
+    -webkit-touch-callout: default;
+    -webkit-user-select: text;
+    user-select: text;
+  }
+
+  button, a, input, textarea, select { touch-action: manipulation; }
+  button:not(:disabled), [role="tab"], [role="option"], [role="menuitem"] { cursor: pointer; }
+  input, textarea, select { min-width: 0; }
+  :focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+  :disabled { cursor: not-allowed; }
+  h1, h2, h3 { overflow-wrap: anywhere; text-wrap: balance; }
+  code, kbd, pre, samp { font-family: var(--font-mono); font-feature-settings: normal; }
+
+  ::selection {
+    background-color: color-mix(in oklab, var(--brand) 32%, transparent);
+  }
+
+  * {
+    scrollbar-color: var(--line-strong) transparent;
+    scrollbar-width: thin;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    border: 3px solid transparent;
+    border-radius: 9999px;
+    background-clip: content-box;
+    background-color: var(--line-strong);
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--ink-subtle);
+  }
+}
+
+/* Keep typing readable and prevent automatic zoom on mobile Safari (any touch device). Selects keep
+   their compact size: they never raise the keyboard and `maximum-scale=1` already blocks their zoom. */
+@media (max-width: 639px), (pointer: coarse) {
+  input, textarea { font-size: 16px; }
+}

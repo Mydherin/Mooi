@@ -1,7 +1,7 @@
 import { Eraser } from 'lucide-react';
 import { ChatCompletionBar } from '@/features/sessions/components/chat/ChatCompletionBar';
 import type { Session } from '@/features/sessions/types/Session';
-import { Button } from '@/shared/components/Button';
+import { Button } from '@/shared/components/actions/Button';
 
 interface DeploymentTestedBarProps {
   session: Session;

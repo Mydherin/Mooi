@@ -11,7 +11,7 @@ import { countTodos } from '@/features/todos/lib/countTodos';
 import { keptTodosRevision } from '@/features/todos/lib/keptTodosRevision';
 import type { TodoFilter } from '@/features/todos/types/TodoFilter';
 import type { TodoList } from '@/features/todos/types/TodoList';
-import { Card } from '@/shared/components/Card';
+import { Card } from '@/shared/components/data-display/Card';
 import { cn } from '@/shared/utils/cn';
 
 const emptyFilter: Record<TodoFilter, string> = {

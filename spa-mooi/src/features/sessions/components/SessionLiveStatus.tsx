@@ -1,7 +1,7 @@
 import { sessionDisplayStatus } from '@/features/sessions/lib/sessionDisplayStatus';
 import { sessionStatusLabel, sessionStatusPulses, sessionStatusTone } from '@/features/sessions/lib/sessionStatusTone';
 import type { Session } from '@/features/sessions/types/Session';
-import { StatusDot } from '@/shared/components/StatusDot';
+import { StatusDot } from '@/shared/components/data-display/StatusDot';
 import { cn } from '@/shared/utils/cn';
 
 interface SessionLiveStatusProps {

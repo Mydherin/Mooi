@@ -1,6 +1,6 @@
 import type { ChangeKind } from '@/features/sessions/types/ChangeKind';
 import type { ChangedFile } from '@/features/sessions/types/ChangedFile';
-import { FloatingTooltip } from '@/shared/components/FloatingTooltip';
+import { Tooltip } from '@/shared/components/overlays/tooltip/Tooltip';
 import { cn } from '@/shared/utils/cn';
 
 interface ChangedFileRowProps {
@@ -30,7 +30,7 @@ export const ChangedFileRow = ({ file, selected, onSelect }: ChangedFileRowProps
 
   return (
     <li>
-      <FloatingTooltip content={file.path}>
+      <Tooltip content={file.path} className="flex w-full">
       <button
         type="button"
         onClick={() => onSelect(file.path)}
@@ -57,7 +57,7 @@ export const ChangedFileRow = ({ file, selected, onSelect }: ChangedFileRowProps
         <span className="shrink-0 font-mono text-[10px] font-medium text-success">+{file.added}</span>
         <span className="shrink-0 font-mono text-[10px] font-medium text-danger">−{file.removed}</span>
       </button>
-      </FloatingTooltip>
+      </Tooltip>
     </li>
   );
 };

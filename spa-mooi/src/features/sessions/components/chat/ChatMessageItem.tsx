@@ -9,7 +9,7 @@ import { TurnFooter } from '@/features/sessions/components/chat/TurnFooter';
 import { groupTurnBlocks } from '@/features/sessions/lib/groupTurnBlocks';
 import type { AgentCapabilities } from '@/features/sessions/types/AgentCapabilities';
 import type { TranscriptEntry } from '@/features/sessions/types/TranscriptEntry';
-import { LogoMark } from '@/shared/components/LogoMark';
+import { LogoMark } from '@/shared/components/brand/LogoMark';
 import { formatTime } from '@/shared/utils/formatTime';
 
 const MarkdownContent = lazy(() => import('./MarkdownContent'));

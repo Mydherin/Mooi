@@ -1,7 +1,7 @@
 import { Hand, ZoomIn, ZoomOut } from 'lucide-react';
 import { PREVIEW_ZOOM_STEP } from '@/features/sessions/lib/previewViewports';
 import type { PreviewZoom } from '@/features/sessions/types/PreviewZoom';
-import { IconButton } from '@/shared/components/IconButton';
+import { IconButton } from '@/shared/components/actions/IconButton';
 
 interface PreviewZoomControlsProps {
   zoom: PreviewZoom;

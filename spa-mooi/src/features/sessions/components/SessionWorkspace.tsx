@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Activity, FolderTree, GitCompareArrows, MessagesSquare, Monitor } from 'lucide-react';
 import { PreviewPanel } from './preview/PreviewPanel';
-import { Tabs } from '@/shared/components/Tabs';
+import { Tabs } from '@/shared/components/navigation/Tabs';
 import type { TabItem } from '@/shared/types/TabItem';
 import { DeployLogsDrawer } from './deploy/DeployLogsDrawer';
 import { deploymentConsoleHidden } from '@/features/sessions/lib/deploymentConsoleHidden';

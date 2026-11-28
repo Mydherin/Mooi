@@ -6,9 +6,9 @@ import { RecipePreview } from '@/features/recipes/components/RecipePreview';
 import { useMarketplaceRecipes } from '@/features/recipes/hooks/useMarketplaceRecipes';
 import { matchesRecipeQuery } from '@/features/recipes/lib/matchesRecipeQuery';
 import { recipePrompt } from '@/features/recipes/lib/recipePrompt';
-import { Button } from '@/shared/components/Button';
-import { Modal } from '@/shared/components/Modal';
-import { SearchInput } from '@/shared/components/SearchInput';
+import { Button } from '@/shared/components/actions/Button';
+import { Dialog } from '@/shared/components/overlays/dialog/Dialog';
+import { SearchInput } from '@/shared/components/forms/SearchInput';
 import { iconAction } from '@/shared/styles/iconAction';
 import { cn } from '@/shared/utils/cn';
 import { useRecipesStore } from '@/stores/recipesStore';
@@ -51,7 +51,7 @@ export const RecipesDialog = ({ onClose, initialMarketplaceId, onApply, applyDis
   };
 
   return (
-    <Modal open onClose={onClose} size="xl" title={onApply ? 'Apply a recipe' : 'Recipes'}
+    <Dialog open onClose={onClose} size="xl" title={onApply ? 'Apply a recipe' : 'Recipes'}
       description={onApply
         ? 'Pick a recipe and the agent adapts it to this project. Applying one again reviews and completes it.'
         : 'Reusable implementation recipes from your marketplaces.'}
@@ -98,6 +98,6 @@ export const RecipesDialog = ({ onClose, initialMarketplaceId, onApply, applyDis
 
         {state.status === 'error' && state.recipes.length > 0 ? <p role="alert" className="text-sm text-danger">{state.error}</p> : null}
       </div>
-    </Modal>
+    </Dialog>
   );
 };

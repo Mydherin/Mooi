@@ -8,7 +8,7 @@ import { ProfileCard } from '@/features/account/components/ProfileCard';
 import { AgentConnectionsCard } from '@/features/agents/components/AgentConnectionsCard';
 import { GithubConnectionCard } from '@/features/github/components/GithubConnectionCard';
 import { RecipeMarketplacesCard } from '@/features/recipes/components/RecipeMarketplacesCard';
-import { Tabs } from '@/shared/components/Tabs';
+import { Tabs } from '@/shared/components/navigation/Tabs';
 import type { TabItem } from '@/shared/types/TabItem';
 import { useAuthStore } from '@/stores/authStore';
 

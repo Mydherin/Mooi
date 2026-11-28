@@ -1,177 +1,24 @@
-import { isProviderPlaceholder } from './isProviderPlaceholder';
 import { DEPLOYMENT_LOG_LIMIT } from './deploymentLogLimit';
-import type { SessionPendingRequest } from '@/features/sessions/types/SessionPendingRequest';
-import type { AgentQuestion } from '@/features/sessions/types/AgentQuestion';
+import { emptyTranscriptState } from './transcript/emptyTranscriptState';
+import { activityNotice, clearedNotice, compactionNotice, mergeNotice, settleProgressNotices } from './transcript/noticeEntries';
+import { permissionRequest, questionRequest, requestText, resolutionText, withPendingRequest } from './transcript/pendingRequests';
+import {
+  closeOpenEntry,
+  isOpenAssistantEntry,
+  newTurnEntry,
+  withOpenedSessionBlock,
+  withResolvedStep,
+  withStepBlock,
+  withTextBlock,
+} from './transcript/turnEntries';
 import type { ChangesSummary } from '@/features/sessions/types/ChangesSummary';
 import type { ImageAttachment } from '@/features/sessions/types/ImageAttachment';
-import type { OpenedSession } from '@/features/sessions/types/OpenedSession';
 import type { SessionEvent } from '@/features/sessions/types/SessionEvent';
 import type { SessionTranscriptState } from '@/features/sessions/types/SessionTranscriptState';
-import type { TranscriptBlock } from '@/features/sessions/types/TranscriptBlock';
-import type { TranscriptEntry } from '@/features/sessions/types/TranscriptEntry';
-import type { TranscriptStep } from '@/features/sessions/types/TranscriptStep';
 
-/**
- * A fresh transcript always starts at `seq` 0 — even for a session that already has history —
- * because the client has replayed nothing yet: `useSessionStream` opens with `after: 0`, and the
- * server's replay reconstructs every entry from scratch. Only a stream that drops and
- * reconnects mid-mount resumes from a later `seq`, and that resume lives inside
- * `openSessionStream` itself, not here.
- */
-export const emptyTranscriptState = (): SessionTranscriptState => ({
-  pane: 'conversation',
-  previewOpenedOperationId: null,
-  deploymentLog: [],
-  deploymentLogOpen: false,
-  entries: [],
-  pending: [],
-  changes: null,
-  changesStatus: 'idle',
-  changesError: null,
-  changesEventSeq: 0,
-  lastMerge: null,
-  lastSeq: 0,
-  streamState: 'closed',
-});
+export { emptyTranscriptState };
 
-type AssistantEntry = Extract<TranscriptEntry, { kind: 'assistant' }>;
-type TextLikeBlock = Extract<TranscriptBlock, { kind: 'text' | 'thinking' }>;
-
-const isOpenAssistantEntry = (entry: TranscriptEntry | undefined): entry is AssistantEntry =>
-  entry !== undefined && entry.kind === 'assistant' && entry.streaming;
-
-const isTextLikeBlock = (block: TranscriptBlock): block is TextLikeBlock =>
-  block.kind === 'text' || block.kind === 'thinking';
-
-const newTurnEntry = (seq: number, at: string, blocks: TranscriptBlock[]): AssistantEntry => ({
-  id: `turn-${seq}`,
-  kind: 'assistant',
-  at,
-  streaming: true,
-  blocks,
-  result: null,
-});
-
-/** Closes the currently open turn, if any — a no-op when the last entry is not an open assistant one. */
-const closeOpenEntry = (entries: TranscriptEntry[], patch: Partial<AssistantEntry> = {}): TranscriptEntry[] => {
-  const last = entries[entries.length - 1];
-
-  if (!isOpenAssistantEntry(last)) {
-    return entries;
-  }
-
-  return [...entries.slice(0, -1), { ...last, streaming: false,
-    blocks: last.blocks.map((block) => block.kind === 'step' && block.step.status === 'running'
-      ? { ...block, step: { ...block.step, status: 'failed', summary: 'Turn ended before a tool result was received.' } }
-      : block), ...patch }];
-};
-
-/**
- * Appends (`assistant.delta` / `thinking.delta`) or replaces (`assistant.message` /
- * `thinking.message`, the SDK's authoritative final text) one text/thinking block on the open turn,
- * starting a new turn entry when none is open.
- */
-const withTextBlock = (
-  entries: TranscriptEntry[],
-  seq: number,
-  at: string,
-  blockKind: 'text' | 'thinking',
-  messageId: string,
-  text: string,
-  mode: 'append' | 'replace',
-): TranscriptEntry[] => {
-  const empty = !text.trim() || (blockKind === 'text' && isProviderPlaceholder(text));
-  // A final empty block replaces any provisional placeholder received in deltas.
-  if (mode === 'replace' && empty) {
-    const last = entries[entries.length - 1];
-    if (!isOpenAssistantEntry(last)) return entries;
-    return [...entries.slice(0, -1), { ...last, blocks: last.blocks.filter((block) =>
-      !(isTextLikeBlock(block) && block.kind === blockKind && block.id === messageId)) }];
-  }
-  if (!text) return entries;
-
-  const buildBlocks = (blocks: TranscriptBlock[]): TranscriptBlock[] => {
-    const index = blocks.findIndex((block) => isTextLikeBlock(block) && block.kind === blockKind && block.id === messageId);
-    const lastBlock = blocks[index];
-
-    if (lastBlock && isTextLikeBlock(lastBlock) && lastBlock.kind === blockKind && lastBlock.id === messageId) {
-      const nextText = mode === 'append' ? lastBlock.text + text : text;
-      return blocks.map((block, i) => i === index ? { ...lastBlock, text: nextText } : block);
-    }
-
-    return [...blocks, { kind: blockKind, id: messageId, text }];
-  };
-
-  const last = entries[entries.length - 1];
-
-  if (isOpenAssistantEntry(last)) {
-    return [...entries.slice(0, -1), { ...last, blocks: buildBlocks(last.blocks) }];
-  }
-
-  return [...entries, newTurnEntry(seq, at, buildBlocks([]))];
-};
-
-const withStepBlock = (entries: TranscriptEntry[], seq: number, at: string, step: TranscriptStep): TranscriptEntry[] => {
-  const block: TranscriptBlock = { kind: 'step', step };
-  const last = entries[entries.length - 1];
-
-  if (isOpenAssistantEntry(last)) {
-    return [...entries.slice(0, -1), { ...last, blocks: last.blocks.some((item) => item.kind === 'step' && item.step.toolUseId === step.toolUseId) ? last.blocks : [...last.blocks, block] }];
-  }
-
-  return [...entries, newTurnEntry(seq, at, [block])];
-};
-
-/** A session the agent opened shows where it happened: inside the open turn, or as a turn of its own. */
-const withOpenedSessionBlock = (entries: TranscriptEntry[], seq: number, at: string, opened: OpenedSession): TranscriptEntry[] => {
-  const block: TranscriptBlock = { kind: 'session', id: `${seq}`, opened };
-  const last = entries[entries.length - 1];
-
-  if (isOpenAssistantEntry(last)) {
-    return [...entries.slice(0, -1), { ...last, blocks: [...last.blocks, block] }];
-  }
-
-  return [...entries, { ...newTurnEntry(seq, at, [block]), streaming: false }];
-};
-
-/** Finds the step by `toolUseId` — searching every turn, not just the open one, since a slow tool
- * can still be resolving after its turn has otherwise moved on. */
-const withResolvedStep = (
-  entries: TranscriptEntry[],
-  toolUseId: string,
-  status: 'done' | 'failed',
-  summary: string,
-  images: ImageAttachment[],
-): TranscriptEntry[] => {
-  for (let i = entries.length - 1; i >= 0; i -= 1) {
-    const entry = entries[i];
-
-    if (entry.kind !== 'assistant') {
-      continue;
-    }
-
-    const blockIndex = entry.blocks.findIndex((block) => block.kind === 'step' && block.step.toolUseId === toolUseId);
-
-    if (blockIndex === -1) {
-      continue;
-    }
-
-    const block = entry.blocks[blockIndex];
-
-    if (block.kind !== 'step') {
-      continue;
-    }
-
-    const nextBlocks = [...entry.blocks];
-    nextBlocks[blockIndex] = { kind: 'step', step: { ...block.step, status, summary, images } };
-
-    const nextEntries = [...entries];
-    nextEntries[i] = { ...entry, blocks: nextBlocks };
-    return nextEntries;
-  }
-
-  return entries;
-};
+const images = (value: unknown): ImageAttachment[] => Array.isArray(value) ? value as ImageAttachment[] : [];
 
 /**
  * The pure fold turning one SSE event into the next transcript state. Mirrors `record()` in
@@ -182,8 +29,8 @@ const withResolvedStep = (
  *
  * An `assistant` entry spans a whole turn, not a single SDK message: the Claude Agent SDK can emit
  * several internal `AssistantMessage`s before `turn.result` (text, then a tool call, then more
- * text), and their blocks all append, in order, to the same entry — whichever one is last in
- * `entries` while still `streaming`. Only one turn can run at a time in a session.
+ * text), and their blocks all append, in order, to the same entry (see `transcript/turnEntries`).
+ * Only one turn can run at a time in a session.
  */
 export const applySessionEvent = (state: SessionTranscriptState, event: SessionEvent): SessionTranscriptState => {
   const { seq, at, type, data } = event;
@@ -195,9 +42,8 @@ export const applySessionEvent = (state: SessionTranscriptState, event: SessionE
   if (type === 'session.sync') {
     if (seq < state.lastSeq) return state;
     const status = (data.session as { status?: string } | undefined)?.status;
-    return { ...state, lastSeq: seq, pending: data.pending as SessionPendingRequest[],
-      entries: status && status !== 'working' && status !== 'waiting'
-        ? closeOpenEntry(state.entries) : state.entries };
+    return { ...state, lastSeq: seq, pending: data.pending as SessionTranscriptState['pending'],
+      entries: status && status !== 'working' && status !== 'waiting' ? closeOpenEntry(state.entries) : state.entries };
   }
   if (seq <= state.lastSeq) return state;
   if (event.type === 'deployment.log') {
@@ -206,39 +52,30 @@ export const applySessionEvent = (state: SessionTranscriptState, event: SessionE
     return { ...state, lastSeq: seq, deploymentLog: current.some((batch) => batch.index === log.index) ? current
       : [...current, log].sort((a, b) => a.index - b.index).slice(-DEPLOYMENT_LOG_LIMIT) };
   }
-  let entries = state.entries;
-  let pending = state.pending;
-  let changes = state.changes;
-  let changesStatus = state.changesStatus;
-  let changesError = state.changesError;
-  let changesEventSeq = state.changesEventSeq;
-  let lastMerge = state.lastMerge;
+
+  const next: SessionTranscriptState = { ...state, lastSeq: seq };
+  const text = (blockKind: 'text' | 'thinking', id: string, value: string, mode: 'append' | 'replace') => {
+    next.entries = withTextBlock(next.entries, seq, at, blockKind, id, value, mode);
+  };
+  const changesPending = () => {
+    next.changesStatus = 'loading';
+    next.changesError = null;
+  };
 
   switch (type) {
-    case 'message.user': {
-      entries = closeOpenEntry(entries);
-      entries = [...entries, { id: String(data.messageId), kind: 'user', at, text: String(data.text ?? ''),
-        images: Array.isArray(data.images) ? data.images as ImageAttachment[] : [] }];
+    case 'message.user':
+      next.entries = [...closeOpenEntry(next.entries), { id: String(data.messageId), kind: 'user', at,
+        text: String(data.text ?? ''), images: images(data.images) }];
       break;
-    }
-    case 'assistant.delta': {
-      entries = withTextBlock(entries, seq, at, 'text', String(data.messageId), String(data.text ?? ''), 'append');
+    case 'assistant.delta':
+    case 'assistant.message':
+    case 'thinking.delta':
+    case 'thinking.message':
+      text(type.startsWith('thinking') ? 'thinking' : 'text', String(data.messageId), String(data.text ?? ''),
+        type.endsWith('delta') ? 'append' : 'replace');
       break;
-    }
-    case 'assistant.message': {
-      entries = withTextBlock(entries, seq, at, 'text', String(data.messageId), String(data.text ?? ''), 'replace');
-      break;
-    }
-    case 'thinking.delta': {
-      entries = withTextBlock(entries, seq, at, 'thinking', String(data.messageId), String(data.text ?? ''), 'append');
-      break;
-    }
-    case 'thinking.message': {
-      entries = withTextBlock(entries, seq, at, 'thinking', String(data.messageId), String(data.text ?? ''), 'replace');
-      break;
-    }
-    case 'tool.use': {
-      entries = withStepBlock(entries, seq, at, {
+    case 'tool.use':
+      next.entries = withStepBlock(next.entries, seq, at, {
         toolUseId: String(data.toolUseId),
         name: String(data.name),
         title: String(data.title ?? data.name),
@@ -248,53 +85,27 @@ export const applySessionEvent = (state: SessionTranscriptState, event: SessionE
         images: [],
       });
       break;
-    }
-    case 'tool.result': {
-      entries = withResolvedStep(
-        entries,
-        String(data.toolUseId),
-        data.isError ? 'failed' : 'done',
-        String(data.summary ?? ''),
-        Array.isArray(data.images) ? data.images as ImageAttachment[] : [],
-      );
-      changesStatus = 'loading';
-      changesError = null;
+    case 'tool.result':
+      next.entries = withResolvedStep(next.entries, String(data.toolUseId), data.isError ? 'failed' : 'done',
+        String(data.summary ?? ''), images(data.images));
+      changesPending();
       break;
-    }
-    case 'permission.request': {
-      entries = withTextBlock(entries, seq, at, 'text', `request-${data.requestId}`,
-        `Approval requested: ${String(data.title ?? data.toolName)}`, 'replace');
-      pending = [...pending.filter((request) => request.requestId !== String(data.requestId)), {
-        kind: 'permission',
-        requestId: String(data.requestId),
-        toolName: String(data.toolName),
-        title: String(data.title ?? data.toolName),
-        input: (data.input as Record<string, unknown> | undefined) ?? {},
-      }];
-      break;
-    }
+    case 'permission.request':
     case 'question.request': {
-      entries = withTextBlock(entries, seq, at, 'text', `request-${data.requestId}`,
-        ((data.questions as AgentQuestion[]) ?? []).map((question) => question.question).join('\n'), 'replace');
-      pending = [...pending.filter((request) => request.requestId !== String(data.requestId)), {
-        kind: 'question',
-        requestId: String(data.requestId),
-        questions: (data.questions as AgentQuestion[] | undefined) ?? [],
-      }];
+      const kind = type === 'permission.request' ? 'permission' : 'question';
+      text('text', `request-${data.requestId}`, requestText(data, kind), 'replace');
+      next.pending = withPendingRequest(next.pending, kind === 'permission' ? permissionRequest(data) : questionRequest(data));
       break;
     }
     case 'permission.resolved':
-    case 'question.resolved': {
-      entries = withTextBlock(entries, seq, at, 'text', `answer-${data.requestId}`,
-        data.answers ? Object.entries(data.answers as Record<string, string | string[]>).map(([question, answer]) => `**${question}**\n\n${Array.isArray(answer) ? answer.join(', ') : answer}`).join('\n\n') : `Decision: ${String(data.decision ?? 'resolved')}`, 'replace');
-      pending = pending.filter((request) => request.requestId !== String(data.requestId));
+    case 'question.resolved':
+      text('text', `answer-${data.requestId}`, resolutionText(data), 'replace');
+      next.pending = next.pending.filter((request) => request.requestId !== String(data.requestId));
       break;
-    }
     case 'turn.result': {
-      if (!isOpenAssistantEntry(entries[entries.length - 1])) {
-        entries = [...entries, newTurnEntry(seq, at, [])];
-      }
-      entries = closeOpenEntry(entries, {
+      const entries = isOpenAssistantEntry(next.entries[next.entries.length - 1])
+        ? next.entries : [...next.entries, newTurnEntry(seq, at, [])];
+      next.entries = closeOpenEntry(entries, {
         result: {
           terminalReason: (data.terminalReason as string | null | undefined) ?? null,
           subtype: (data.subtype as string | null | undefined) ?? null,
@@ -303,103 +114,65 @@ export const applySessionEvent = (state: SessionTranscriptState, event: SessionE
           usage: (data.usage as Record<string, unknown> | null | undefined) ?? null,
         },
       });
-      pending = [];
-      changesStatus = 'loading';
-      changesError = null;
+      next.pending = [];
+      changesPending();
       break;
     }
     case 'session.status': {
       const status = data.status as string | undefined;
-
-      if (status === 'failed' || status === 'closed') pending = [];
-      if (status !== 'working' && status !== 'waiting') {
-        entries = closeOpenEntry(entries);
-      }
-
+      if (status === 'failed' || status === 'closed') next.pending = [];
+      if (status !== 'working' && status !== 'waiting') next.entries = closeOpenEntry(next.entries);
       break;
     }
     case 'changes.updated': {
       const payload = data as unknown as ChangesSummary;
-      changesEventSeq = seq;
+      next.changesEventSeq = seq;
       if (payload.status === 'error') {
-        changesStatus = 'error';
-        changesError = payload.error ?? 'Could not calculate changes.';
+        next.changesStatus = 'error';
+        next.changesError = payload.error ?? 'Could not calculate changes.';
       } else {
-        changes = payload;
-        changesStatus = 'ready';
-        changesError = null;
+        next.changes = payload;
+        next.changesStatus = 'ready';
+        next.changesError = null;
       }
       break;
     }
-    case 'session.cleared': {
-      entries = [{ id: `cleared-${seq}`, kind: 'notice', at, tone: 'info', title: 'Conversation cleared',
-        text: 'The agent starts a fresh conversation for the next task.' }];
-      pending = [];
+    case 'session.cleared':
+      next.entries = [clearedNotice(seq, at)];
+      next.pending = [];
       break;
-    }
     case 'session.compaction': {
       const phase = String(data.phase);
-      const previous = phase === 'started' ? entries : entries.map((entry) =>
-        entry.kind === 'notice' && entry.tone === 'progress' ? { ...entry, tone: 'info' as const } : entry);
-      entries = [...closeOpenEntry(previous), { id: `compaction-${seq}`, kind: 'notice', at,
-        tone: phase === 'started' ? 'progress' : phase === 'completed' ? 'success' : 'info',
-        title: phase === 'started' ? 'Compacting context…' : phase === 'completed' ? 'Context compacted' : 'Compaction failed',
-        text: phase === 'started' ? 'Earlier messages stay visible while the agent condenses its context.'
-          : phase === 'completed' ? 'The agent now continues with a concise summary of earlier messages.'
-            : 'The earlier context is still available to the agent.' }];
+      const previous = phase === 'started' ? next.entries : settleProgressNotices(next.entries);
+      next.entries = [...closeOpenEntry(previous), compactionNotice(seq, at, phase)];
       break;
     }
-    case 'merge.completed': {
-      lastMerge = { targetBranch: String(data.targetBranch), commit: String(data.commit), seq };
-      entries = [...closeOpenEntry(entries), { id: `merge-${seq}`, kind: 'notice', at, tone: 'success',
-        title: `Merged into ${String(data.targetBranch)} · ${String(data.commit).slice(0, 7)}`, text: String(data.message ?? '') || null }];
+    case 'merge.completed':
+      next.lastMerge = { targetBranch: String(data.targetBranch), commit: String(data.commit), seq };
+      next.entries = [...closeOpenEntry(next.entries),
+        mergeNotice(seq, at, String(data.targetBranch), String(data.commit), String(data.message ?? '') || null)];
       break;
-    }
-    case 'session.opened': {
-      entries = withOpenedSessionBlock(entries, seq, at, {
+    case 'session.opened':
+      next.entries = withOpenedSessionBlock(next.entries, seq, at, {
         sessionId: String(data.sessionId),
         branch: String(data.branch),
         title: typeof data.title === 'string' && data.title ? data.title : null,
         prompt: String(data.prompt ?? ''),
       });
       break;
-    }
     case 'agent.activity': {
-      if (data.kind === 'context_handover') {
-        entries = [...closeOpenEntry(entries), { id: `handover-${seq}`, kind: 'notice', at, tone: 'info',
-          title: 'Context handover', text: String(data.description ?? '') || null }];
-      } else if (data.kind === 'limits_resumed') {
-        entries = [...closeOpenEntry(entries), { id: `limits-${seq}`, kind: 'notice', at, tone: 'info',
-          title: 'Usage limits renewed', text: String(data.description ?? '') || null }];
-      } else if (data.kind === 'merge_conflicts') {
-        entries = [...closeOpenEntry(entries), { id: `conflicts-${seq}`, kind: 'notice', at, tone: 'info',
-          title: 'Merge conflicts', text: String(data.description ?? '') || null }];
-      } else if (data.kind === 'conversation_reset') {
-        entries = withTextBlock(entries, seq, at, 'text', `activity-${seq}`,
-          String(data.description ?? data.summary ?? ''), 'replace');
-      }
+      const notice = activityNotice(seq, at, String(data.kind), String(data.description ?? '') || null);
+      if (notice) next.entries = [...closeOpenEntry(next.entries), notice];
+      else if (data.kind === 'conversation_reset') text('text', `activity-${seq}`, String(data.description ?? data.summary ?? ''), 'replace');
       break;
     }
-    case 'error': {
-      entries = [
-        ...closeOpenEntry(entries),
-        { id: `error-${seq}`, kind: 'error', at, text: String(data.message ?? 'Something went wrong') },
-      ];
+    case 'error':
+      next.entries = [...closeOpenEntry(next.entries),
+        { id: `error-${seq}`, kind: 'error', at, text: String(data.message ?? 'Something went wrong') }];
       break;
-    }
     default:
       break;
   }
 
-  return {
-    ...state,
-    entries,
-    pending,
-    changes,
-    changesStatus,
-    changesError,
-    changesEventSeq,
-    lastMerge,
-    lastSeq: seq,
-  };
+  return next;
 };

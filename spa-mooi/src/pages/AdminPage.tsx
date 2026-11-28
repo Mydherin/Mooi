@@ -2,7 +2,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Bot, Users } from 'lucide-react';
 import { AdminUsersPanel } from '@/features/admin/components/AdminUsersPanel';
 import { AdminAgentDefaults } from '@/features/agents/components/AdminAgentDefaults';
-import { Tabs } from '@/shared/components/Tabs';
+import { Tabs } from '@/shared/components/navigation/Tabs';
 
 const USERS_TAB = 'users';
 const AGENTS_TAB = 'agents';

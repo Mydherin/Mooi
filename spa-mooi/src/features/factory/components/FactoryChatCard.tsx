@@ -3,9 +3,9 @@ import { MessagesSquare, RotateCcw, SquareArrowOutUpRight } from 'lucide-react';
 import { sessionPath } from '@/app/paths';
 import { PlatformChatPanel } from '@/features/platform/components/PlatformChatPanel';
 import type { Session } from '@/features/sessions/types/Session';
-import { Button } from '@/shared/components/Button';
-import { Card } from '@/shared/components/Card';
-import { EmptyState } from '@/shared/components/EmptyState';
+import { Button } from '@/shared/components/actions/Button';
+import { Card } from '@/shared/components/data-display/Card';
+import { EmptyState } from '@/shared/components/feedback/EmptyState';
 import { buttonStyles } from '@/shared/styles/buttonStyles';
 
 interface FactoryChatCardProps {

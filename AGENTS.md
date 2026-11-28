@@ -82,6 +82,8 @@ User requests are what evolve Mooi, so every request also maintains this file, i
 - **Software Factory** end-to-end verification: when asked to continue it, read
   `docs/plans/software-factory/PHASE.md`, then follow its session protocol (first milestone not `done`:
   `10-e2e-verification`, which the user asked to test in the preview). Other requests ignore this pointer.
+- **SPA UI/UX refactor**: when asked to continue it, read `docs/plans/ui-refactor/PLAN.md` and resume from
+  its first unchecked phase. Other requests ignore this pointer.
 
 # Functional guidelines
 

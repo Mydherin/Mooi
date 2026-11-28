@@ -2,7 +2,7 @@ import { sessionDisplayStatus } from '@/features/sessions/lib/sessionDisplayStat
 import { sessionStatusLabel, sessionStatusPulses, sessionStatusTone } from '@/features/sessions/lib/sessionStatusTone';
 import type { DeploymentState } from '@/features/sessions/types/DeploymentState';
 import type { SessionStatus } from '@/features/sessions/types/SessionStatus';
-import { StatusDot } from '@/shared/components/StatusDot';
+import { StatusDot } from '@/shared/components/data-display/StatusDot';
 import { toneStyles } from '@/shared/styles/toneStyles';
 import { cn } from '@/shared/utils/cn';
 

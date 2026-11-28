@@ -5,9 +5,9 @@ import { RecipeMarketplaceRow } from '@/features/recipes/components/RecipeMarket
 import { RecipesDialog } from '@/features/recipes/components/RecipesDialog';
 import { useRecipeMarketplaces } from '@/features/recipes/hooks/useRecipeMarketplaces';
 import type { RecipeMarketplace } from '@/features/recipes/types/RecipeMarketplace';
-import { Button } from '@/shared/components/Button';
-import { Card } from '@/shared/components/Card';
-import { Modal } from '@/shared/components/Modal';
+import { Button } from '@/shared/components/actions/Button';
+import { Card } from '@/shared/components/data-display/Card';
+import { Dialog } from '@/shared/components/overlays/dialog/Dialog';
 
 /** The account's recipe marketplaces: link, browse and remove the repositories sessions apply recipes from. */
 export const RecipeMarketplacesCard = () => {
@@ -64,7 +64,7 @@ export const RecipeMarketplacesCard = () => {
 
       {browsing ? <RecipesDialog initialMarketplaceId={browsing} onClose={() => setBrowsing(null)} /> : null}
 
-      <Modal open={removing !== null} onClose={() => setRemoving(null)} title="Remove marketplace"
+      <Dialog open={removing !== null} onClose={() => setRemoving(null)} title="Remove marketplace"
         description={`Sessions stop offering the recipes of ${removing?.fullName ?? 'this repository'}. The repository on GitHub is not touched.`}
         footer={<>
           <Button variant="ghost" onClick={() => setRemoving(null)} disabled={busy}>Cancel</Button>
@@ -73,7 +73,7 @@ export const RecipeMarketplacesCard = () => {
           }}>Remove</Button>
         </>}>
         {removing && actionError ? <p role="alert" className="text-sm text-danger">{actionError}</p> : <p className="text-sm text-ink-muted">You can link it again at any time.</p>}
-      </Modal>
+      </Dialog>
     </Card>
   );
 };

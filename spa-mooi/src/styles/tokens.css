@@ -1,0 +1,176 @@
+/*
+ * Raw design tokens per theme. Components never read these directly: `theme.css` maps them to
+ * Tailwind utilities (`bg-surface`, `text-ink-muted`...). Every text/background pair used for
+ * text meets WCAG AA (4.5:1) on `surface`, `canvas` and `surface-2` in both themes.
+ */
+:root {
+  /* The app frame behind the sidebar; `canvas` is the content panel laid on it. */
+  --shell: #f2f2f5;
+  --canvas: #fafafb;
+  --surface: #ffffff;
+  --surface-2: #f4f4f6;
+  --surface-3: #e8e8ec;
+
+  --line: #e4e4e8;
+  --line-strong: #cfcfd6;
+
+  --ink: #0a0a0d;
+  --ink-muted: #4e4e57;
+  --ink-subtle: #686872;
+
+  --brand: #2a57f5;
+  --brand-strong: #1e41cf;
+  --brand-soft: #edf1ff;
+  --brand-ink: #ffffff;
+  --brand-from: #2f6bff;
+  --brand-to: #6d4dff;
+  /* The logo's orb: one vivid blue on both themes, so the mark never changes identity. */
+  --brand-vivid: #276ef1;
+
+  --contrast: #0a0a0d;
+  --contrast-ink: #ffffff;
+
+  --success: #04754a;
+  --warning: #855600;
+  --danger: #bf2419;
+  --info: #1e41cf;
+  --accent: #5a3ec2;
+
+  --success-dot: #10b981;
+  --warning-dot: #f5a524;
+  --danger-dot: #ef4444;
+  --info-dot: #3b82f6;
+  --accent-dot: #8b5cf6;
+
+  --success-soft: #e7f6ef;
+  --warning-soft: #fcf4e4;
+  --danger-soft: #fdeeec;
+  --info-soft: #edf1ff;
+  --accent-soft: #f2eefd;
+
+  /* Translucent bar material (tab bar, compact headers) and the scrim behind modal overlays. */
+  --material: color-mix(in oklab, var(--surface) 82%, transparent);
+  --scrim: rgb(9 9 11 / 0.42);
+
+  /* Elevation: light theme leans on soft, layered shadows; dark theme on borders and depth. */
+  --shadow-card: 0 1px 2px rgb(9 9 11 / 0.04), 0 1px 1px rgb(9 9 11 / 0.02);
+  --shadow-raised: 0 1px 2px rgb(9 9 11 / 0.05), 0 8px 24px -12px rgb(9 9 11 / 0.14);
+  --shadow-pop: 0 0 0 1px rgb(9 9 11 / 0.04), 0 4px 8px -2px rgb(9 9 11 / 0.06), 0 24px 56px -16px rgb(9 9 11 / 0.22);
+  --shadow-sheet: 0 -1px 0 rgb(9 9 11 / 0.04), 0 -16px 48px -12px rgb(9 9 11 / 0.2);
+  --shadow-brand: 0 1px 2px rgb(45 91 255 / 0.25), 0 8px 20px -8px rgb(79 70 255 / 0.55);
+  /* The soft halo of the app's backdrop, behind the panels. */
+  --glow-a: color-mix(in oklab, #2f6bff 9%, transparent);
+  --glow-b: color-mix(in oklab, #8b5cf6 7%, transparent);
+
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  /* Kept by `useAppViewport`: where the visible viewport starts and how tall it is. */
+  --app-offset: 0px;
+
+  /* Layout rhythm: page gutters grow with the screen; bars have fixed heights. */
+  --page-gutter: 1rem;
+  --bar-height: 3.5rem;
+  --tab-bar-height: 3.5rem;
+  /* Space the phone tab bar takes at the foot of the screen, home indicator included; 0 while hidden. */
+  --tab-bar-space: 0px;
+
+  /* Overlay layers, lowest to highest. Overlays live in `#overlays`, above the whole app. */
+  --z-sticky: 10;
+  --z-header: 30;
+  --z-nav: 40;
+  --z-overlay: 100;
+  --z-toast: 1;
+  --z-tooltip: 2;
+
+  /* Motion. Springs are approximated with `linear()`; browsers without it fall back to `ease`. */
+  --duration-instant: 90ms;
+  --duration-fast: 140ms;
+  --duration-base: 220ms;
+  --duration-slow: 320ms;
+  --duration-sheet: 420ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  /* The iOS sheet curve. */
+  --ease-sheet: cubic-bezier(0.32, 0.72, 0, 1);
+  /* A gentle spring with a hint of overshoot, for indicators and presses. */
+  --ease-spring: linear(0, 0.009, 0.035 2.1%, 0.141 4.4%, 0.723 12.9%, 0.938 16.7%, 1.017 19.4%, 1.067, 1.099 24.3%,
+    1.108 26%, 1.1 27.8%, 1.06 32.2%, 1.008 38.3%, 0.991 42.1%, 0.986 46.2%, 0.996 58.7%, 1);
+}
+
+@media (min-width: 640px) {
+  :root { --page-gutter: 1.5rem; }
+}
+
+@media (min-width: 1024px) {
+  :root { --page-gutter: 2rem; --bar-height: 3rem; }
+}
+
+/* With the keyboard up the home indicator is hidden behind it: no inset to keep clear. */
+[data-keyboard] {
+  --safe-bottom: 0px;
+}
+
+/* `data-tab-bar` is set by the app shell while the phone tab bar shows; it hides with the keyboard. */
+@media (max-width: 1023px) {
+  :root[data-tab-bar]:not([data-keyboard]) {
+    --tab-bar-space: calc(var(--tab-bar-height) + var(--safe-bottom));
+  }
+}
+
+.dark {
+  --shell: #050506;
+  --canvas: #0a0a0c;
+  --surface: #0f0f12;
+  --surface-2: #18181c;
+  --surface-3: #232329;
+
+  --line: #232328;
+  --line-strong: #35353d;
+
+  --ink: #f4f4f5;
+  --ink-muted: #ababb4;
+  --ink-subtle: #8b8b95;
+
+  --brand: #87a7ff;
+  --brand-strong: #b6c7ff;
+  --brand-soft: color-mix(in oklab, #3b6cff 20%, transparent);
+  --brand-ink: #0a1236;
+  --brand-from: #3b6cff;
+  --brand-to: #7c5cff;
+  --brand-vivid: #276ef1;
+
+  --contrast: #f4f4f5;
+  --contrast-ink: #09090b;
+
+  --success: #5ee0a8;
+  --warning: #fbc35a;
+  --danger: #ff8a80;
+  --info: #93b0ff;
+  --accent: #c3b4ff;
+
+  --success-dot: #10b981;
+  --warning-dot: #f5a524;
+  --danger-dot: #ef4444;
+  --info-dot: #3b82f6;
+  --accent-dot: #8b5cf6;
+
+  --success-soft: color-mix(in oklab, #10b981 15%, transparent);
+  --warning-soft: color-mix(in oklab, #f5a524 15%, transparent);
+  --danger-soft: color-mix(in oklab, #ef4444 17%, transparent);
+  --info-soft: color-mix(in oklab, #3b6cff 18%, transparent);
+  --accent-soft: color-mix(in oklab, #8b5cf6 20%, transparent);
+
+  --material: color-mix(in oklab, var(--surface) 76%, transparent);
+  --scrim: rgb(0 0 0 / 0.6);
+
+  --shadow-card: 0 0 0 0 transparent;
+  --shadow-raised: 0 1px 0 0 rgb(255 255 255 / 0.03) inset, 0 12px 32px -16px rgb(0 0 0 / 0.8);
+  --shadow-pop: 0 0 0 1px rgb(255 255 255 / 0.05), 0 24px 64px -12px rgb(0 0 0 / 0.85);
+  --shadow-sheet: 0 -1px 0 rgb(255 255 255 / 0.05), 0 -24px 64px -12px rgb(0 0 0 / 0.8);
+  --shadow-brand: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px -8px rgb(79 92 255 / 0.6);
+  --glow-a: color-mix(in oklab, #3b6cff 13%, transparent);
+  --glow-b: color-mix(in oklab, #7c5cff 10%, transparent);
+}

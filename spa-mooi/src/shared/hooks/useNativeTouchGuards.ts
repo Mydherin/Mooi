@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 
 /** Where a long press would open the browser's link/image menu instead of acting like an app. */
-const CONTROL_SELECTOR = 'a, button, img, svg, [role="button"], [role="tab"], [role="menuitem"], [role="link"]';
+const CONTROL_SELECTOR = 'a, button, img, svg, [role="button"], [role="tab"], [role^="menuitem"], [role="option"], [role="link"]';
 
 /**
  * Removes the browser-only gestures an installed app should not have: pinch zoom on iOS (which

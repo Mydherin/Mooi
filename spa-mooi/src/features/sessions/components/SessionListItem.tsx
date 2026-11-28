@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { ChevronRight, CornerDownRight, Factory, GitBranch } from 'lucide-react';
 import { sessionPath } from '@/app/paths';
 import { factoryRoleLabel } from '@/features/factory/lib/factoryRoleLabel';
-import { Badge } from '@/shared/components/Badge';
+import { Badge } from '@/shared/components/data-display/Badge';
 import { SessionStatusBadge } from '@/features/sessions/components/SessionStatusBadge';
 import { SessionAccountIdentity } from '@/features/sessions/components/SessionAccountIdentity';
 import { SessionUsageMeters } from '@/features/sessions/components/SessionUsageMeters';

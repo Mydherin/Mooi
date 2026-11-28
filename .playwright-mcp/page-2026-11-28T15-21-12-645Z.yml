@@ -1,0 +1,51 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e31]:
+    - main [ref=e33]:
+      - generic [ref=e34]:
+        - generic [ref=e35]:
+          - generic [ref=e36]:
+            - paragraph [ref=e37]: Projects
+            - heading "Your workspace" [level=1] [ref=e38]
+            - paragraph [ref=e39]: References to repositories you own. Mooi stores no code — only what it needs to recognise them.
+          - generic [ref=e40]:
+            - searchbox "Search projects" [ref=e45]
+            - generic [ref=e46]:
+              - button "Refresh projects from GitHub" [ref=e47] [cursor=pointer]
+              - button "Add repository" [ref=e53] [cursor=pointer]
+              - button "Create project" [ref=e57] [cursor=pointer]: New project
+        - generic [ref=e60]:
+          - paragraph [ref=e61]: All projects
+          - generic [ref=e62]: 1 project
+        - generic [ref=e64]:
+          - article [ref=e65]:
+            - link "MyTechInterview Mydherin/MyTechInterview Public No description on GitHub. main 1 Web app Added Nov 28, 2026" [ref=e66] [cursor=pointer]:
+              - /url: /preview/5i3mh42vcdh6ax4ulpgnc7pz4ch2uvhq/projects/1b59364a-fb56-4268-a45c-4975de0561e7
+              - generic [ref=e67]:
+                - generic [aria-hidden] [ref=e68]: My
+                - generic [ref=e69]:
+                  - heading "MyTechInterview" [level=3] [ref=e70]
+                  - paragraph [ref=e71]: Mydherin/MyTechInterview
+                - generic [ref=e72]: Public
+              - paragraph [ref=e73]: No description on GitHub.
+              - generic [ref=e74]:
+                - generic [ref=e75]: main
+                - generic [ref=e81]: "1"
+                - generic [ref=e84]: Web app
+              - generic [ref=e88]: Added Nov 28, 2026
+          - button "Add another repository Only what your GitHub authorisation can reach." [ref=e94] [cursor=pointer]:
+            - generic [ref=e97]: Add another repository
+            - generic [ref=e98]: Only what your GitHub authorisation can reach.
+    - navigation "Main" [ref=e99]:
+      - generic [ref=e100]:
+        - link "Projects" [ref=e101] [cursor=pointer]:
+          - /url: /preview/5i3mh42vcdh6ax4ulpgnc7pz4ch2uvhq/projects
+        - link "Sessions" [ref=e109] [cursor=pointer]:
+          - /url: /preview/5i3mh42vcdh6ax4ulpgnc7pz4ch2uvhq/sessions
+        - link "To-dos" [ref=e115] [cursor=pointer]:
+          - /url: /preview/5i3mh42vcdh6ax4ulpgnc7pz4ch2uvhq/todos
+        - link "Deployments" [ref=e121] [cursor=pointer]:
+          - /url: /preview/5i3mh42vcdh6ax4ulpgnc7pz4ch2uvhq/deployments
+        - button "More" [ref=e129] [cursor=pointer]
+  - generic:
+    - generic:
+      - list "Notifications"

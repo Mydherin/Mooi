@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { ArchiveRestore, LoaderCircle } from 'lucide-react';
 import type { Backup } from '@/features/backups/types/Backup';
-import { Button } from '@/shared/components/Button';
-import { Modal } from '@/shared/components/Modal';
+import { Button } from '@/shared/components/actions/Button';
+import { Dialog } from '@/shared/components/overlays/dialog/Dialog';
 import { formatDate } from '@/shared/utils/formatDate';
 import { formatRelativeTime } from '@/shared/utils/formatRelativeTime';
 import { formatTime } from '@/shared/utils/formatTime';
@@ -20,7 +20,7 @@ interface BackupRestoreDialogProps {
 export const BackupRestoreDialog = ({ backup, projectName, busy, error, onClose, onConfirm }: BackupRestoreDialogProps) => {
   const [understood, setUnderstood] = useState(false);
 
-  return <Modal open onClose={busy ? () => undefined : onClose} title="Restore into production"
+  return <Dialog open onClose={onClose} dismissible={!busy} title="Restore into production"
     description={`${projectName} · backup of ${formatDate(backup.startedAt)} at ${formatTime(backup.startedAt)}, release ${backup.releaseTag}.`}
     footer={<><Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
       <Button variant="danger" onClick={onConfirm} disabled={busy || !understood}>
@@ -38,5 +38,5 @@ export const BackupRestoreDialog = ({ backup, projectName, busy, error, onClose,
       <span>I understand production data will be replaced by this backup.</span>
     </label>
     {error ? <p role="alert" className="mt-4 rounded-control border border-danger/30 bg-danger-soft px-4 py-2.5 text-sm text-danger">{error}</p> : null}
-  </Modal>;
+  </Dialog>;
 };

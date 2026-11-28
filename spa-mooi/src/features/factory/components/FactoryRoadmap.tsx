@@ -4,9 +4,9 @@ import { FactoryMilestoneRow } from '@/features/factory/components/FactoryMilest
 import { countMilestones } from '@/features/factory/lib/countMilestones';
 import type { FactoryPhase } from '@/features/factory/types/FactoryPhase';
 import type { FactoryStep } from '@/features/factory/types/FactoryStep';
-import { Badge } from '@/shared/components/Badge';
-import { Card } from '@/shared/components/Card';
-import { Eyebrow } from '@/shared/components/Eyebrow';
+import { Badge } from '@/shared/components/data-display/Badge';
+import { Card } from '@/shared/components/data-display/Card';
+import { Eyebrow } from '@/shared/components/data-display/Eyebrow';
 import type { Tone } from '@/shared/types/Tone';
 import { cn } from '@/shared/utils/cn';
 

@@ -6,7 +6,7 @@ import { DiffLineRow } from '@/features/sessions/components/changes/DiffLineRow'
 import { parseUnifiedDiff } from '@/features/sessions/lib/parseUnifiedDiff';
 import type { DiffLine } from '@/features/sessions/types/DiffLine';
 import type { DiffPreview } from '@/features/sessions/types/DiffPreview';
-import { Button } from '@/shared/components/Button';
+import { Button } from '@/shared/components/actions/Button';
 import { useIncrementalCount } from '@/shared/hooks/useIncrementalCount';
 
 interface DiffViewProps {

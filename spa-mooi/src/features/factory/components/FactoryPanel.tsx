@@ -21,8 +21,8 @@ import { PlatformAgentDialog } from '@/features/platform/components/PlatformAgen
 import { PlatformDeleteDialog } from '@/features/platform/components/PlatformDeleteDialog';
 import type { PlatformChatRequest } from '@/features/platform/types/PlatformChatRequest';
 import type { Project } from '@/features/projects/types/Project';
-import { Card } from '@/shared/components/Card';
-import { EmptyState } from '@/shared/components/EmptyState';
+import { Card } from '@/shared/components/data-display/Card';
+import { EmptyState } from '@/shared/components/feedback/EmptyState';
 import { useLiveStore } from '@/stores/liveStore';
 import { useSessionsStore } from '@/stores/sessionsStore';
 

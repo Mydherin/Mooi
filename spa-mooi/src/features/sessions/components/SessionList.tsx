@@ -2,7 +2,7 @@ import { Plus } from 'lucide-react';
 import { SessionListItem } from '@/features/sessions/components/SessionListItem';
 import { sessionTree } from '@/features/sessions/lib/sessionTree';
 import type { Session } from '@/features/sessions/types/Session';
-import { Button } from '@/shared/components/Button';
+import { Button } from '@/shared/components/actions/Button';
 
 interface SessionListProps {
   sessions: Session[];

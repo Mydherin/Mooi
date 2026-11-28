@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { Eraser, LoaderCircle, Trash2 } from 'lucide-react';
 import type { Backup } from '@/features/backups/types/Backup';
-import { Button } from '@/shared/components/Button';
-import { Modal } from '@/shared/components/Modal';
+import { Button } from '@/shared/components/actions/Button';
+import { Dialog } from '@/shared/components/overlays/dialog/Dialog';
 import { formatDate } from '@/shared/utils/formatDate';
 import { formatTime } from '@/shared/utils/formatTime';
 
@@ -26,7 +26,7 @@ export const BackupDeleteDialog = ({ backup, canRunScript, onClose, onDelete, on
     catch (failure) { setError((failure as Error).message); setBusy(null); }
   };
 
-  return <Modal open onClose={busy ? () => undefined : onClose} title="Delete backup"
+  return <Dialog open onClose={onClose} dismissible={!busy} title="Delete backup"
     description={`Backup of ${formatDate(backup.startedAt)} at ${formatTime(backup.startedAt)}, release ${backup.releaseTag}.`}
     footer={<>
       <Button variant="ghost" onClick={() => void run('forget')} disabled={busy !== null} className="sm:mr-auto">
@@ -41,5 +41,5 @@ export const BackupDeleteDialog = ({ backup, canRunScript, onClose, onDelete, on
       {!canRunScript ? <li className="text-danger">delete.sh cannot run now: wait for the running operation, or set up backups again.</li> : null}
     </ul>
     {error ? <p role="alert" className="mt-4 rounded-control border border-danger/30 bg-danger-soft px-4 py-2.5 text-sm text-danger">{error}</p> : null}
-  </Modal>;
+  </Dialog>;
 };

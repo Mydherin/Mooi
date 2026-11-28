@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { Plus } from 'lucide-react';
 import { TodoTextArea } from '@/features/todos/components/TodoTextArea';
 import { normalizeTodoText } from '@/features/todos/lib/normalizeTodoText';
-import { Button } from '@/shared/components/Button';
+import { Button } from '@/shared/components/actions/Button';
 import { cn } from '@/shared/utils/cn';
 
 interface TodoComposerProps {

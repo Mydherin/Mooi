@@ -11,10 +11,10 @@ import { StartSessionDialog } from '@/features/sessions/components/overview/Star
 import { groupSessionsByProject } from '@/features/sessions/lib/groupSessionsByProject';
 import { matchesSessionQuery } from '@/features/sessions/lib/matchesSessionQuery';
 import { SESSION_FILTERS, sessionFilter } from '@/features/sessions/lib/sessionFilters';
-import { Button } from '@/shared/components/Button';
-import { Card } from '@/shared/components/Card';
-import { EmptyState } from '@/shared/components/EmptyState';
-import { Tabs } from '@/shared/components/Tabs';
+import { Button } from '@/shared/components/actions/Button';
+import { Card } from '@/shared/components/data-display/Card';
+import { EmptyState } from '@/shared/components/feedback/EmptyState';
+import { Tabs } from '@/shared/components/navigation/Tabs';
 import type { BackLink } from '@/shared/types/BackLink';
 import { useSessionsStore } from '@/stores/sessionsStore';
 

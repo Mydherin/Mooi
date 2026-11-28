@@ -4,8 +4,8 @@ import { deploymentPath } from '@/app/paths';
 import type { Project } from '@/features/projects/types/Project';
 import { DeploymentStateBadge } from '@/features/production/components/DeploymentStateBadge';
 import type { ProductionDeployment } from '@/features/production/types/ProductionDeployment';
-import { Badge } from '@/shared/components/Badge';
-import { Initials } from '@/shared/components/Initials';
+import { Badge } from '@/shared/components/data-display/Badge';
+import { Initials } from '@/shared/components/data-display/Initials';
 import { formatRelativeTime } from '@/shared/utils/formatRelativeTime';
 
 interface ProductionProjectCardProps {

@@ -6,7 +6,7 @@ import { TodoTextArea } from '@/features/todos/components/TodoTextArea';
 import { normalizeTodoText } from '@/features/todos/lib/normalizeTodoText';
 import type { TodoItem } from '@/features/todos/types/TodoItem';
 import type { TodoStatus } from '@/features/todos/types/TodoStatus';
-import { Badge } from '@/shared/components/Badge';
+import { Badge } from '@/shared/components/data-display/Badge';
 import { cn } from '@/shared/utils/cn';
 
 interface TodoRowProps {

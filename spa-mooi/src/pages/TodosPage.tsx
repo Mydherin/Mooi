@@ -5,9 +5,9 @@ import { ProjectTodosSection } from '@/features/todos/components/ProjectTodosSec
 import { TodoProjectFilter } from '@/features/todos/components/TodoProjectFilter';
 import { countTodos } from '@/features/todos/lib/countTodos';
 import { expandedTodoProjects } from '@/features/todos/lib/expandedTodoProjects';
-import { Button } from '@/shared/components/Button';
-import { Card } from '@/shared/components/Card';
-import { EmptyState } from '@/shared/components/EmptyState';
+import { Button } from '@/shared/components/actions/Button';
+import { Card } from '@/shared/components/data-display/Card';
+import { EmptyState } from '@/shared/components/feedback/EmptyState';
 import { formatCount } from '@/shared/utils/formatCount';
 import { useAuthStore } from '@/stores/authStore';
 import { useLiveStore } from '@/stores/liveStore';

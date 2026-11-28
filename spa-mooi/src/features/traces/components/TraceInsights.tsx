@@ -6,7 +6,7 @@ import { TraceModelTable } from '@/features/traces/components/TraceModelTable';
 import { TraceToolRanking } from '@/features/traces/components/TraceToolRanking';
 import { traceContextBars } from '@/features/traces/lib/traceContextBars';
 import type { AgentTrace } from '@/features/traces/types/AgentTrace';
-import { SegmentedControl } from '@/shared/components/SegmentedControl';
+import { SegmentedControl } from '@/shared/components/navigation/SegmentedControl';
 import { cn } from '@/shared/utils/cn';
 
 interface TraceInsightsProps {

@@ -3,10 +3,9 @@ import { countMilestones } from '@/features/factory/lib/countMilestones';
 import { factoryNeedsAttention } from '@/features/factory/lib/factoryNeedsAttention';
 import { FactoryStatusBadge } from '@/features/factory/components/FactoryStatusBadge';
 import type { Factory } from '@/features/factory/types/Factory';
-import { ActionsMenu } from '@/shared/components/ActionsMenu';
-import { Button } from '@/shared/components/Button';
-import { Card } from '@/shared/components/Card';
-import { MenuAction } from '@/shared/components/MenuAction';
+import { Button } from '@/shared/components/actions/Button';
+import { Card } from '@/shared/components/data-display/Card';
+import { Menu } from '@/shared/components/overlays/menu/Menu';
 import { cn } from '@/shared/utils/cn';
 
 interface FactoryHeaderProps {
@@ -55,10 +54,9 @@ export const FactoryHeader = ({ factory, busy, actionError, onPause, onResume, o
           <Button variant="ghost" size="sm" onClick={onOpenChat} ariaLabel="Open the factory chat">
             <MessagesSquare className="size-4" /><span className="max-sm:sr-only">Chat</span>
           </Button>
-          <ActionsMenu label="Factory actions">
-            {(dismiss) => <MenuAction icon={Trash2} label="Remove factory" tone="danger" disabled={running}
-              onClick={() => { dismiss(); onRemove(); }} />}
-          </ActionsMenu>
+          <Menu label="Factory actions" sections={[
+            { id: 'danger', items: [{ id: 'remove', label: 'Remove factory', icon: Trash2, destructive: true, disabled: running, onSelect: onRemove }] },
+          ]} />
         </span>
       </div>
 

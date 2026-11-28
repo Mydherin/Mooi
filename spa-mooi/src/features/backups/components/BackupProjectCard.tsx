@@ -4,8 +4,8 @@ import { backupPath } from '@/app/paths';
 import type { Backup } from '@/features/backups/types/Backup';
 import { DeploymentStateBadge } from '@/features/production/components/DeploymentStateBadge';
 import type { Project } from '@/features/projects/types/Project';
-import { Badge } from '@/shared/components/Badge';
-import { Initials } from '@/shared/components/Initials';
+import { Badge } from '@/shared/components/data-display/Badge';
+import { Initials } from '@/shared/components/data-display/Initials';
 import { formatRelativeTime } from '@/shared/utils/formatRelativeTime';
 
 interface BackupProjectCardProps {

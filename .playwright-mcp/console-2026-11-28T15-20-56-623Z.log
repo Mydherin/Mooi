@@ -1,0 +1,11 @@
+[     270ms] [ERROR] Failed to load resource: the server responded with a status of 401 () @ https://mooi.skypea.dev/preview/5i3mh42vcdh6ax4ulpgnc7pz4ch2uvhq/api/mooi/auth/refresh:1
+[  292468ms] [WARNING] No `HydrateFallback` element provided to render during initial hydration @ https://mooi.skypea.dev/preview/5i3mh42vcdh6ax4ulpgnc7pz4ch2uvhq/assets/index-D3lYNoT_.js:10
+[ 3296147ms] [ERROR] Failed to load resource: net::ERR_HTTP2_PROTOCOL_ERROR @ https://mooi.skypea.dev/preview/5i3mh42vcdh6ax4ulpgnc7pz4ch2uvhq/api/sessions/events?after=11:1
+[ 3297152ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://mooi.skypea.dev/preview/5i3mh42vcdh6ax4ulpgnc7pz4ch2uvhq/api/sessions/events?after=13:1
+[ 3652574ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://mooi.skypea.dev/preview/5i3mh42vcdh6ax4ulpgnc7pz4ch2uvhq/api/mooi/auth/refresh:1
+[ 3654577ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://mooi.skypea.dev/preview/5i3mh42vcdh6ax4ulpgnc7pz4ch2uvhq/api/mooi/auth/refresh:1
+[ 3658580ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://mooi.skypea.dev/preview/5i3mh42vcdh6ax4ulpgnc7pz4ch2uvhq/api/mooi/auth/refresh:1
+[ 3666584ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://mooi.skypea.dev/preview/5i3mh42vcdh6ax4ulpgnc7pz4ch2uvhq/api/mooi/auth/refresh:1
+[ 3682587ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://mooi.skypea.dev/preview/5i3mh42vcdh6ax4ulpgnc7pz4ch2uvhq/api/mooi/auth/refresh:1
+[ 3714591ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://mooi.skypea.dev/preview/5i3mh42vcdh6ax4ulpgnc7pz4ch2uvhq/api/mooi/auth/refresh:1
+[ 3774595ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://mooi.skypea.dev/preview/5i3mh42vcdh6ax4ulpgnc7pz4ch2uvhq/api/mooi/auth/refresh:1

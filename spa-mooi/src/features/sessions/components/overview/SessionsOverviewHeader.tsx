@@ -1,6 +1,6 @@
 import { Plus, RefreshCw } from 'lucide-react';
-import { Button } from '@/shared/components/Button';
-import { SearchInput } from '@/shared/components/SearchInput';
+import { Button } from '@/shared/components/actions/Button';
+import { SearchInput } from '@/shared/components/forms/SearchInput';
 import { cn } from '@/shared/utils/cn';
 
 interface SessionsOverviewHeaderProps {

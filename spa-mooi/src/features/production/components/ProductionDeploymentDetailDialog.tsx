@@ -6,8 +6,8 @@ import type { ProductionDeployment } from '@/features/production/types/Productio
 import type { ProductionDeploymentDetail } from '@/features/production/types/ProductionDeploymentDetail';
 import type { ProductionFiles } from '@/features/production/types/ProductionFiles';
 import { DeploymentStateBadge } from '@/features/production/components/DeploymentStateBadge';
-import { Button } from '@/shared/components/Button';
-import { Modal } from '@/shared/components/Modal';
+import { Button } from '@/shared/components/actions/Button';
+import { Dialog } from '@/shared/components/overlays/dialog/Dialog';
 import { cn } from '@/shared/utils/cn';
 import { formatDate } from '@/shared/utils/formatDate';
 import { formatDuration } from '@/shared/utils/formatDuration';
@@ -51,7 +51,7 @@ export const ProductionDeploymentDetailDialog = ({ deployment, projectName, onCl
   const content = selected === 'output' ? (detail?.logs.join('\n') || 'No output was recorded.') : files?.[selected] ?? '';
   const finished = deployment.finishedAt;
 
-  return <Modal open size="lg" onClose={deleting ? () => undefined : onClose} title={`${deployment.releaseTag} · ${projectName}`}
+  return <Dialog open size="lg" onClose={onClose} dismissible={!deleting} title={`${deployment.releaseTag} · ${projectName}`}
     description={`${formatDate(deployment.startedAt)} at ${formatTime(deployment.startedAt)}${finished ? ` · took ${formatDuration(deployment.startedAt, finished)}` : ''}`}
     footer={onDelete && deployment.state !== 'running' ? confirmDelete ? <>
       <Button variant="ghost" onClick={() => setConfirmDelete(false)} disabled={deleting}>Keep it</Button>
@@ -82,5 +82,5 @@ export const ProductionDeploymentDetailDialog = ({ deployment, projectName, onCl
             selected === 'output' ? 'bg-neutral-950 text-neutral-100' : 'border border-line bg-surface-2 text-ink')}>{content}</pre>
           {!files ? <p className="mt-3 text-xs text-ink-subtle">This attempt predates saved file snapshots.</p> : null}
         </div>}
-  </Modal>;
+  </Dialog>;
 };

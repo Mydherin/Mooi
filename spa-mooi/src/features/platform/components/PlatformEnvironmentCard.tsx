@@ -1,9 +1,9 @@
 import { KeyRound, Settings2 } from 'lucide-react';
 import { inheritedEnvironment } from '@/features/platform/lib/inheritedEnvironment';
 import type { PlatformEnvironmentVariable } from '@/features/platform/types/PlatformEnvironmentVariable';
-import { Button } from '@/shared/components/Button';
-import { Card } from '@/shared/components/Card';
-import { StatusDot } from '@/shared/components/StatusDot';
+import { Button } from '@/shared/components/actions/Button';
+import { Card } from '@/shared/components/data-display/Card';
+import { StatusDot } from '@/shared/components/data-display/StatusDot';
 
 interface PlatformEnvironmentCardProps {
   variables: PlatformEnvironmentVariable[];

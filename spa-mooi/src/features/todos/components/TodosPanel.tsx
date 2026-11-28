@@ -2,9 +2,9 @@ import { ExternalLink, ListTodo, RefreshCw } from 'lucide-react';
 import { TodoListEditor } from '@/features/todos/components/TodoListEditor';
 import { TodoSyncIndicator } from '@/features/todos/components/TodoSyncIndicator';
 import { useProjectTodos } from '@/features/todos/hooks/useProjectTodos';
-import { Card } from '@/shared/components/Card';
-import { EmptyState } from '@/shared/components/EmptyState';
-import { Eyebrow } from '@/shared/components/Eyebrow';
+import { Card } from '@/shared/components/data-display/Card';
+import { EmptyState } from '@/shared/components/feedback/EmptyState';
+import { Eyebrow } from '@/shared/components/data-display/Eyebrow';
 
 interface TodosPanelProps {
   projectId: string;

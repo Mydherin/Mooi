@@ -3,8 +3,8 @@ import { ProjectKindField } from '@/features/projects/components/ProjectKindFiel
 import { useProjectSettings } from '@/features/projects/hooks/useProjectSettings';
 import type { Project } from '@/features/projects/types/Project';
 import type { ProjectSettings } from '@/features/projects/types/ProjectSettings';
-import { Button } from '@/shared/components/Button';
-import { Modal } from '@/shared/components/Modal';
+import { Button } from '@/shared/components/actions/Button';
+import { Dialog } from '@/shared/components/overlays/dialog/Dialog';
 
 interface EditProjectDialogProps {
   project: Project;
@@ -33,7 +33,7 @@ export const EditProjectDialog = ({ project, onClose }: EditProjectDialogProps) 
   };
 
   return (
-    <Modal
+    <Dialog
       open
       onClose={onClose}
       size="lg"
@@ -60,6 +60,6 @@ export const EditProjectDialog = ({ project, onClose }: EditProjectDialogProps) 
           {error}
         </p>
       ) : null}
-    </Modal>
+    </Dialog>
   );
 };

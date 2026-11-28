@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { LoaderCircle, TriangleAlert } from 'lucide-react';
 import { ROUTES } from '@/app/routes';
 import { completeGithubAuthorization } from '@/features/github/api/githubApi';
-import { Card } from '@/shared/components/Card';
+import { Card } from '@/shared/components/data-display/Card';
 import { buttonStyles } from '@/shared/styles/buttonStyles';
 import { useGithubStore } from '@/stores/githubStore';
 

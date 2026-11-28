@@ -9,11 +9,11 @@ import { ProductionHistoryList } from '@/features/production/components/Producti
 import { ProductionProjectCard } from '@/features/production/components/ProductionProjectCard';
 import { useProductionDeployments } from '@/features/production/hooks/useProductionDeployments';
 import type { ProductionDeployment } from '@/features/production/types/ProductionDeployment';
-import { Button } from '@/shared/components/Button';
-import { Card } from '@/shared/components/Card';
-import { EmptyState } from '@/shared/components/EmptyState';
-import { SearchInput } from '@/shared/components/SearchInput';
-import { Tabs } from '@/shared/components/Tabs';
+import { Button } from '@/shared/components/actions/Button';
+import { Card } from '@/shared/components/data-display/Card';
+import { EmptyState } from '@/shared/components/feedback/EmptyState';
+import { SearchInput } from '@/shared/components/forms/SearchInput';
+import { Tabs } from '@/shared/components/navigation/Tabs';
 
 const HISTORY_TAB = 'history';
 

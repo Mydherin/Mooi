@@ -3,10 +3,10 @@ import type { Project } from '@/features/projects/types/Project';
 import { PRODUCTION_STAGE_VIEWS } from '@/features/production/lib/productionStageView';
 import type { ProductionStage } from '@/features/production/types/ProductionStage';
 import { ProductionSteps } from '@/features/production/components/ProductionSteps';
-import { Badge } from '@/shared/components/Badge';
-import { Button } from '@/shared/components/Button';
-import { Card } from '@/shared/components/Card';
-import { Initials } from '@/shared/components/Initials';
+import { Badge } from '@/shared/components/data-display/Badge';
+import { Button } from '@/shared/components/actions/Button';
+import { Card } from '@/shared/components/data-display/Card';
+import { Initials } from '@/shared/components/data-display/Initials';
 import { toneStyles } from '@/shared/styles/toneStyles';
 import { cn } from '@/shared/utils/cn';
 

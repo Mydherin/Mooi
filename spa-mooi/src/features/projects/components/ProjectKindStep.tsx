@@ -1,7 +1,7 @@
 import { ArrowLeft } from 'lucide-react';
 import type { GithubRepository } from '@/features/github/types/GithubRepository';
 import { ProjectKindField } from '@/features/projects/components/ProjectKindField';
-import { Initials } from '@/shared/components/Initials';
+import { Initials } from '@/shared/components/data-display/Initials';
 
 interface ProjectKindStepProps {
   repository: GithubRepository;

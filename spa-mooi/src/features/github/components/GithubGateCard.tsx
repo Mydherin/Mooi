@@ -1,7 +1,7 @@
 import { GithubConnectButton } from '@/features/github/components/GithubConnectButton';
 import { useGithubConnection } from '@/features/github/hooks/useGithubConnection';
-import { Card } from '@/shared/components/Card';
-import { GithubMark } from '@/shared/components/icons/GithubMark';
+import { GithubMark } from '@/shared/components/brand/GithubMark';
+import { Alert } from '@/shared/components/feedback/Alert';
 
 interface GithubGateCardProps {
   title: string;
@@ -19,31 +19,17 @@ export const GithubGateCard = ({ title, description }: GithubGateCardProps) => {
   const { status, error, connect } = useGithubConnection();
 
   return (
-    <Card className="relative overflow-hidden p-8 text-center sm:p-12">
-      <div
-        aria-hidden
-        className="pointer-events-none absolute -top-24 right-0 size-64 rounded-full bg-brand/15 blur-[110px]"
-      />
-
-      <div className="relative mx-auto flex max-w-md flex-col items-center">
-        <span className="flex size-12 items-center justify-center rounded-2xl bg-surface-2 text-ink">
-          <GithubMark className="size-6" />
-        </span>
-
-        <h2 className="mt-6 text-lg font-extrabold tracking-[-0.02em] text-balance text-ink sm:text-xl">
-          {title}
-        </h2>
-        <p className="mt-2.5 text-sm leading-relaxed text-ink-muted">{description}</p>
-
-        <div className="mt-7">
-          <GithubConnectButton onConnect={connect} busy={status === 'connecting'} />
-        </div>
-        {status === 'error' && error ? (
-          <p role="alert" className="mt-4 rounded-control border border-danger/30 bg-danger-soft px-4 py-2.5 text-sm text-danger">
-            {error}
-          </p>
-        ) : null}
+    <section className="relative flex animate-fade-up flex-col items-center overflow-hidden rounded-card border border-line bg-surface px-5 py-10 text-center shadow-card sm:px-10 sm:py-14">
+      <div aria-hidden className="pointer-events-none absolute inset-0 bg-dot-grid [mask-image:radial-gradient(ellipse_at_top,black,transparent_70%)]" />
+      <span className="relative flex size-14 items-center justify-center rounded-panel bg-contrast text-contrast-ink shadow-raised">
+        <GithubMark className="size-7" />
+      </span>
+      <h2 className="relative mt-5 max-w-md text-title text-balance text-ink">{title}</h2>
+      <p className="relative mt-2 max-w-md text-callout text-ink-muted">{description}</p>
+      <div className="relative mt-7 w-full sm:w-auto">
+        <GithubConnectButton onConnect={connect} busy={status === 'connecting'} fullWidth />
       </div>
-    </Card>
+      {status === 'error' && error ? <Alert tone="danger" className="relative mt-4 w-full max-w-md text-left">{error}</Alert> : null}
+    </section>
   );
 };

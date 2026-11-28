@@ -1,7 +1,7 @@
 import { Factory as FactoryIcon, FlaskConical, GitMerge, Hammer, Map as MapIcon, Sparkles } from 'lucide-react';
-import { Button } from '@/shared/components/Button';
-import { Card } from '@/shared/components/Card';
-import { Eyebrow } from '@/shared/components/Eyebrow';
+import { Button } from '@/shared/components/actions/Button';
+import { Card } from '@/shared/components/data-display/Card';
+import { Eyebrow } from '@/shared/components/data-display/Eyebrow';
 
 const STEPS = [
   { icon: MapIcon, title: 'Define it together', text: 'Scope, base decisions and ordered phases, in a chat with an architect agent. Nothing runs until you approve.' },

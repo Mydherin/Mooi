@@ -7,8 +7,8 @@ import { parseUnifiedDiff } from '@/features/sessions/lib/parseUnifiedDiff';
 import type { ChangesSummary } from '@/features/sessions/types/ChangesSummary';
 import type { DiffLine } from '@/features/sessions/types/DiffLine';
 import type { FileDiffPayload } from '@/features/sessions/types/FileDiffPayload';
-import { Button } from '@/shared/components/Button';
-import { SegmentedControl } from '@/shared/components/SegmentedControl';
+import { Button } from '@/shared/components/actions/Button';
+import { SegmentedControl } from '@/shared/components/navigation/SegmentedControl';
 import { cn } from '@/shared/utils/cn';
 
 type PlatformFiles = Record<string, string | null>;

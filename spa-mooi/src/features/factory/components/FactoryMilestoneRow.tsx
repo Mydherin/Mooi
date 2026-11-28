@@ -2,8 +2,8 @@ import { FlaskConical } from 'lucide-react';
 import { milestoneStatusLabel } from '@/features/factory/lib/milestoneStatusLabel';
 import { milestoneTone } from '@/features/factory/lib/milestoneTone';
 import type { FactoryMilestone } from '@/features/factory/types/FactoryMilestone';
-import { Badge } from '@/shared/components/Badge';
-import { StatusDot } from '@/shared/components/StatusDot';
+import { Badge } from '@/shared/components/data-display/Badge';
+import { StatusDot } from '@/shared/components/data-display/StatusDot';
 import { cn } from '@/shared/utils/cn';
 
 /** One milestone: its status, failed test cycles, and a pulse while a session works on it. */

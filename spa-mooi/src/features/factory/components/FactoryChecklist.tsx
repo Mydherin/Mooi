@@ -2,7 +2,7 @@ import { CircleAlert, CircleCheck, CircleDashed, ExternalLink } from 'lucide-rea
 import { factoryDocumentUrl } from '@/features/factory/lib/factoryDocumentUrl';
 import type { FactoryIssue } from '@/features/factory/types/FactoryIssue';
 import type { FactoryPlan } from '@/features/factory/types/FactoryPlan';
-import { Eyebrow } from '@/shared/components/Eyebrow';
+import { Eyebrow } from '@/shared/components/data-display/Eyebrow';
 
 const CORE = ['FACTORY.md', 'VISION.md', 'ARCHITECTURE.md', 'DECISIONS.md', 'ROADMAP.md'];
 

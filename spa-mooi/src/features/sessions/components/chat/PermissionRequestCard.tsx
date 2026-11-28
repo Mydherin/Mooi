@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ShieldAlert } from 'lucide-react';
 import type { SessionPendingRequest } from '@/features/sessions/types/SessionPendingRequest';
-import { Button } from '@/shared/components/Button';
+import { Button } from '@/shared/components/actions/Button';
 
 type PermissionPending = Extract<SessionPendingRequest, { kind: 'permission' }>;
 

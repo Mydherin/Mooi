@@ -1,11 +1,14 @@
-import { useState } from 'react';
-import { GitCommitHorizontal, LoaderCircle } from 'lucide-react';
+import { useRef, useState, type FormEvent } from 'react';
+import { GitCommitHorizontal } from 'lucide-react';
 import { COMMIT_TYPES, isConventionalCommit } from '@/features/sessions/lib/conventionalCommit';
 import type { ChangesSummary } from '@/features/sessions/types/ChangesSummary';
-import { Button } from '@/shared/components/Button';
-import { Modal } from '@/shared/components/Modal';
+import { Button } from '@/shared/components/actions/Button';
+import { Alert } from '@/shared/components/feedback/Alert';
+import { TextField } from '@/shared/components/forms/TextField';
+import { Dialog } from '@/shared/components/overlays/dialog/Dialog';
 
 interface MergeDialogProps {
+  open: boolean;
   targetBranch: string;
   branch: string;
   changes: ChangesSummary | null | undefined;
@@ -16,49 +19,44 @@ interface MergeDialogProps {
 }
 
 const MAX_TITLE = 200;
+const FORM_ID = 'merge-commit-form';
 
 /** Asks for the one mandatory input of a merge: the title of the single commit pushed to the target. */
-export const MergeDialog = ({ targetBranch, branch, changes, merging, error, onCancel, onCommit }: MergeDialogProps) => {
+export const MergeDialog = ({ open, targetBranch, branch, changes, merging, error, onCancel, onCommit }: MergeDialogProps) => {
   const [title, setTitle] = useState('');
-  const conventional = isConventionalCommit(title.trim());
-  const valid = title.trim().length > 0 && conventional;
-  const submit = () => {
-    if (valid && !merging) onCommit(title.trim());
+  const field = useRef<HTMLInputElement>(null);
+  const trimmed = title.trim();
+  const conventional = isConventionalCommit(trimmed);
+  const valid = trimmed.length > 0 && conventional;
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    if (valid && !merging) onCommit(trimmed);
   };
 
   return (
-    <Modal open onClose={merging ? () => undefined : onCancel} title={`Merge into ${targetBranch}`}
-      description={`No conflicts found. The changes of ${branch} land on ${targetBranch} as one commit, then it is pushed.`}
+    <Dialog open={open} onClose={onCancel} dismissible={!merging} title={`Merge into ${targetBranch}`} initialFocus={field}
+      description={<>No conflicts found. The changes of <span className="font-mono [overflow-wrap:anywhere]">{branch}</span> land on {targetBranch} as one commit, then it is pushed.</>}
       footer={<>
         <Button variant="ghost" onClick={onCancel} disabled={merging}>Cancel</Button>
-        <Button variant="brand" onClick={submit} disabled={!valid || merging}>
-          {merging ? <LoaderCircle className="size-4 animate-spin" /> : <GitCommitHorizontal className="size-4" />}
+        <Button variant="brand" type="submit" form={FORM_ID} icon={GitCommitHorizontal} loading={merging} disabled={!valid}>
           {merging ? 'Merging…' : 'Commit & push'}
         </Button>
       </>}>
-      <div className="flex flex-col gap-5">
-        <label className="flex flex-col gap-2">
-          <span className="text-xs font-semibold text-ink-muted">Commit title <span className="text-danger">*</span></span>
-          <input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={MAX_TITLE} autoCapitalize="none"
-            onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); submit(); } }}
-            disabled={merging} required autoFocus placeholder="e.g. feat: add project search"
-            enterKeyHint="send" autoComplete="off" aria-invalid={title.trim().length > 0 && !conventional}
-            aria-describedby="merge-title-hint"
-            className="h-12 rounded-control border border-line bg-surface-2 px-3 text-base text-ink outline-none transition focus:border-brand disabled:opacity-60 sm:text-sm" />
-          <span id="merge-title-hint"
-            className={`text-xs [overflow-wrap:anywhere] ${title.trim().length > 0 && !conventional ? 'text-danger' : 'text-ink-muted'}`}>
-            Conventional Commits: <span className="font-mono">type(scope): description</span>, with type {COMMIT_TYPES.join(', ')}.
-          </span>
-        </label>
+      <form id={FORM_ID} onSubmit={submit} className="flex flex-col gap-4">
+        <TextField ref={field} label="Commit title" required value={title} onChange={setTitle} maxLength={MAX_TITLE} disabled={merging}
+          placeholder="feat: add project search" autoCapitalize="none" autoComplete="off" spellCheck={false} enterKeyHint="send" mono
+          error={trimmed.length > 0 && !conventional ? `Use Conventional Commits: type(scope): description, with type ${COMMIT_TYPES.join(', ')}.` : null}
+          hint={<>Conventional Commits: <span className="font-mono">type(scope): description</span>.</>} />
         {changes ? (
-          <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-muted">
+          <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-footnote text-ink-muted">
             <span>{changes.files.length} {changes.files.length === 1 ? 'file' : 'files'} changed</span>
-            <span className="font-mono text-success">+{changes.added}</span>
-            <span className="font-mono text-danger">−{changes.removed}</span>
+            <span className="font-mono text-success tabular-nums">+{changes.added}</span>
+            <span className="font-mono text-danger tabular-nums">−{changes.removed}</span>
           </p>
         ) : null}
-        {error ? <p role="alert" className="text-sm text-danger [overflow-wrap:anywhere]">{error}</p> : null}
-      </div>
-    </Modal>
+        {error ? <Alert tone="danger">{error}</Alert> : null}
+      </form>
+    </Dialog>
   );
 };

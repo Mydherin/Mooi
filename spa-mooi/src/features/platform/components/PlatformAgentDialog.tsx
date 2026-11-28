@@ -7,8 +7,8 @@ import { useDictation } from '@/features/dictation/hooks/useDictation';
 import { DictationButton } from '@/features/dictation/components/DictationButton';
 import { AgentModelFields } from '@/features/sessions/components/AgentModelFields';
 import { useAgentModelChoice } from '@/features/sessions/hooks/useAgentModelChoice';
-import { Button } from '@/shared/components/Button';
-import { Modal } from '@/shared/components/Modal';
+import { Button } from '@/shared/components/actions/Button';
+import { Dialog } from '@/shared/components/overlays/dialog/Dialog';
 
 interface PlatformAgentDialogProps {
   copy: PlatformAgentCopy;
@@ -49,7 +49,7 @@ export const PlatformAgentDialog = ({ copy, projectName, connections, busy, erro
     }
   };
 
-  return <Modal open size="lg" onClose={busy ? () => undefined : onClose} title={copy.title}
+  return <Dialog open size="lg" onClose={onClose} dismissible={!busy} title={copy.title}
     description={`${projectName} · ${copy.description}`}
     footer={<>
       <Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
@@ -87,5 +87,5 @@ export const PlatformAgentDialog = ({ copy, projectName, connections, busy, erro
       {replaceNotice ? <p className="rounded-control bg-surface-2 px-3.5 py-2.5 text-xs leading-relaxed text-ink-muted">{replaceNotice}</p> : null}
       {error ? <p role="alert" className="rounded-control border border-danger/30 bg-danger-soft px-4 py-2.5 text-sm text-danger">{error}</p> : null}
     </div>
-  </Modal>;
+  </Dialog>;
 };

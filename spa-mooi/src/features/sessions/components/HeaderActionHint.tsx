@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Tooltip } from '@/shared/components/Tooltip';
+import { Tooltip } from '@/shared/components/overlays/tooltip/Tooltip';
 
 interface HeaderActionHintProps {
   /** Feedback of the wrapped action: an error, a progress step or what the action is about to do. */

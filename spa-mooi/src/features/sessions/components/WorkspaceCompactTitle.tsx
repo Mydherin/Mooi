@@ -4,7 +4,7 @@ import type { LucideIcon } from 'lucide-react';
 import type { Project } from '@/features/projects/types/Project';
 import { SessionAccountIdentity } from '@/features/sessions/components/SessionAccountIdentity';
 import type { Session } from '@/features/sessions/types/Session';
-import { TapTooltip } from '@/shared/components/TapTooltip';
+import { Popover } from '@/shared/components/overlays/popover/Popover';
 
 interface WorkspaceCompactTitleProps {
   project: Project;
@@ -20,14 +20,14 @@ const Detail = ({ icon: Icon, children, mono = false }: { icon: LucideIcon; chil
 
 /**
  * The phone header title: the branch on one line, clipped at its start so its distinctive end stays
- * readable, over the agent's provider in small print. A tap reveals project, full branch, account
- * and clone path for a few seconds.
+ * readable, over the agent's provider in small print. A tap opens a sheet with the project, full
+ * branch, account and clone path.
  */
 export const WorkspaceCompactTitle = ({ project, session }: WorkspaceCompactTitleProps) => (
   <div className="min-w-0 flex-1 sm:hidden">
     <h1 className="sr-only">{session.branch}</h1>
-    <TapTooltip label="Show session details" content={
-      <div className="flex w-[min(22rem,calc(100vw-6rem))] flex-col divide-y divide-line">
+    <Popover label="Session details" content={
+      <div className="flex min-w-0 flex-col divide-y divide-line">
         <Detail icon={Layers}><span className="font-bold">{project.name}</span></Detail>
         <Detail icon={GitBranch} mono>{session.branch}</Detail>
         {session.title ? <Detail icon={Target}>{session.title}</Detail> : null}
@@ -45,6 +45,6 @@ export const WorkspaceCompactTitle = ({ project, session }: WorkspaceCompactTitl
       <span aria-hidden="true" className="mt-0.5 block truncate pl-5 text-[10px] leading-tight font-semibold text-ink-subtle">
         {session.adapterLabel ?? session.providerLabel}
       </span>
-    </TapTooltip>
+    </Popover>
   </div>
 );

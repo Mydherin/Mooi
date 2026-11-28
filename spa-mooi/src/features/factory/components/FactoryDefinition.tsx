@@ -5,9 +5,9 @@ import type { Factory } from '@/features/factory/types/Factory';
 import type { FactoryIssue } from '@/features/factory/types/FactoryIssue';
 import type { Project } from '@/features/projects/types/Project';
 import type { Session } from '@/features/sessions/types/Session';
-import { Button } from '@/shared/components/Button';
-import { Card } from '@/shared/components/Card';
-import { Eyebrow } from '@/shared/components/Eyebrow';
+import { Button } from '@/shared/components/actions/Button';
+import { Card } from '@/shared/components/data-display/Card';
+import { Eyebrow } from '@/shared/components/data-display/Eyebrow';
 
 interface FactoryDefinitionProps {
   project: Project;

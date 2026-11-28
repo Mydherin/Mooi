@@ -1,8 +1,8 @@
 import { ChevronRight } from 'lucide-react';
 import type { AdminPlayer } from '@/features/admin/types/AdminPlayer';
-import { Avatar } from '@/shared/components/Avatar';
-import { Badge } from '@/shared/components/Badge';
-import { StatusDot } from '@/shared/components/StatusDot';
+import { Avatar } from '@/shared/components/data-display/Avatar';
+import { Badge } from '@/shared/components/data-display/Badge';
+import { StatusDot } from '@/shared/components/data-display/StatusDot';
 import { formatRelativeTime } from '@/shared/utils/formatRelativeTime';
 
 interface AdminUserRowProps {

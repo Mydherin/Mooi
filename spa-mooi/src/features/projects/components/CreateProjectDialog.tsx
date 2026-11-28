@@ -2,8 +2,8 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { ProjectKindField } from '@/features/projects/components/ProjectKindField';
 import { useProjects } from '@/features/projects/hooks/useProjects';
 import type { Project } from '@/features/projects/types/Project';
-import { Button } from '@/shared/components/Button';
-import { Modal } from '@/shared/components/Modal';
+import { Button } from '@/shared/components/actions/Button';
+import { Dialog } from '@/shared/components/overlays/dialog/Dialog';
 
 interface CreateProjectDialogProps {
   open: boolean;
@@ -40,7 +40,7 @@ export const CreateProjectDialog = ({ open, onClose, onAdded }: CreateProjectDia
   };
 
   return (
-    <Modal open={open} onClose={onClose} size="lg" title="Create project" description="Create a new repository in your linked GitHub account."
+    <Dialog open={open} onClose={onClose} size="lg" title="Create project" description="Create a new repository in your linked GitHub account."
       footer={<><Button variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
         <Button variant="brand" type="submit" form="create-project-form" disabled={!valid || busy}>
           {busy ? 'Creating…' : 'Create on GitHub'}
@@ -70,6 +70,6 @@ export const CreateProjectDialog = ({ open, onClose, onAdded }: CreateProjectDia
           hint="Deploy and live preview are only offered for web applications. You can change this later by editing the project." />
         {actionError ? <p role="alert" className="rounded-xl border border-danger/40 bg-danger-soft px-4 py-3 text-sm text-danger">{actionError}</p> : null}
       </form>
-    </Modal>
+    </Dialog>
   );
 };

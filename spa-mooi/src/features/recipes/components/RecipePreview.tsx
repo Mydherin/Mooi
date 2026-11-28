@@ -1,7 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { ChefHat, ChevronLeft } from 'lucide-react';
 import type { Recipe } from '@/features/recipes/types/Recipe';
-import { GithubMark } from '@/shared/components/icons/GithubMark';
+import { GithubMark } from '@/shared/components/brand/GithubMark';
 import { iconAction } from '@/shared/styles/iconAction';
 
 const MarkdownContent = lazy(() => import('@/features/sessions/components/chat/MarkdownContent'));

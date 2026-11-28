@@ -1,7 +1,7 @@
 import { BookOpen, FolderGit2, Trash2 } from 'lucide-react';
 import type { RecipeMarketplace } from '@/features/recipes/types/RecipeMarketplace';
-import { Badge } from '@/shared/components/Badge';
-import { GithubMark } from '@/shared/components/icons/GithubMark';
+import { Badge } from '@/shared/components/data-display/Badge';
+import { GithubMark } from '@/shared/components/brand/GithubMark';
 import { iconAction } from '@/shared/styles/iconAction';
 import { cn } from '@/shared/utils/cn';
 import { formatDate } from '@/shared/utils/formatDate';

@@ -2,8 +2,8 @@ import { ChevronsDownUp, ChevronsUpDown, CircleAlert } from 'lucide-react';
 import { traceKindStyle } from '@/features/traces/lib/traceKindStyle';
 import type { TraceFilter } from '@/features/traces/types/TraceFilter';
 import type { TraceSpanKind } from '@/features/traces/types/TraceSpanKind';
-import { IconButton } from '@/shared/components/IconButton';
-import { SearchInput } from '@/shared/components/SearchInput';
+import { IconButton } from '@/shared/components/actions/IconButton';
+import { SearchInput } from '@/shared/components/forms/SearchInput';
 import { cn } from '@/shared/utils/cn';
 import { formatCount } from '@/shared/utils/formatCount';
 

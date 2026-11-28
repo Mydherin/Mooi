@@ -1,6 +1,6 @@
 import { PreviewDiagnostics } from './PreviewDiagnostics';
 import { usePreviewFullscreen } from '@/features/sessions/hooks/usePreviewFullscreen';
-import { IconButton } from '@/shared/components/IconButton';
+import { IconButton } from '@/shared/components/actions/IconButton';
 import { cn } from '@/shared/utils/cn';
 import { useState } from 'react';
 import { PreviewToolbar } from './PreviewToolbar';

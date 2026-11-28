@@ -1,0 +1,186 @@
+/*
+ * Motion: short, decelerating, transform and opacity only, so it stays on the compositor.
+ * Overlays animate by `data-state="open" | "closed"` (see `usePresence`): enter keyframes play on
+ * mount, exit keyframes while the overlay is kept mounted for its exit.
+ */
+@theme {
+  --animate-float-slow: float 20s ease-in-out infinite;
+  --animate-float-fast: float 14s ease-in-out infinite reverse;
+  --animate-rise: rise 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-fade-up: fade-up 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-fade-in: fade-in 0.2s ease-out both;
+  --animate-pulse-soft: pulse-soft 1.6s ease-in-out infinite;
+  --animate-shimmer: shimmer 2s linear infinite;
+  --animate-menu-in: menu-in 0.16s cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-sheet-in: sheet-in 0.42s cubic-bezier(0.32, 0.72, 0, 1) both;
+  --animate-dialog-in: dialog-in 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-voice-bar: voice-bar 0.9s ease-in-out infinite;
+  --animate-orb-ping: orb-ping 2.4s cubic-bezier(0, 0, 0.2, 1) infinite;
+  --animate-step-fill: step-fill linear both;
+  --animate-slide-in-start: slide-in-start 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-slide-in-end: slide-in-end 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
+
+  @keyframes float {
+    0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+    50% { transform: translate3d(4%, -6%, 0) scale(1.08); }
+  }
+
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(18px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Content arriving: a few pixels of travel, enough to read as motion without slowing the eye. */
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  @keyframes fade-out {
+    from { opacity: 1; }
+    to { opacity: 0; }
+  }
+
+  @keyframes pulse-soft {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+  }
+
+  @keyframes shimmer {
+    from { background-position: -200% 0; }
+    to { background-position: 200% 0; }
+  }
+
+  /* A level meter at rest is short; the bars breathe up to full height and back. */
+  @keyframes voice-bar {
+    0%, 100% { transform: scaleY(0.45); }
+    50% { transform: scaleY(1); }
+  }
+
+  /* The agent orb of the logo is alive: a halo leaves it and fades, like a presence signal. */
+  @keyframes orb-ping {
+    0% { opacity: 0.55; transform: scale(1); }
+    70%, 100% { opacity: 0; transform: scale(1.9); }
+  }
+
+  /* Duration comes from the caller: the bar spans exactly one stage of the pipeline showcase. */
+  @keyframes step-fill {
+    from { transform: scaleX(0); }
+    to { transform: scaleX(1); }
+  }
+
+  /* The iOS sheet curve: a bottom sheet slides up from below the screen edge. */
+  @keyframes sheet-in {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+  }
+
+  /* Gestures move surfaces with the `translate` property, which composes with these `transform`
+     keyframes: a sheet leaves from wherever the finger released it. */
+  @keyframes sheet-out {
+    from { transform: translateY(0); }
+    to { transform: translateY(100%); }
+  }
+
+  @keyframes side-in {
+    from { transform: translateX(100%); }
+    to { transform: translateX(0); }
+  }
+
+  @keyframes side-out {
+    from { transform: translateX(0); }
+    to { transform: translateX(100%); }
+  }
+
+  /* A centered dialog grows out of the screen rather than dropping onto it. */
+  @keyframes dialog-in {
+    from { opacity: 0; transform: translateY(8px) scale(0.97); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  @keyframes dialog-out {
+    from { opacity: 1; transform: scale(1); }
+    to { opacity: 0; transform: scale(0.97); }
+  }
+
+  /* Short and slightly scaled: a menu should read as opening from its trigger, not as arriving. */
+  @keyframes menu-in {
+    from { opacity: 0; transform: translateY(var(--menu-shift, -6px)) scale(0.97); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  @keyframes menu-out {
+    from { opacity: 1; transform: scale(1); }
+    to { opacity: 0; transform: scale(0.97); }
+  }
+
+  /* Swipeable panels: the next view slides in from the side it was pulled from. */
+  @keyframes slide-in-start {
+    from { opacity: 0.4; transform: translateX(-24%); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+
+  @keyframes slide-in-end {
+    from { opacity: 0.4; transform: translateX(24%); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+
+  @keyframes toast-in {
+    from { opacity: 0; transform: translateY(16px) scale(0.96); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+}
+
+/* Overlay surfaces: enter on mount, exit while kept mounted by `usePresence`. */
+[data-overlay='scrim'][data-state='open'] { animation: fade-in var(--duration-base) var(--ease-standard) both; }
+[data-overlay='scrim'][data-state='closed'] { animation: fade-out var(--duration-base) var(--ease-exit) both; }
+[data-overlay='sheet'][data-state='open'] { animation: sheet-in var(--duration-sheet) var(--ease-sheet) both; }
+[data-overlay='sheet'][data-state='closed'] { animation: sheet-out var(--duration-base) var(--ease-exit) both; }
+[data-overlay='side'][data-state='open'] { animation: side-in var(--duration-slow) var(--ease-sheet) both; }
+[data-overlay='side'][data-state='closed'] { animation: side-out var(--duration-base) var(--ease-exit) both; }
+[data-overlay='center'][data-state='open'] { animation: dialog-in var(--duration-base) var(--ease-out-expo) both; }
+[data-overlay='center'][data-state='closed'] { animation: dialog-out var(--duration-fast) var(--ease-exit) both; }
+[data-overlay='anchored'][data-state='open'] { animation: menu-in var(--duration-fast) var(--ease-out-expo) both; }
+[data-overlay='anchored'][data-state='closed'] { animation: menu-out var(--duration-instant) var(--ease-exit) both; }
+[data-overlay='toast'][data-state='open'] { animation: toast-in var(--duration-slow) var(--ease-spring) both; }
+[data-overlay='toast'][data-state='closed'] { animation: fade-out var(--duration-fast) var(--ease-exit) both; }
+
+/*
+ * Route transitions (View Transitions API, enabled per navigation in `app/router`): only the
+ * content panel (`view-transition-name: page`) cross-fades with a few pixels of travel; the shell
+ * (sidebar, tab bar) stays put.
+ */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+}
+
+::view-transition-old(page) {
+  animation: fade-out var(--duration-fast) var(--ease-exit) both;
+}
+
+::view-transition-new(page) {
+  animation: fade-up var(--duration-base) var(--ease-out-expo) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}

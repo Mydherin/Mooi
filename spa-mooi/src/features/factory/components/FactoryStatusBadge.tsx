@@ -1,6 +1,6 @@
 import { factoryStatusPresentation } from '@/features/factory/lib/factoryStatusPresentation';
 import type { Factory } from '@/features/factory/types/Factory';
-import { StatusDot } from '@/shared/components/StatusDot';
+import { StatusDot } from '@/shared/components/data-display/StatusDot';
 import { toneStyles } from '@/shared/styles/toneStyles';
 import { cn } from '@/shared/utils/cn';
 

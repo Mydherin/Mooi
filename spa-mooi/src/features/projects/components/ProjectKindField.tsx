@@ -1,7 +1,7 @@
 import { useId } from 'react';
 import { Globe, Package } from 'lucide-react';
 import { ProjectKindOption } from '@/features/projects/components/ProjectKindOption';
-import { Eyebrow } from '@/shared/components/Eyebrow';
+import { Eyebrow } from '@/shared/components/data-display/Eyebrow';
 
 interface ProjectKindFieldProps {
   value: boolean | null;

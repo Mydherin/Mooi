@@ -16,10 +16,10 @@ import { WorkspacesOverview } from '@/features/sessions/components/workspaces/Wo
 import { useProjectSessions } from '@/features/sessions/hooks/useProjectSessions';
 import { useProjectWorkspaces } from '@/features/sessions/hooks/useProjectWorkspaces';
 import { TodosPanel } from '@/features/todos/components/TodosPanel';
-import { Card } from '@/shared/components/Card';
-import { EmptyState } from '@/shared/components/EmptyState';
-import { Button } from '@/shared/components/Button';
-import { Tabs } from '@/shared/components/Tabs';
+import { Card } from '@/shared/components/data-display/Card';
+import { EmptyState } from '@/shared/components/feedback/EmptyState';
+import { Button } from '@/shared/components/actions/Button';
+import { Tabs } from '@/shared/components/navigation/Tabs';
 import { buttonStyles } from '@/shared/styles/buttonStyles';
 import { useLiveStore } from '@/stores/liveStore';
 

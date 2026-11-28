@@ -9,11 +9,11 @@ import type { AdminSession } from '@/features/admin/types/AdminSession';
 import type { AdminSignIn } from '@/features/admin/types/AdminSignIn';
 import { sessionDisplayStatus } from '@/features/sessions/lib/sessionDisplayStatus';
 import { sessionStatusLabel, sessionStatusPulses, sessionStatusTone } from '@/features/sessions/lib/sessionStatusTone';
-import { Avatar } from '@/shared/components/Avatar';
-import { Badge } from '@/shared/components/Badge';
-import { Button } from '@/shared/components/Button';
-import { Modal } from '@/shared/components/Modal';
-import { StatusDot } from '@/shared/components/StatusDot';
+import { Avatar } from '@/shared/components/data-display/Avatar';
+import { Badge } from '@/shared/components/data-display/Badge';
+import { Button } from '@/shared/components/actions/Button';
+import { Dialog } from '@/shared/components/overlays/dialog/Dialog';
+import { StatusDot } from '@/shared/components/data-display/StatusDot';
 import { formatDate } from '@/shared/utils/formatDate';
 import { formatRelativeTime } from '@/shared/utils/formatRelativeTime';
 
@@ -112,7 +112,7 @@ export const AdminUserDialog = ({ player, devices, lastSeenAt, sessions, self, o
   );
 
   return (
-    <Modal open onClose={onClose} title={player.username} description={player.email} size="lg" footer={footer}>
+    <Dialog open onClose={onClose} title={player.username} description={player.email} size="lg" footer={footer}>
       <div className="flex items-center gap-4">
         <Avatar src={player.avatarUrl} name={player.username} size="lg" />
         <div className="min-w-0 space-y-1.5">
@@ -193,6 +193,6 @@ export const AdminUserDialog = ({ player, devices, lastSeenAt, sessions, self, o
             )}
         </Section>
       </div>
-    </Modal>
+    </Dialog>
   );
 };

@@ -1,0 +1,97 @@
+@custom-variant dark (&:where(.dark, .dark *));
+/* An on-screen keyboard is up (touch device, text field focused): chrome steps aside for the draft. */
+@custom-variant keyboard (&:where([data-keyboard], [data-keyboard] *));
+/* Writing a message (`data-compose` field focused with the keyboard up): the conversation takes the screen. */
+@custom-variant composing (&:where(:root[data-keyboard]:has([data-compose]:focus) *));
+/* Fine pointer with hover (mouse, trackpad): hover-only affordances never reach touch screens. */
+@custom-variant hover-device (@media (hover: hover) and (pointer: fine));
+/* Coarse pointer (touch): bigger targets, gestures. */
+@custom-variant touch (@media (pointer: coarse));
+
+/* The visible viewport, kept by `useAppViewport`: iOS never shrinks `dvh` for the keyboard. */
+@utility h-app {
+  height: var(--app-height, 100dvh);
+}
+
+@utility max-h-app {
+  max-height: var(--app-height, 100dvh);
+}
+
+/* Page gutters that follow the screen size (16 / 24 / 32 px). The shell already clears the side safe areas. */
+@utility px-gutter {
+  padding-inline: var(--page-gutter);
+}
+
+@utility mx-gutter-bleed {
+  margin-inline: calc(var(--page-gutter) * -1);
+}
+
+/* Bottom padding that clears the home indicator. */
+@utility pb-safe {
+  padding-bottom: var(--safe-bottom);
+}
+
+/* Overlay layers (see `--z-*` in tokens.css). */
+@utility z-sticky { z-index: var(--z-sticky); }
+@utility z-header { z-index: var(--z-header); }
+@utility z-nav { z-index: var(--z-nav); }
+
+/* Frosted bar material: translucent surface with a backdrop blur. */
+@utility bg-frosted {
+  background-color: var(--material);
+  -webkit-backdrop-filter: saturate(1.8) blur(20px);
+  backdrop-filter: saturate(1.8) blur(20px);
+}
+
+/* One line clipped at its start, so the tail (a branch's distinctive end) stays visible. Wrap the text in `dir="ltr"`. */
+@utility truncate-start {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+}
+
+/* The brand fill of primary calls to action: one gradient, defined once, used by buttons and marks. */
+@utility bg-brand-gradient {
+  background-image: linear-gradient(135deg, var(--brand-from), var(--brand-to));
+}
+
+/* Text set in the brand gradient, for the rare word that should carry the identity. */
+@utility text-brand-gradient {
+  background-image: linear-gradient(120deg, var(--brand-from), var(--brand-to));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Live status text: a highlight sweeps across the words while the agent works, as in Codex. */
+@utility text-shimmer {
+  background-image: linear-gradient(90deg, var(--ink-subtle) 0%, var(--ink-subtle) 35%, var(--ink) 50%,
+    var(--ink-subtle) 65%, var(--ink-subtle) 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 2.4s linear infinite;
+}
+
+/* A faint dotted grid for hero and empty surfaces. Static, so it costs one paint. */
+@utility bg-dot-grid {
+  background-image: radial-gradient(color-mix(in oklab, var(--ink) 9%, transparent) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+
+/* Hides a scroll container's bar while keeping it scrollable (chip rows, tab strips). */
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* A scroll container that never chains its overscroll to the page. */
+@utility scroll-contain {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}

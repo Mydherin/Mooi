@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom';
 import { ChevronLeft, ChevronRight, Download, X } from 'lucide-react';
 import { useSessionImageUrl } from '@/features/sessions/hooks/useSessionImageUrl';
 import type { ImageAttachment } from '@/features/sessions/types/ImageAttachment';
-import { useLockBodyScroll } from '@/shared/hooks/useLockBodyScroll';
 import { cn } from '@/shared/utils/cn';
 
 interface ImageLightboxProps {
@@ -35,7 +34,6 @@ export const ImageLightbox = ({ sessionId, images, index, onIndexChange, onClose
   const image = images[index];
   const many = images.length > 1;
   const { url } = useSessionImageUrl(sessionId, image.id);
-  useLockBodyScroll(true);
 
   useEffect(() => {
     const element = dialog.current;

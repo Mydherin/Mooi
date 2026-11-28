@@ -1,8 +1,8 @@
 import { DatabaseBackup, LoaderCircle } from 'lucide-react';
 import { BackupRow } from '@/features/backups/components/BackupRow';
 import type { Backup } from '@/features/backups/types/Backup';
-import { Button } from '@/shared/components/Button';
-import { Card } from '@/shared/components/Card';
+import { Button } from '@/shared/components/actions/Button';
+import { Card } from '@/shared/components/data-display/Card';
 
 interface BackupListCardProps {
   backups: Backup[];

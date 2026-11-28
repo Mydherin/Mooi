@@ -9,9 +9,9 @@ import { GoogleSignInButton } from '@/features/auth/components/GoogleSignInButto
 import { MockSignInButton } from '@/features/auth/components/MockSignInButton';
 import { setAccessSession } from '@/features/auth/lib/accessTokenProvider';
 import { toAuthSession } from '@/features/auth/lib/toAuthSession';
-import { ThemeToggle } from '@/shared/components/ThemeToggle';
-import { Logo } from '@/shared/components/Logo';
-import { LogoMark } from '@/shared/components/LogoMark';
+import { ThemeToggle } from '@/shared/components/actions/ThemeToggle';
+import { Logo } from '@/shared/components/brand/Logo';
+import { LogoMark } from '@/shared/components/brand/LogoMark';
 import { useAuthStore } from '@/stores/authStore';
 
 const SUSPENDED_MESSAGE = 'This account is suspended. Contact an administrator.';

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { formatSpanDuration } from '@/features/traces/lib/formatSpanDuration';
 import { traceKindStyle } from '@/features/traces/lib/traceKindStyle';
 import type { TraceToolStat } from '@/features/traces/types/TraceToolStat';
-import { SegmentedControl } from '@/shared/components/SegmentedControl';
+import { SegmentedControl } from '@/shared/components/navigation/SegmentedControl';
 import { cn } from '@/shared/utils/cn';
 import { formatCount } from '@/shared/utils/formatCount';
 

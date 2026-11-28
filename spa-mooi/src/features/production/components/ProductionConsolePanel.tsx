@@ -3,7 +3,7 @@ import { ExternalLink, MessagesSquare, Rocket, Sparkles, Terminal } from 'lucide
 import { DeploymentStateBadge } from '@/features/production/components/DeploymentStateBadge';
 import type { ProductionSnapshot } from '@/features/production/types/ProductionSnapshot';
 import { DeployTerminal } from '@/features/sessions/components/deploy/DeployTerminal';
-import { Button } from '@/shared/components/Button';
+import { Button } from '@/shared/components/actions/Button';
 import { formatDuration } from '@/shared/utils/formatDuration';
 import { shortCommit } from '@/shared/utils/shortCommit';
 

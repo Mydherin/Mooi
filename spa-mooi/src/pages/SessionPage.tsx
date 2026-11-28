@@ -12,8 +12,8 @@ import { WorkspaceHeader } from '@/features/sessions/components/WorkspaceHeader'
 import { useProjectSessions } from '@/features/sessions/hooks/useProjectSessions';
 import { useSession } from '@/features/sessions/hooks/useSession';
 import { useSessionStream } from '@/features/sessions/hooks/useSessionStream';
-import { Card } from '@/shared/components/Card';
-import { EmptyState } from '@/shared/components/EmptyState';
+import { Card } from '@/shared/components/data-display/Card';
+import { EmptyState } from '@/shared/components/feedback/EmptyState';
 import { useBackLink } from '@/shared/hooks/useBackLink';
 import { buttonStyles } from '@/shared/styles/buttonStyles';
 import { useSessionsStore } from '@/stores/sessionsStore';

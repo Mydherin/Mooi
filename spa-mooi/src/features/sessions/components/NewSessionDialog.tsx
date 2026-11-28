@@ -6,8 +6,8 @@ import { AgentModelFields } from '@/features/sessions/components/AgentModelField
 import { useAgentModelChoice } from '@/features/sessions/hooks/useAgentModelChoice';
 import { contextHandoverOptions, parseContextHandover } from '@/features/sessions/lib/contextHandover';
 import type { CreateSessionRequest } from '@/features/sessions/types/CreateSessionRequest';
-import { Button } from '@/shared/components/Button';
-import { Modal } from '@/shared/components/Modal';
+import { Button } from '@/shared/components/actions/Button';
+import { Dialog } from '@/shared/components/overlays/dialog/Dialog';
 
 interface NewSessionDialogProps {
   open: boolean;
@@ -106,7 +106,7 @@ export const NewSessionDialog = ({
   };
 
   return (
-    <Modal
+    <Dialog
       open={open}
       onClose={onClose}
       title="New session"
@@ -174,6 +174,6 @@ export const NewSessionDialog = ({
           {actionError}
         </p>
       ) : null}
-    </Modal>
+    </Dialog>
   );
 };

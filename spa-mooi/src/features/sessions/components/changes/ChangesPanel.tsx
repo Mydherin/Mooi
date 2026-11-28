@@ -4,9 +4,9 @@ import { fetchChanges } from '@/features/sessions/api/sessionsApi';
 import { ChangedFileRow } from '@/features/sessions/components/changes/ChangedFileRow';
 import { ChangesSummary } from '@/features/sessions/components/changes/ChangesSummary';
 import { DiffView } from '@/features/sessions/components/changes/DiffView';
-import { EmptyState } from '@/shared/components/EmptyState';
+import { EmptyState } from '@/shared/components/feedback/EmptyState';
 import { useSessionsStore } from '@/stores/sessionsStore';
-import { Button } from '@/shared/components/Button';
+import { Button } from '@/shared/components/actions/Button';
 import { useIncrementalCount } from '@/shared/hooks/useIncrementalCount';
 
 interface ChangesPanelProps {

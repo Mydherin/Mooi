@@ -1,7 +1,7 @@
 import { Check } from 'lucide-react';
 import type { GithubRepository } from '@/features/github/types/GithubRepository';
-import { Button } from '@/shared/components/Button';
-import { Initials } from '@/shared/components/Initials';
+import { Button } from '@/shared/components/actions/Button';
+import { Initials } from '@/shared/components/data-display/Initials';
 import { cn } from '@/shared/utils/cn';
 import { formatDate } from '@/shared/utils/formatDate';
 

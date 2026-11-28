@@ -1,7 +1,7 @@
 import { Check, Circle, CircleDot } from 'lucide-react';
 import type { TodoList } from '@/features/todos/types/TodoList';
-import { Button } from '@/shared/components/Button';
-import { Modal } from '@/shared/components/Modal';
+import { Button } from '@/shared/components/actions/Button';
+import { Dialog } from '@/shared/components/overlays/dialog/Dialog';
 import { cn } from '@/shared/utils/cn';
 
 interface TodosCleanupDialogProps {
@@ -13,7 +13,7 @@ interface TodosCleanupDialogProps {
 
 /** Shows exactly what the rewrite keeps before anything is committed. */
 export const TodosCleanupDialog = ({ list, branch, onClose, onConfirm }: TodosCleanupDialogProps) => (
-  <Modal
+  <Dialog
     open
     onClose={onClose}
     title={`Clean up ${list.path}?`}
@@ -45,5 +45,5 @@ export const TodosCleanupDialog = ({ list, branch, onClose, onConfirm }: TodosCl
       <code className="font-mono">[x]</code> stays done and <code className="font-mono">[/]</code> stays in progress; other
       markers (such as <code className="font-mono">[*]</code>) become open tasks.
     </p>
-  </Modal>
+  </Dialog>
 );

@@ -10,7 +10,7 @@ import { SessionAccountIdentity } from '@/features/sessions/components/SessionAc
 import { WorkspaceCompactTitle } from '@/features/sessions/components/WorkspaceCompactTitle';
 import { WorkspacePathLabel } from '@/features/sessions/components/WorkspacePathLabel';
 import { useDeployControl } from '@/features/sessions/hooks/useDeployControl';
-import { Tooltip } from '@/shared/components/Tooltip';
+import { Tooltip } from '@/shared/components/overlays/tooltip/Tooltip';
 import type { BackLink } from '@/shared/types/BackLink';
 
 interface WorkspaceHeaderProps {

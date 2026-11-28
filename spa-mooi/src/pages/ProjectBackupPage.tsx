@@ -36,9 +36,9 @@ import { usePlatformOperation } from '@/features/platform/hooks/usePlatformOpera
 import { useProjects } from '@/features/projects/hooks/useProjects';
 import { findProject } from '@/features/projects/lib/findProject';
 import { closeSession } from '@/features/sessions/api/sessionsApi';
-import { Button } from '@/shared/components/Button';
-import { Card } from '@/shared/components/Card';
-import { EmptyState } from '@/shared/components/EmptyState';
+import { Button } from '@/shared/components/actions/Button';
+import { Card } from '@/shared/components/data-display/Card';
+import { EmptyState } from '@/shared/components/feedback/EmptyState';
 import { buttonStyles } from '@/shared/styles/buttonStyles';
 import type { TabItem } from '@/shared/types/TabItem';
 import { cn } from '@/shared/utils/cn';

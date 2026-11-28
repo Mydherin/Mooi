@@ -2,10 +2,10 @@ import { useMemo } from 'react';
 import { FolderGit2, RefreshCw, Search } from 'lucide-react';
 import type { GithubRepository } from '@/features/github/types/GithubRepository';
 import { RepositoryRow } from '@/features/projects/components/RepositoryRow';
-import { Button } from '@/shared/components/Button';
-import { EmptyState } from '@/shared/components/EmptyState';
-import { Eyebrow } from '@/shared/components/Eyebrow';
-import { SearchInput } from '@/shared/components/SearchInput';
+import { Button } from '@/shared/components/actions/Button';
+import { EmptyState } from '@/shared/components/feedback/EmptyState';
+import { Eyebrow } from '@/shared/components/data-display/Eyebrow';
+import { SearchInput } from '@/shared/components/forms/SearchInput';
 
 interface RepositoryPickerProps {
   repositories: GithubRepository[];

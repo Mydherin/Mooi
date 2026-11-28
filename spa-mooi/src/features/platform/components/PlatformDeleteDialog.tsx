@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { LoaderCircle, Trash2 } from 'lucide-react';
-import { Button } from '@/shared/components/Button';
-import { Modal } from '@/shared/components/Modal';
+import { Button } from '@/shared/components/actions/Button';
+import { Dialog } from '@/shared/components/overlays/dialog/Dialog';
 
 interface PlatformDeleteDialogProps {
   title: string;
@@ -25,7 +25,7 @@ export const PlatformDeleteDialog = ({ title, description, consequences, action,
     catch (failure) { setError((failure as Error).message); setBusy(false); }
   };
 
-  return <Modal open onClose={busy ? () => undefined : onClose} title={title} description={description}
+  return <Dialog open onClose={onClose} dismissible={!busy} title={title} description={description}
     footer={<><Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
       <Button variant="danger" onClick={() => void confirm()} disabled={busy}>
         {busy ? <LoaderCircle className="size-4 animate-spin" /> : <Trash2 className="size-4" />}{busy ? 'Deleting…' : action}
@@ -34,5 +34,5 @@ export const PlatformDeleteDialog = ({ title, description, consequences, action,
       {consequences.map((line) => <li key={line}>{line}</li>)}
     </ul>
     {error ? <p role="alert" className="mt-4 rounded-control border border-danger/30 bg-danger-soft px-4 py-2.5 text-sm text-danger">{error}</p> : null}
-  </Modal>;
+  </Dialog>;
 };

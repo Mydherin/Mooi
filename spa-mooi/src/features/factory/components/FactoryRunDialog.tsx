@@ -4,8 +4,8 @@ import type { AgentConnection } from '@/features/agents/types/AgentConnection';
 import type { FactoryRunConfig } from '@/features/factory/types/FactoryRunConfig';
 import { AgentModelFields } from '@/features/sessions/components/AgentModelFields';
 import { useAgentModelChoice } from '@/features/sessions/hooks/useAgentModelChoice';
-import { Button } from '@/shared/components/Button';
-import { Modal } from '@/shared/components/Modal';
+import { Button } from '@/shared/components/actions/Button';
+import { Dialog } from '@/shared/components/overlays/dialog/Dialog';
 
 interface FactoryRunDialogProps {
   title: string;
@@ -60,7 +60,7 @@ export const FactoryRunDialog = ({ title, description, action, connections, prev
       model: choice.model, effort: choice.effort || null });
   };
 
-  return <Modal open size="lg" onClose={busy ? () => undefined : onClose} title={title} description={description}
+  return <Dialog open size="lg" onClose={onClose} dismissible={!busy} title={title} description={description}
     footer={<>
       <Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
       <Button variant="brand" onClick={submit} disabled={!choice.ready || busy}>
@@ -76,5 +76,5 @@ export const FactoryRunDialog = ({ title, description, action, connections, prev
       </p>
       {error ? <p role="alert" className="rounded-control border border-danger/30 bg-danger-soft px-4 py-2.5 text-sm text-danger">{error}</p> : null}
     </div>
-  </Modal>;
+  </Dialog>;
 };

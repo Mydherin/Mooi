@@ -5,9 +5,9 @@ import { FileTree } from '@/features/sessions/components/files/FileTree';
 import { useSessionFiles } from '@/features/sessions/hooks/useSessionFiles';
 import { ancestorDirectories } from '@/features/sessions/lib/fileTreeRows';
 import type { ChangeKind } from '@/features/sessions/types/ChangeKind';
-import { Button } from '@/shared/components/Button';
-import { EmptyState } from '@/shared/components/EmptyState';
-import { SearchInput } from '@/shared/components/SearchInput';
+import { Button } from '@/shared/components/actions/Button';
+import { EmptyState } from '@/shared/components/feedback/EmptyState';
+import { SearchInput } from '@/shared/components/forms/SearchInput';
 import { useSessionsStore } from '@/stores/sessionsStore';
 import { cn } from '@/shared/utils/cn';
 

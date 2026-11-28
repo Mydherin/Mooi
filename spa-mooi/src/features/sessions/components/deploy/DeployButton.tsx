@@ -2,7 +2,7 @@ import { LoaderCircle, Rocket, Settings2, Square, SquareTerminal } from 'lucide-
 import { HeaderActionHint } from '@/features/sessions/components/HeaderActionHint';
 import { HEADER_ACTION_CLASS } from '@/features/sessions/lib/headerActionClass';
 import type { DeployControl } from '@/features/sessions/types/DeployControl';
-import { Button } from '@/shared/components/Button';
+import { Button } from '@/shared/components/actions/Button';
 import { cn } from '@/shared/utils/cn';
 import { DeployGroupButton } from './DeployGroupButton';
 import { DeploymentSetupDialog } from './DeploymentSetupDialog';
@@ -10,7 +10,7 @@ import { DeploymentSetupDialog } from './DeploymentSetupDialog';
 /**
  * The header deploy group: the main action plus setup and logs segments. Phones keep only the main
  * button, and only while a deployment is active; the rest lives in the session actions menu
- * (`DeployMenuActions`).
+ * (`deployMenuSection`).
  */
 export const DeployButton = ({ control }: { control: DeployControl }) => {
   const { label, hint, failure, blocked, canStop, starting, loading, active, withLogs, withSetup } = control;

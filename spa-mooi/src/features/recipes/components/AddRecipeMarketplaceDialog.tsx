@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link2 } from 'lucide-react';
-import { Button } from '@/shared/components/Button';
-import { Modal } from '@/shared/components/Modal';
+import { Button } from '@/shared/components/actions/Button';
+import { Dialog } from '@/shared/components/overlays/dialog/Dialog';
 
 interface AddRecipeMarketplaceDialogProps {
   busy: boolean;
@@ -18,7 +18,7 @@ export const AddRecipeMarketplaceDialog = ({ busy, actionError, onClose, onAdd }
   };
 
   return (
-    <Modal open onClose={onClose} title="Add recipe marketplace"
+    <Dialog open onClose={onClose} title="Add recipe marketplace"
       description="Link a GitHub repository your account can read, public or private, with a recipes folder of Markdown recipes."
       footer={<>
         <Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
@@ -43,6 +43,6 @@ export const AddRecipeMarketplaceDialog = ({ busy, actionError, onClose, onAdd }
         </div>
         {actionError ? <p role="alert" className="rounded-control border border-danger/30 bg-danger-soft px-4 py-2.5 text-sm text-danger">{actionError}</p> : null}
       </form>
-    </Modal>
+    </Dialog>
   );
 };

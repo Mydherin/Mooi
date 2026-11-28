@@ -1,5 +1,5 @@
 import { FolderGit2 } from 'lucide-react';
-import { Tooltip } from '@/shared/components/Tooltip';
+import { Tooltip } from '@/shared/components/overlays/tooltip/Tooltip';
 import { cn } from '@/shared/utils/cn';
 import { shortenPath } from '@/shared/utils/shortenPath';
 

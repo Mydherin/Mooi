@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { KeyRound, LoaderCircle, Plus, Trash2 } from 'lucide-react';
 import { inheritedEnvironment } from '@/features/platform/lib/inheritedEnvironment';
 import type { PlatformEnvironmentVariable } from '@/features/platform/types/PlatformEnvironmentVariable';
-import { Button } from '@/shared/components/Button';
-import { Modal } from '@/shared/components/Modal';
+import { Button } from '@/shared/components/actions/Button';
+import { Dialog } from '@/shared/components/overlays/dialog/Dialog';
 import { cn } from '@/shared/utils/cn';
 
 const NAME = /^[A-Z0-9_]{1,100}$/;
@@ -52,7 +52,7 @@ export const PlatformEnvironmentDialog = ({
 
   const field = 'h-10 min-w-0 rounded-control border border-line bg-surface-2 px-3 font-mono text-xs text-ink outline-none focus:border-brand/50';
 
-  return <Modal open size="lg" onClose={busy ? () => undefined : onClose} title="Environment variables"
+  return <Dialog open size="lg" onClose={onClose} dismissible={!busy} title="Environment variables"
     description={`${description} Leave a field blank to keep its current value.`}
     footer={<><Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
       <Button variant="brand" onClick={() => void submit()} disabled={busy || invalid || loading}>
@@ -103,5 +103,5 @@ export const PlatformEnvironmentDialog = ({
       className="mt-4 inline-flex items-center gap-1.5 rounded-control px-2 py-1.5 text-xs font-bold text-ink-muted transition hover:bg-surface-2 hover:text-ink">
       <Plus className="size-3.5" />Add variable</button>
     {error ? <p role="alert" className="mt-4 rounded-control border border-danger/30 bg-danger-soft px-4 py-2.5 text-sm text-danger">{error}</p> : null}
-  </Modal>;
+  </Dialog>;
 };

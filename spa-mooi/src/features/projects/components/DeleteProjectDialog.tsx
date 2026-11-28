@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import type { Project } from '@/features/projects/types/Project';
-import { Button } from '@/shared/components/Button';
-import { Modal } from '@/shared/components/Modal';
+import { Button } from '@/shared/components/actions/Button';
+import { Dialog } from '@/shared/components/overlays/dialog/Dialog';
 
 interface DeleteProjectDialogProps {
   project: Project;
@@ -19,7 +19,7 @@ export const DeleteProjectDialog = ({ project, busy, error, onClose, onDelete }:
   };
 
   return (
-    <Modal open onClose={onClose} title="Delete GitHub repository"
+    <Dialog open onClose={onClose} title="Delete GitHub repository"
       description={`This permanently deletes ${project.fullName} from GitHub and removes it from Mooi.`}
       footer={<><Button variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
         <Button variant="danger" type="submit" form="delete-project-form"
@@ -36,6 +36,6 @@ export const DeleteProjectDialog = ({ project, busy, error, onClose, onDelete }:
         </label>
         {error ? <p role="alert" className="rounded-xl border border-danger/40 bg-danger-soft px-4 py-3 text-sm text-danger">{error}</p> : null}
       </form>
-    </Modal>
+    </Dialog>
   );
 };

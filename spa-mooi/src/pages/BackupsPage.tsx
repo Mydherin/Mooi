@@ -7,11 +7,11 @@ import { BackupProjectCard } from '@/features/backups/components/BackupProjectCa
 import { useBackups } from '@/features/backups/hooks/useBackups';
 import type { Backup } from '@/features/backups/types/Backup';
 import { useProjects } from '@/features/projects/hooks/useProjects';
-import { Button } from '@/shared/components/Button';
-import { Card } from '@/shared/components/Card';
-import { EmptyState } from '@/shared/components/EmptyState';
-import { SearchInput } from '@/shared/components/SearchInput';
-import { Tabs } from '@/shared/components/Tabs';
+import { Button } from '@/shared/components/actions/Button';
+import { Card } from '@/shared/components/data-display/Card';
+import { EmptyState } from '@/shared/components/feedback/EmptyState';
+import { SearchInput } from '@/shared/components/forms/SearchInput';
+import { Tabs } from '@/shared/components/navigation/Tabs';
 
 const HISTORY_TAB = 'history';
 

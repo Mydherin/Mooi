@@ -1,7 +1,7 @@
 import { useId, useMemo, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import { prettyTraceText } from '@/features/traces/lib/prettyTraceText';
-import { CopyButton } from '@/shared/components/CopyButton';
+import { CopyButton } from '@/shared/components/actions/CopyButton';
 import { cn } from '@/shared/utils/cn';
 
 interface TraceDetailSectionProps {

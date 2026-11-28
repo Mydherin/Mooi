@@ -6,8 +6,8 @@ import { RepositoryPicker } from '@/features/projects/components/RepositoryPicke
 import { useProjects } from '@/features/projects/hooks/useProjects';
 import type { Project } from '@/features/projects/types/Project';
 import { useReachableRepositories } from '@/features/projects/hooks/useReachableRepositories';
-import { Button } from '@/shared/components/Button';
-import { Modal } from '@/shared/components/Modal';
+import { Button } from '@/shared/components/actions/Button';
+import { Dialog } from '@/shared/components/overlays/dialog/Dialog';
 
 interface AddProjectDialogProps {
   open: boolean;
@@ -70,7 +70,7 @@ export const AddProjectDialog = ({ open, onClose, onAdded }: AddProjectDialogPro
   };
 
   return (
-    <Modal
+    <Dialog
       open={open}
       onClose={onClose}
       size="lg"
@@ -125,6 +125,6 @@ export const AddProjectDialog = ({ open, onClose, onAdded }: AddProjectDialogPro
           onSelect={handleSelect}
         />
       )}
-    </Modal>
+    </Dialog>
   );
 };

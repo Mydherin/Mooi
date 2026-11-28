@@ -1,8 +1,8 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { ChevronDown, FolderGit2 } from 'lucide-react';
 import type { Project } from '@/features/projects/types/Project';
-import { Button } from '@/shared/components/Button';
-import { SearchInput } from '@/shared/components/SearchInput';
+import { Button } from '@/shared/components/actions/Button';
+import { SearchInput } from '@/shared/components/forms/SearchInput';
 import { useOnClickOutside } from '@/shared/hooks/useOnClickOutside';
 import { useOnEscape } from '@/shared/hooks/useOnEscape';
 import { buttonStyles } from '@/shared/styles/buttonStyles';

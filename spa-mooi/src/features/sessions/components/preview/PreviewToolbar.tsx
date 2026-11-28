@@ -1,6 +1,6 @@
 import { Monitor, RotateCw, Smartphone } from 'lucide-react';
 import type { PreviewDevice } from '@/features/sessions/types/PreviewDevice';
-import { IconButton } from '@/shared/components/IconButton';
+import { IconButton } from '@/shared/components/actions/IconButton';
 import { cn } from '@/shared/utils/cn';
 import type { ReactNode } from 'react';
 

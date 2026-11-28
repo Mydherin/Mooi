@@ -1,7 +1,7 @@
 import { useState, type KeyboardEvent } from 'react';
 import { CornerDownLeft, LoaderCircle, Sparkles } from 'lucide-react';
-import { Button } from '@/shared/components/Button';
-import { Modal } from '@/shared/components/Modal';
+import { Button } from '@/shared/components/actions/Button';
+import { Dialog } from '@/shared/components/overlays/dialog/Dialog';
 
 interface DeploymentSetupDialogProps {
   busy: boolean;
@@ -28,7 +28,7 @@ export const DeploymentSetupDialog = ({ busy, error, onClose, onSubmit }: Deploy
     }
   };
 
-  return <Modal open size="lg" onClose={busy ? () => undefined : onClose} title="Change deployment setup"
+  return <Dialog open size="lg" onClose={onClose} dismissible={!busy} title="Change deployment setup"
     description="The chat is cleared and the agent updates the deployment files with your request, then tests them."
     footer={<>
       <Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
@@ -59,5 +59,5 @@ export const DeploymentSetupDialog = ({ busy, error, onClose, onSubmit }: Deploy
       </label>
       {error ? <p role="alert" className="rounded-control border border-danger/30 bg-danger-soft px-4 py-2.5 text-sm text-danger">{error}</p> : null}
     </div>
-  </Modal>;
+  </Dialog>;
 };

@@ -1,6 +1,5 @@
 export interface SidebarState {
-  isOpen: boolean;
-  open: () => void;
-  close: () => void;
-  toggle: () => void;
+  /** The desktop sidebar shows icons only. */
+  collapsed: boolean;
+  toggleCollapsed: () => void;
 }

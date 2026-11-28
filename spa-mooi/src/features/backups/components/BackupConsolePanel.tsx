@@ -4,7 +4,7 @@ import { backupOperationLabel } from '@/features/backups/lib/backupOperationLabe
 import type { BackupSnapshot } from '@/features/backups/types/BackupSnapshot';
 import { DeploymentStateBadge } from '@/features/production/components/DeploymentStateBadge';
 import { DeployTerminal } from '@/features/sessions/components/deploy/DeployTerminal';
-import { Button } from '@/shared/components/Button';
+import { Button } from '@/shared/components/actions/Button';
 import { formatDuration } from '@/shared/utils/formatDuration';
 
 interface BackupConsolePanelProps {

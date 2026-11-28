@@ -2,7 +2,7 @@ import { useMemo, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { ArrowUpRight } from 'lucide-react';
 import { formatTokens } from '@/features/traces/lib/formatTokens';
 import type { TraceContextBar } from '@/features/traces/types/TraceContextBar';
-import { Button } from '@/shared/components/Button';
+import { Button } from '@/shared/components/actions/Button';
 import { cn } from '@/shared/utils/cn';
 
 interface TraceContextChartProps {

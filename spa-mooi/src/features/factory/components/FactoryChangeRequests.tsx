@@ -6,10 +6,10 @@ import { useFactoryChangeRequests } from '@/features/factory/hooks/useFactoryCha
 import type { FactoryChangeRequest } from '@/features/factory/types/FactoryChangeRequest';
 import { DictationButton } from '@/features/dictation/components/DictationButton';
 import { useDictation } from '@/features/dictation/hooks/useDictation';
-import { Badge } from '@/shared/components/Badge';
-import { Button } from '@/shared/components/Button';
-import { Card } from '@/shared/components/Card';
-import { Eyebrow } from '@/shared/components/Eyebrow';
+import { Badge } from '@/shared/components/data-display/Badge';
+import { Button } from '@/shared/components/actions/Button';
+import { Card } from '@/shared/components/data-display/Card';
+import { Eyebrow } from '@/shared/components/data-display/Eyebrow';
 import type { Tone } from '@/shared/types/Tone';
 import { formatRelativeTime } from '@/shared/utils/formatRelativeTime';
 

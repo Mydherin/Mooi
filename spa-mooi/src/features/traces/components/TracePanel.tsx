@@ -17,10 +17,10 @@ import { isTraceFilterActive } from '@/features/traces/lib/isTraceFilterActive';
 import { traceTimeScale } from '@/features/traces/lib/traceTimeScale';
 import type { TraceFilter } from '@/features/traces/types/TraceFilter';
 import type { TraceView } from '@/features/traces/types/TraceView';
-import { Button } from '@/shared/components/Button';
-import { IconButton } from '@/shared/components/IconButton';
-import { SegmentedControl } from '@/shared/components/SegmentedControl';
-import { StatusDot } from '@/shared/components/StatusDot';
+import { Button } from '@/shared/components/actions/Button';
+import { IconButton } from '@/shared/components/actions/IconButton';
+import { SegmentedControl } from '@/shared/components/navigation/SegmentedControl';
+import { StatusDot } from '@/shared/components/data-display/StatusDot';
 import { cn } from '@/shared/utils/cn';
 
 interface TracePanelProps {

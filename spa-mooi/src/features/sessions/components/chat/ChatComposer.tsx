@@ -14,7 +14,7 @@ import { AttachImageButton } from './AttachImageButton';
 import { ComposerImageStrip } from './ComposerImageStrip';
 import { ComposerModelMenu } from './ComposerModelMenu';
 import { ComposerSelect } from './ComposerSelect';
-import { Button } from '@/shared/components/Button';
+import { Button } from '@/shared/components/actions/Button';
 import { cn } from '@/shared/utils/cn';
 import { compactInstructions } from '@/features/sessions/lib/compactCommand';
 

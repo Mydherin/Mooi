@@ -5,8 +5,8 @@ import { nextReleaseTag } from '@/features/production/lib/nextReleaseTag';
 import { RELEASE_TAG_PATTERN } from '@/features/production/lib/releaseTagPattern';
 import type { GithubRelease } from '@/features/production/types/GithubRelease';
 import type { ReleaseChoice } from '@/features/production/types/ReleaseChoice';
-import { Button } from '@/shared/components/Button';
-import { Modal } from '@/shared/components/Modal';
+import { Button } from '@/shared/components/actions/Button';
+import { Dialog } from '@/shared/components/overlays/dialog/Dialog';
 import { cn } from '@/shared/utils/cn';
 import { formatRelativeTime } from '@/shared/utils/formatRelativeTime';
 
@@ -48,7 +48,7 @@ export const ProductionReleaseDialog = ({ projectId, defaultBranch, busy, error,
     { id: 'create' as const, icon: Plus, title: 'New release', hint: `From ${defaultBranch ?? 'the default branch'}`, disabled: false },
   ];
 
-  return <Modal open onClose={busy ? () => undefined : onClose} title="Deploy a release"
+  return <Dialog open onClose={onClose} dismissible={!busy} title="Deploy a release"
     description="Production always runs an immutable GitHub release. Redeploy a published version or publish a new one."
     footer={<><Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
       <Button variant="brand" disabled={!valid || busy || loading} onClick={() => onSelect(choice)}>
@@ -88,5 +88,5 @@ export const ProductionReleaseDialog = ({ projectId, defaultBranch, busy, error,
         <span className="text-xs text-ink-subtle">Published on GitHub from the latest {defaultBranch ?? 'default branch'} commit when the deployment starts.</span>
       </label>}
     {loadError || error ? <p role="alert" className="mt-4 rounded-control border border-danger/30 bg-danger-soft px-4 py-2.5 text-sm text-danger">{error ?? loadError}</p> : null}
-  </Modal>;
+  </Dialog>;
 };

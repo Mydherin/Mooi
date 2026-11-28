@@ -4,7 +4,7 @@ import { projectPath } from '@/app/paths';
 import { SessionListItem } from '@/features/sessions/components/SessionListItem';
 import { sessionTree } from '@/features/sessions/lib/sessionTree';
 import type { SessionGroup } from '@/features/sessions/types/SessionGroup';
-import { Initials } from '@/shared/components/Initials';
+import { Initials } from '@/shared/components/data-display/Initials';
 import type { BackLink } from '@/shared/types/BackLink';
 
 interface SessionGroupSectionProps {

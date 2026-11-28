@@ -13,9 +13,8 @@ import { traceKindStyle } from '@/features/traces/lib/traceKindStyle';
 import type { TraceNode } from '@/features/traces/types/TraceNode';
 import type { TraceSpan } from '@/features/traces/types/TraceSpan';
 import type { TraceSpanStatus } from '@/features/traces/types/TraceSpanStatus';
-import { Button } from '@/shared/components/Button';
-import { IconButton } from '@/shared/components/IconButton';
-import { useLockBodyScroll } from '@/shared/hooks/useLockBodyScroll';
+import { Button } from '@/shared/components/actions/Button';
+import { IconButton } from '@/shared/components/actions/IconButton';
 import { cn } from '@/shared/utils/cn';
 
 interface TraceInspectorProps {
@@ -195,7 +194,6 @@ interface TraceInspectorSheetProps {
 const TraceInspectorSheet = ({ scroller, header, children, onClose, onNext, onPrevious }: TraceInspectorSheetProps) => {
   const [sheet, setSheet] = useState<HTMLDivElement | null>(null);
   const [drag, setDrag] = useState<{ axis: SwipeAxis; offset: number } | null>(null);
-  useLockBodyScroll(true);
 
   useSwipeGestures(sheet, {
     onSwipeDown: onClose,

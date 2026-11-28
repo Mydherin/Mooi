@@ -1,6 +1,6 @@
 import { GitMerge } from 'lucide-react';
 import type { ChangesSummary as ChangesSummaryData } from '@/features/sessions/types/ChangesSummary';
-import { Button } from '@/shared/components/Button';
+import { Button } from '@/shared/components/actions/Button';
 
 interface ChangesSummaryProps {
   summary: ChangesSummaryData | null;

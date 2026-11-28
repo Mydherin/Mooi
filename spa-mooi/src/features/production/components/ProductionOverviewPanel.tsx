@@ -8,8 +8,8 @@ import type { ProductionHealth } from '@/features/production/types/ProductionHea
 import type { ProductionHealthState } from '@/features/production/types/ProductionHealthState';
 import type { ProductionOverview } from '@/features/production/types/ProductionOverview';
 import type { ProductionStage } from '@/features/production/types/ProductionStage';
-import { Button } from '@/shared/components/Button';
-import { Card } from '@/shared/components/Card';
+import { Button } from '@/shared/components/actions/Button';
+import { Card } from '@/shared/components/data-display/Card';
 
 interface ProductionOverviewPanelProps {
   project: Project;

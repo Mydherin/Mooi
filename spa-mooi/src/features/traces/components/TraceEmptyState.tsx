@@ -1,6 +1,6 @@
 import { Activity, CircleAlert, LoaderCircle, RotateCw, SearchX } from 'lucide-react';
-import { Button } from '@/shared/components/Button';
-import { EmptyState } from '@/shared/components/EmptyState';
+import { Button } from '@/shared/components/actions/Button';
+import { EmptyState } from '@/shared/components/feedback/EmptyState';
 
 export type TraceEmptyKind = 'loading' | 'empty' | 'error' | 'noMatch';
 

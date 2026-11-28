@@ -5,9 +5,9 @@ import { FACTORY_CONTEXT_LIMIT } from '@/features/factory/lib/factoryContextLimi
 import { factoryRoleLabel } from '@/features/factory/lib/factoryRoleLabel';
 import { factoryStepTarget } from '@/features/factory/lib/factoryStepTarget';
 import type { Factory } from '@/features/factory/types/Factory';
-import { Card } from '@/shared/components/Card';
-import { Eyebrow } from '@/shared/components/Eyebrow';
-import { StatusDot } from '@/shared/components/StatusDot';
+import { Card } from '@/shared/components/data-display/Card';
+import { Eyebrow } from '@/shared/components/data-display/Eyebrow';
+import { StatusDot } from '@/shared/components/data-display/StatusDot';
 import { buttonStyles } from '@/shared/styles/buttonStyles';
 import { formatRelativeTime } from '@/shared/utils/formatRelativeTime';
 import { cn } from '@/shared/utils/cn';

@@ -2,11 +2,11 @@ import { FolderGit2, RefreshCw } from 'lucide-react';
 import { WorkspaceCard } from '@/features/sessions/components/workspaces/WorkspaceCard';
 import { WorkspaceStats } from '@/features/sessions/components/workspaces/WorkspaceStats';
 import type { WorkspaceOverview } from '@/features/sessions/types/WorkspaceOverview';
-import { Card } from '@/shared/components/Card';
-import { CopyButton } from '@/shared/components/CopyButton';
-import { EmptyState } from '@/shared/components/EmptyState';
-import { Eyebrow } from '@/shared/components/Eyebrow';
-import { Tooltip } from '@/shared/components/Tooltip';
+import { Card } from '@/shared/components/data-display/Card';
+import { CopyButton } from '@/shared/components/actions/CopyButton';
+import { EmptyState } from '@/shared/components/feedback/EmptyState';
+import { Eyebrow } from '@/shared/components/data-display/Eyebrow';
+import { Tooltip } from '@/shared/components/overlays/tooltip/Tooltip';
 import { cn } from '@/shared/utils/cn';
 import { shortenPath } from '@/shared/utils/shortenPath';
 

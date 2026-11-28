@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, FileWarning, LoaderCircle, RotateCcw, RotateCw, Save } from 'lucide-react';
 import { saveSessionFile } from '@/features/sessions/api/sessionsApi';
 import { useOpenFile } from '@/features/sessions/hooks/useOpenFile';
-import { Button } from '@/shared/components/Button';
+import { Button } from '@/shared/components/actions/Button';
 import { cn } from '@/shared/utils/cn';
 
 interface FileEditorProps {

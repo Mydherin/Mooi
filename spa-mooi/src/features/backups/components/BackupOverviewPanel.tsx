@@ -6,8 +6,8 @@ import type { BackupOverview } from '@/features/backups/types/BackupOverview';
 import type { BackupStage } from '@/features/backups/types/BackupStage';
 import { PlatformEnvironmentCard } from '@/features/platform/components/PlatformEnvironmentCard';
 import type { Project } from '@/features/projects/types/Project';
-import { Button } from '@/shared/components/Button';
-import { Card } from '@/shared/components/Card';
+import { Button } from '@/shared/components/actions/Button';
+import { Card } from '@/shared/components/data-display/Card';
 
 interface BackupOverviewPanelProps {
   project: Project;

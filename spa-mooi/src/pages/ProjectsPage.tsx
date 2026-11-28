@@ -7,9 +7,9 @@ import { CreateProjectDialog } from '@/features/projects/components/CreateProjec
 import { ProjectGrid } from '@/features/projects/components/ProjectGrid';
 import { ProjectsHeader } from '@/features/projects/components/ProjectsHeader';
 import { useProjects } from '@/features/projects/hooks/useProjects';
-import { Button } from '@/shared/components/Button';
-import { EmptyState } from '@/shared/components/EmptyState';
-import { Eyebrow } from '@/shared/components/Eyebrow';
+import { Button } from '@/shared/components/actions/Button';
+import { EmptyState } from '@/shared/components/feedback/EmptyState';
+import { Eyebrow } from '@/shared/components/data-display/Eyebrow';
 
 const Skeleton = () => (
   <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">

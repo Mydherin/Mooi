@@ -1,7 +1,7 @@
 import { ChevronRight, History, RotateCcw } from 'lucide-react';
 import type { ProductionDeployment } from '@/features/production/types/ProductionDeployment';
 import { DeploymentStateIcon } from '@/features/production/components/DeploymentStateIcon';
-import { Card } from '@/shared/components/Card';
+import { Card } from '@/shared/components/data-display/Card';
 import { formatDuration } from '@/shared/utils/formatDuration';
 import { formatRelativeTime } from '@/shared/utils/formatRelativeTime';
 

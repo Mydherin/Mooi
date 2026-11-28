@@ -2,7 +2,7 @@ import { RefreshCw, SearchX } from 'lucide-react';
 import { RecipeListItem } from '@/features/recipes/components/RecipeListItem';
 import type { MarketplaceRecipes } from '@/features/recipes/types/MarketplaceRecipes';
 import type { Recipe } from '@/features/recipes/types/Recipe';
-import { Button } from '@/shared/components/Button';
+import { Button } from '@/shared/components/actions/Button';
 
 interface RecipeListProps {
   state: MarketplaceRecipes;

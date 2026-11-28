@@ -1,8 +1,10 @@
-import { mergeDeployment } from '@/features/sessions/lib/mergeDeployment';
-import type { Session } from '@/features/sessions/types/Session';
 import { create } from 'zustand';
 import { applySessionEvent, emptyTranscriptState } from '@/features/sessions/lib/applySessionEvent';
 import { applySessionToSession } from '@/features/sessions/lib/applySessionToSession';
+import { mergeDeployment } from '@/features/sessions/lib/mergeDeployment';
+import type { Session } from '@/features/sessions/types/Session';
+import type { SessionEvent } from '@/features/sessions/types/SessionEvent';
+import type { SessionTranscriptState } from '@/features/sessions/types/SessionTranscriptState';
 import type { SessionsState } from '@/stores/types/SessionsState';
 
 /**
@@ -12,6 +14,9 @@ import type { SessionsState } from '@/stores/types/SessionsState';
  * store never assigns transcript chat state directly, only replays events through it. Preview visit
  * metadata and the Compose log live alongside the transcript; the authoritative deployment snapshot
  * lives only in sessions.
+ *
+ * Updates keep references stable when nothing changed (an event older than the session's summary
+ * leaves `sessions` untouched), so list subscribers only re-render for real changes.
  */
 const mergeSession = (current: Session | undefined, incoming: Session): Session => current
   ? { ...(current.lastSeq >= incoming.lastSeq ? current : incoming), deployment: mergeDeployment(current.deployment, incoming.deployment) }
@@ -23,17 +28,27 @@ const watched = (state: SessionsState, sessionId: string): boolean =>
 
 const closed = (session: Session): Session => ({ ...session, status: 'closed', pending: null });
 
+/** One transcript patched, created empty first when the session has none yet. */
+const patchTranscript = (state: SessionsState, sessionId: string,
+  patch: (current: SessionTranscriptState) => Partial<SessionTranscriptState>): Pick<SessionsState, 'byId'> => {
+  const current = state.byId[sessionId] ?? emptyTranscriptState();
+  return { byId: { ...state.byId, [sessionId]: { ...current, ...patch(current) } } };
+};
+
+/** The session summary after `event`; the same object when the event changes nothing in it. */
+const foldSummary = (session: Session, event: SessionEvent, transcript: SessionTranscriptState): Session => {
+  const folded = applySessionToSession(session, event);
+  const waiting = transcript.pending.length > 0 && !event.type.startsWith('deployment.');
+  return waiting && folded.status !== 'waiting' ? { ...folded, status: 'waiting' } : folded;
+};
+
 export const useSessionsStore = create<SessionsState>((set, get) => ({
   sessions: [],
   byId: {},
 
-  setPane: (sessionId, pane) => set((state) => ({
-    byId: { ...state.byId, [sessionId]: { ...(state.byId[sessionId] ?? emptyTranscriptState()), pane } },
-  })),
+  setPane: (sessionId, pane) => set((state) => patchTranscript(state, sessionId, () => ({ pane }))),
 
-  setDeploymentLogOpen: (sessionId, open) => set((state) => ({
-    byId: { ...state.byId, [sessionId]: { ...(state.byId[sessionId] ?? emptyTranscriptState()), deploymentLogOpen: open } },
-  })),
+  setDeploymentLogOpen: (sessionId, open) => set((state) => patchTranscript(state, sessionId, () => ({ deploymentLogOpen: open }))),
 
   syncSessions: (sessions) => set((state) => {
     const incomingIds = new Set(sessions.map((session) => session.id));
@@ -54,9 +69,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       ? { ...session, deployment: mergeDeployment(session.deployment, snapshot) } : session),
   })),
 
-  markPreviewOpened: (sessionId, operationId) => set((state) => ({
-    byId: { ...state.byId, [sessionId]: { ...(state.byId[sessionId] ?? emptyTranscriptState()), previewOpenedOperationId: operationId } },
-  })),
+  markPreviewOpened: (sessionId, operationId) => set((state) => patchTranscript(state, sessionId, () => ({ previewOpenedOperationId: operationId }))),
 
   // In place: a known session keeps its position; a new one belongs at the top, like the server's order.
   upsertSession: (session) =>
@@ -89,63 +102,36 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
   applyEvent: (sessionId, event) =>
     set((state) => {
       const transcript = applySessionEvent(state.byId[sessionId] ?? emptyTranscriptState(), event);
-      const hasSession = state.sessions.some((session) => session.id === sessionId);
+      const current = state.sessions.find((session) => session.id === sessionId);
+      const next = current ? foldSummary(current, event, transcript) : undefined;
+      const sessions = current
+        ? next === current ? state.sessions : state.sessions.map((session) => (session === current && next ? next : session))
+        : event.type === 'session.sync' ? [...state.sessions, event.data.session as unknown as Session] : state.sessions;
 
-      return {
-        byId: { ...state.byId, [sessionId]: transcript },
-        sessions: hasSession
-          ? state.sessions.map((session) => (session.id === sessionId ? { ...applySessionToSession(session, event),
-            ...(transcript.pending.length && !event.type.startsWith('deployment.') ? { status: 'waiting' as const } : {}) } : session))
-          : event.type === 'session.sync' ? [...state.sessions, event.data.session as unknown as Session] : state.sessions,
-      };
+      return { byId: { ...state.byId, [sessionId]: transcript }, sessions };
     }),
 
-  setStreamState: (sessionId, streamState) =>
-    set((state) => ({
-      byId: { ...state.byId, [sessionId]: { ...(state.byId[sessionId] ?? emptyTranscriptState()), streamState } },
-    })),
+  setStreamState: (sessionId, streamState) => set((state) => patchTranscript(state, sessionId, () => ({ streamState }))),
 
+  // A read that started before the latest change event is stale: it never overwrites newer state.
   setChanges: (sessionId, changes, requestSeq = Number.MAX_SAFE_INTEGER) =>
     set((state) => {
-      const current = state.byId[sessionId] ?? emptyTranscriptState();
-      if (current.changesEventSeq > requestSeq) return state;
+      if ((state.byId[sessionId]?.changesEventSeq ?? 0) > requestSeq) return state;
       const failed = changes.status === 'error';
-      return {
-        byId: {
-          ...state.byId,
-          [sessionId]: {
-            ...current,
-            changes: failed ? current.changes : changes,
-            changesStatus: failed ? 'error' : 'ready',
-            changesError: failed ? changes.error ?? 'Could not calculate changes.' : null,
-          },
-        },
-      };
+      return patchTranscript(state, sessionId, (current) => ({
+        changes: failed ? current.changes : changes,
+        changesStatus: failed ? 'error' : 'ready',
+        changesError: failed ? changes.error ?? 'Could not calculate changes.' : null,
+      }));
     }),
 
-  setChangesLoading: (sessionId) =>
-    set((state) => {
-      const current = state.byId[sessionId] ?? emptyTranscriptState();
-      return {
-        byId: {
-          ...state.byId,
-          [sessionId]: { ...current, changesStatus: 'loading', changesError: null },
-        },
-      };
-    }),
+  setChangesLoading: (sessionId) => set((state) => patchTranscript(state, sessionId, () => ({ changesStatus: 'loading', changesError: null }))),
 
   setChangesError: (sessionId, error, requestSeq = Number.MAX_SAFE_INTEGER) =>
-    set((state) => {
-      const current = state.byId[sessionId] ?? emptyTranscriptState();
-      if (current.changesEventSeq > requestSeq) return state;
-      return {
-        byId: {
-          ...state.byId,
-          [sessionId]: { ...current, changesStatus: 'error', changesError: error },
-        },
-      };
-    }),
+    set((state) => ((state.byId[sessionId]?.changesEventSeq ?? 0) > requestSeq ? state
+      : patchTranscript(state, sessionId, () => ({ changesStatus: 'error', changesError: error })))),
 
+  // The view state (open pane, log drawer) survives a cleared conversation.
   resetTranscript: (sessionId) => set((state) => ({ byId: { ...state.byId, [sessionId]: {
     ...emptyTranscriptState(), deploymentLogOpen: state.byId[sessionId]?.deploymentLogOpen ?? false,
     pane: state.byId[sessionId]?.pane ?? 'conversation',

@@ -6,9 +6,9 @@ import type { Backup } from '@/features/backups/types/Backup';
 import type { BackupDetail } from '@/features/backups/types/BackupDetail';
 import { DeploymentStateBadge } from '@/features/production/components/DeploymentStateBadge';
 import { DeploymentStateIcon } from '@/features/production/components/DeploymentStateIcon';
-import { Badge } from '@/shared/components/Badge';
-import { Button } from '@/shared/components/Button';
-import { Modal } from '@/shared/components/Modal';
+import { Badge } from '@/shared/components/data-display/Badge';
+import { Button } from '@/shared/components/actions/Button';
+import { Dialog } from '@/shared/components/overlays/dialog/Dialog';
 import { cn } from '@/shared/utils/cn';
 import { formatDate } from '@/shared/utils/formatDate';
 import { formatDuration } from '@/shared/utils/formatDuration';
@@ -42,7 +42,7 @@ export const BackupDetailDialog = ({ backup, projectName, onClose, onVerify, onR
   const operation = detail?.operations.find((item) => item.operation.operationId === selected) ?? detail?.operations[0];
   const content = view === 'script' ? operation?.script ?? '' : operation?.logs.join('\n') || 'No output was recorded.';
 
-  return <Modal open size="lg" onClose={onClose} title={`${formatDate(backup.startedAt)} · ${formatTime(backup.startedAt)} · ${projectName}`}
+  return <Dialog open size="lg" onClose={onClose} title={`${formatDate(backup.startedAt)} · ${formatTime(backup.startedAt)} · ${projectName}`}
     description={`Release ${backup.releaseTag}${backup.finishedAt ? ` · took ${formatDuration(backup.startedAt, backup.finishedAt)}` : ''}`}
     footer={onDelete ? <Button variant="ghost" onClick={onDelete} className="text-danger sm:mr-auto"><Trash2 className="size-4" />Delete backup</Button> : undefined}>
     <div className="flex flex-wrap items-center gap-2">
@@ -83,5 +83,5 @@ export const BackupDetailDialog = ({ backup, projectName, onClose, onVerify, onR
               view === 'output' ? 'bg-neutral-950 text-neutral-100' : 'border border-line bg-surface-2 text-ink')}>{content}</pre>
           </div>
         </div>}
-  </Modal>;
+  </Dialog>;
 };

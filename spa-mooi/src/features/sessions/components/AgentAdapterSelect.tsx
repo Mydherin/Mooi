@@ -1,5 +1,5 @@
 import { useId } from 'react';
-import { SegmentedControl } from '@/shared/components/SegmentedControl';
+import { SegmentedControl } from '@/shared/components/navigation/SegmentedControl';
 import type { AgentAdapter } from '@/features/sessions/types/AgentAdapter';
 
 interface AgentAdapterSelectProps {
