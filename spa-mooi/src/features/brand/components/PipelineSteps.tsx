@@ -27,7 +27,7 @@ export const PipelineSteps = ({ steps, cursor, onSelect }: PipelineStepsProps) =
             title={step.label}
             className={cn(
               'flex w-full flex-col gap-2.5 rounded-sm text-left transition-colors duration-300',
-              current || done ? 'text-contrast-ink' : 'text-contrast-ink/45 hover:text-contrast-ink/80',
+              current || done ? 'text-contrast-ink' : 'text-contrast-ink/45 hover-device:hover:text-contrast-ink/80',
             )}
           >
             <span className="relative h-0.5 w-full overflow-hidden rounded-full bg-contrast-ink/15">
@@ -42,7 +42,7 @@ export const PipelineSteps = ({ steps, cursor, onSelect }: PipelineStepsProps) =
             </span>
             <span className="flex items-center gap-1.5 text-xs font-semibold">
               <Icon className={cn('size-3.5 shrink-0', current && 'text-brand-vivid')} />
-              <span className="font-mono text-[10px] opacity-55">0{index + 1}</span>
+              <span className="font-mono text-mono opacity-55">0{index + 1}</span>
               <span className="truncate">{step.label}</span>
             </span>
           </button>

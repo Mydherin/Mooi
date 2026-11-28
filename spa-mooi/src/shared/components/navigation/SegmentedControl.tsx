@@ -41,7 +41,7 @@ export const SegmentedControl = ({ items, value, onChange, className, labelledBy
             tabIndex={isActive ? 0 : -1}
             onClick={() => onChange(item.id)}
             className={cn(
-              'inline-flex min-h-9 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-[8px] px-3 text-[13px] font-medium transition-[background-color,color,box-shadow,transform] duration-200 ease-standard active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand',
+              'inline-flex min-h-9 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-[8px] px-3 text-footnote font-medium transition-[background-color,color,box-shadow,transform] duration-200 ease-standard active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand',
               isActive ? 'bg-surface text-ink shadow-raised ring-1 ring-line' : 'text-ink-muted hover-device:hover:text-ink',
             )}
           >

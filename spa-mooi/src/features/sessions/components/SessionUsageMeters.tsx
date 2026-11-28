@@ -18,8 +18,8 @@ const UsageMeter = ({ label, name, percent, hint }: UsageMeterProps) => {
   return (
     <span role="img" aria-label={description} title={description} className="flex min-w-0 flex-col gap-1">
       <span className="flex items-baseline justify-between gap-2 leading-none">
-        <span className="font-mono text-[10px] font-medium tracking-[0.1em] text-ink-subtle uppercase">{label}</span>
-        <span className={cn('text-[11px] font-bold tabular-nums', shown == null ? 'text-ink-subtle' : 'text-ink')}>
+        <span className="font-mono text-mono font-medium tracking-[0.1em] text-ink-subtle uppercase">{label}</span>
+        <span className={cn('text-caption font-bold tabular-nums', shown == null ? 'text-ink-subtle' : 'text-ink')}>
           {shown == null ? '—' : `${shown}%`}
         </span>
       </span>

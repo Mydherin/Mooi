@@ -36,16 +36,16 @@ export const TraceModelTable = ({ models }: TraceModelTableProps) => {
         return (
           <li key={model.model} className="flex min-w-0 flex-col gap-2 py-3 first:pt-0 last:pb-0">
             <div className="flex min-w-0 items-baseline gap-2">
-              <span className="min-w-0 flex-1 truncate font-mono text-[13px] font-medium text-ink" title={model.model}>
+              <span className="min-w-0 flex-1 truncate font-mono text-mono font-medium text-ink" title={model.model}>
                 {model.model}
               </span>
-              <span className="shrink-0 text-[12px] text-ink-muted tabular-nums" title={`${exact(model.calls)} requests`}>
+              <span className="shrink-0 text-caption text-ink-muted tabular-nums" title={`${exact(model.calls)} requests`}>
                 {formatCount(model.calls)} {model.calls === 1 ? 'call' : 'calls'}
               </span>
-              <span className="shrink-0 font-mono text-[13px] font-semibold text-ink tabular-nums" title={`${exact(tokens)} tokens`}>
+              <span className="shrink-0 font-mono text-mono font-semibold text-ink tabular-nums" title={`${exact(tokens)} tokens`}>
                 {formatTokens(tokens)}
               </span>
-              <span className="w-9 shrink-0 text-right text-[11px] text-ink-subtle tabular-nums">{formatTokenShare(tokens, grand)}</span>
+              <span className="w-9 shrink-0 text-right text-caption text-ink-subtle tabular-nums">{formatTokenShare(tokens, grand)}</span>
             </div>
             <div
               role="img"
@@ -59,7 +59,7 @@ export const TraceModelTable = ({ models }: TraceModelTableProps) => {
                 ) : null,
               )}
             </div>
-            <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-ink-muted @lg:grid-cols-4">
+            <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-caption text-ink-muted @lg:grid-cols-4">
               {PARTS.map((part) => (
                 <div key={part.key} className="flex min-w-0 items-center gap-1.5" title={`${part.label}: ${exact(model[part.key])}`}>
                   <span aria-hidden className={cn('size-2 shrink-0 rounded-[2px]', part.dot)} />

@@ -37,10 +37,10 @@ export const TodosPanel = ({ projectId, branch }: TodosPanelProps) => {
       <div className="flex flex-col gap-3 border-b border-line pb-3 sm:flex-row sm:items-center">
         <div className="min-w-0 flex-1">
           <Eyebrow>Kept in the repository</Eyebrow>
-          <p className="mt-1 flex min-w-0 items-center gap-1.5 font-mono text-[11px] text-ink-subtle">
+          <p className="mt-1 flex min-w-0 items-center gap-1.5 font-mono text-mono text-ink-subtle">
             {list.htmlUrl && list.state !== 'missing' ? (
               <a href={list.htmlUrl} target="_blank" rel="noreferrer"
-                className="inline-flex min-w-0 items-center gap-1.5 rounded transition hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand">
+                className="inline-flex min-w-0 items-center gap-1.5 rounded transition hover-device:hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand">
                 <span className="truncate">{list.path}</span>
                 <ExternalLink className="size-3 shrink-0" />
               </a>
@@ -57,7 +57,7 @@ export const TodosPanel = ({ projectId, branch }: TodosPanelProps) => {
             disabled={status === 'saving'}
             aria-label="Reload from GitHub"
             title="Reload from GitHub"
-            className="inline-flex size-8 items-center justify-center rounded-control border border-line text-ink-muted transition hover:bg-surface-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:opacity-60"
+            className="inline-flex size-8 items-center justify-center rounded-control border border-line text-ink-muted transition hover-device:hover:bg-surface-2 hover-device:hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:opacity-60"
           >
             <RefreshCw className="size-3.5" />
           </button>

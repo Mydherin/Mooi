@@ -35,7 +35,7 @@ export const MessageImageTile = ({ sessionId, image, single, onOpen }: MessageIm
           ratio does not resolve in every engine, which left the picture overflowing the tile. */}
       {url ? (
         <img src={url} alt={image.name} draggable={false} decoding="async"
-          className="absolute inset-0 size-full object-cover transition duration-300 group-hover:scale-[1.03]" />
+          className="absolute inset-0 size-full object-cover transition duration-300 hover-device:group-hover:scale-[1.03]" />
       ) : failed ? (
         <span className="absolute inset-0 flex flex-col items-center justify-center gap-1 p-2 text-xs text-ink-subtle">
           <ImageOff aria-hidden="true" className="size-5" />

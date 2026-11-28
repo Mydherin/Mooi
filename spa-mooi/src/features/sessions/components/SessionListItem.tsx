@@ -28,35 +28,32 @@ export const SessionListItem = ({ session, backLink, depth = 0 }: SessionListIte
   const indent = Math.min(depth, MAX_INDENT) * INDENT_REM;
 
   return (
-    <li className="relative border-b border-line last:border-b-0">
+    <li className="relative min-w-0 bg-surface">
       {depth > 0 ? (
         <span aria-hidden className="pointer-events-none absolute -top-px bottom-1/2 w-3 rounded-bl-lg border-b border-l border-brand/30"
-          style={{ left: `${indent - 0.75}rem` }} />
+          style={{ left: `${indent + 0.25}rem` }} />
       ) : null}
       <Link
         to={sessionPath(session.projectId, session.id)}
         state={backLink ? backLinkState(backLink) : undefined}
-        style={depth > 0 ? { paddingLeft: `${indent + 0.5}rem` } : undefined}
-        className="flex items-center gap-3 px-1 py-3.5 transition hover:bg-surface-2 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand sm:gap-4 sm:px-2.5"
+        style={depth > 0 ? { paddingLeft: `${indent + 1.5}rem` } : undefined}
+        className="flex min-h-16 items-center gap-3 py-3 pr-3 pl-4 outline-none active:bg-surface-2 focus-visible:bg-surface-2 hover-device:hover:bg-surface-2/60 sm:gap-4"
       >
-        <span className="w-[108px] shrink-0">
-          <SessionStatusBadge status={session.status} deployment={session.deployment.state} />
-        </span>
-
         <div className="min-w-0 flex-1">
-          <p className="flex min-w-0 items-center gap-1.5 text-sm font-semibold text-ink">
-            <GitBranch className="size-3.5 shrink-0 text-ink-subtle" />
-            <span className="truncate font-mono">{session.branch}</span>
+          <p className="flex min-w-0 items-center gap-1.5 text-callout font-semibold text-ink">
+            <GitBranch aria-hidden className="size-3.5 shrink-0 text-ink-subtle" />
+            <span className="min-w-0 truncate font-mono">{session.branch}</span>
             {session.factory ? <Badge tone="brand" icon={Factory} className="shrink-0">{factoryRoleLabel(session.factory.role)}</Badge> : null}
+            <span className="ml-auto shrink-0 pl-1"><SessionStatusBadge status={session.status} deployment={session.deployment.state} /></span>
           </p>
-          {session.title ? <p className="mt-0.5 truncate text-[13px] font-medium text-ink-muted">{session.title}</p> : null}
+          {session.title ? <p className="mt-0.5 truncate text-footnote font-medium text-ink-muted">{session.title}</p> : null}
           {session.origin ? (
-            <p className={depth > 0 ? 'sr-only' : 'mt-0.5 flex min-w-0 items-center gap-1 text-[11px] font-semibold text-brand'}>
+            <p className={depth > 0 ? 'sr-only' : 'mt-0.5 flex min-w-0 items-center gap-1 text-caption font-semibold text-brand'}>
               <CornerDownRight aria-hidden className="size-3 shrink-0" />
               <span className="truncate">Opened from <span className="font-mono">{session.origin.branch}</span></span>
             </p>
           ) : null}
-          <p className="mt-0.5 truncate text-[11px] text-ink-subtle">
+          <p className="mt-0.5 truncate text-caption text-ink-subtle">
             {session.detail ?? `Updated ${formatDate(session.updatedAt)}`}
           </p>
           <span className="mt-0.5 block sm:hidden"><SessionAccountIdentity session={session} compact /></span>
@@ -68,7 +65,7 @@ export const SessionListItem = ({ session, backLink, depth = 0 }: SessionListIte
 
         <span className="hidden min-w-0 max-w-32 shrink-0 sm:block"><SessionAccountIdentity session={session} /></span>
 
-        <ChevronRight className="size-4 shrink-0 text-line-strong" />
+        <ChevronRight aria-hidden className="size-4 shrink-0 text-ink-subtle" />
       </Link>
     </li>
   );

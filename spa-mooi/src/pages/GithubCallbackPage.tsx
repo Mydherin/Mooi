@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { LoaderCircle, TriangleAlert } from 'lucide-react';
+import { TriangleAlert } from 'lucide-react';
 import { ROUTES } from '@/app/routes';
 import { completeGithubAuthorization } from '@/features/github/api/githubApi';
 import { Card } from '@/shared/components/data-display/Card';
 import { buttonStyles } from '@/shared/styles/buttonStyles';
 import { useGithubStore } from '@/stores/githubStore';
+import { Spinner } from '@/shared/components/feedback/Spinner';
 
 /**
  * Where GitHub sends the player back.
@@ -84,7 +85,7 @@ export const GithubCallbackPage = () => {
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col items-center px-4 py-24 text-center lg:px-6">
-      <LoaderCircle className="size-6 animate-spin text-brand" />
+      <Spinner className="size-6 text-brand" />
       <p className="mt-4 text-sm text-ink-muted">Linking your GitHub account…</p>
     </div>
   );

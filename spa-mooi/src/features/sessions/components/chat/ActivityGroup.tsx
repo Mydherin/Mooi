@@ -2,9 +2,10 @@ import { lazy, memo, Suspense, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import { ActivityStepRow } from './ActivityStepRow';
 import { WorkingStatus } from './WorkingStatus';
-import { describeStep, thinkingHeadline, thinkingIcon as ThinkingIcon } from '@/features/sessions/lib/describeStep';
-import { blockKey, summarizeActivity } from '@/features/sessions/lib/groupTurnBlocks';
-import type { ActivityBlock } from '@/features/sessions/lib/groupTurnBlocks';
+import { currentAction } from '@/features/sessions/lib/activity/currentAction';
+import { thinkingHeadline, thinkingIcon as ThinkingIcon } from '@/features/sessions/lib/activity/describeStep';
+import { blockKey, type ActivityBlock } from '@/features/sessions/lib/activity/groupTurnBlocks';
+import { summarizeActivity } from '@/features/sessions/lib/activity/summarizeActivity';
 import { cn } from '@/shared/utils/cn';
 
 const MarkdownContent = lazy(() => import('./MarkdownContent'));
@@ -29,7 +30,7 @@ const ThoughtRow = memo(function ThoughtRow({ text }: { text: string }) {
         type="button"
         onClick={() => setOpen((current) => !current)}
         aria-expanded={open}
-        className="group/row flex w-full min-w-0 items-center gap-2 rounded-md py-1 pr-1.5 text-left text-[13px] transition hover:bg-surface-2/70 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand"
+        className="group/row flex w-full min-w-0 items-center gap-2 rounded-md py-1 pr-1.5 text-left text-footnote transition touch:min-h-10 hover-device:hover:bg-surface-2/70 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand"
       >
         <span className="relative z-10 flex size-5 shrink-0 items-center justify-center rounded-full bg-surface">
           <ThinkingIcon className="size-3.5 text-ink-subtle" />
@@ -38,11 +39,11 @@ const ThoughtRow = memo(function ThoughtRow({ text }: { text: string }) {
           <span className="font-medium text-ink-muted">Thought</span>
           {headline ? <span className="ml-1.5 text-ink-subtle">{headline}</span> : null}
         </span>
-        <ChevronRight className={cn('size-3.5 shrink-0 text-ink-subtle opacity-0 transition group-hover/row:opacity-100 group-focus-visible/row:opacity-100',
+        <ChevronRight className={cn('size-3.5 shrink-0 text-ink-subtle transition hover-device:opacity-0 hover-device:group-hover/row:opacity-100 group-focus-visible/row:opacity-100',
           open && 'rotate-90 opacity-100')} />
       </button>
       {open ? (
-        <div className="mt-1 mb-2 ml-7 max-h-80 animate-fade-in overflow-auto rounded-lg border border-line bg-surface px-3.5 py-2.5 text-[13px] leading-6 text-ink-muted">
+        <div className="mt-1 mb-2 ml-7 max-h-80 animate-fade-in overflow-auto overscroll-contain rounded-lg border border-line bg-surface px-3.5 py-2.5 text-footnote text-ink-muted">
           <Suspense fallback={<p className="whitespace-pre-wrap">{text}</p>}>
             <MarkdownContent text={text} />
           </Suspense>
@@ -51,18 +52,6 @@ const ThoughtRow = memo(function ThoughtRow({ text }: { text: string }) {
     </li>
   );
 });
-
-/** The live line: the action in flight (the latest one when tools run in parallel), else the last thought. */
-const currentAction = (blocks: ActivityBlock[]): { label: string; detail: string | null } => {
-  const running = [...blocks].reverse().find((block) => block.kind === 'step' && block.step.status === 'running');
-  const last = running ?? blocks[blocks.length - 1];
-  if (last?.kind === 'step' && last.step.status === 'running') {
-    const description = describeStep(last.step);
-    return { label: description.verb, detail: description.detail };
-  }
-  if (last?.kind === 'thinking') return { label: thinkingHeadline(last.text) ?? 'Thinking', detail: null };
-  return { label: blocks.length ? 'Working' : 'Thinking', detail: null };
-};
 
 /**
  * Everything the agent does between two messages to the user, folded into one line. While it runs,
@@ -91,18 +80,18 @@ export const ActivityGroup = memo(function ActivityGroup({ sessionId, blocks, ac
         onClick={() => setOpen((current) => !current)}
         disabled={!expandable}
         aria-expanded={expandable ? open : undefined}
-        className="group flex max-w-full min-w-0 items-center gap-1.5 rounded-md py-0.5 pr-1 text-left transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:cursor-default"
+        className="group flex max-w-full min-w-0 items-center gap-1.5 rounded-md py-0.5 pr-1 text-left transition touch:min-h-10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:cursor-default"
       >
         {action ? (
           <WorkingStatus label={action.label} detail={action.detail} since={since} />
         ) : summary ? (
-          <span className="min-w-0 truncate text-[13px] text-ink-subtle transition group-enabled:group-hover:text-ink-muted">
+          <span className="min-w-0 truncate text-footnote text-ink-subtle transition hover-device:group-enabled:group-hover:text-ink-muted">
             {summary.text}
             {summary.failed ? <span className="ml-1.5 text-danger">· {summary.failed} failed</span> : null}
           </span>
         ) : null}
         {expandable ? (
-          <ChevronRight className={cn('size-3.5 shrink-0 text-ink-subtle transition group-hover:text-ink-muted', open && 'rotate-90')} />
+          <ChevronRight className={cn('size-3.5 shrink-0 text-ink-subtle transition hover-device:group-hover:text-ink-muted', open && 'rotate-90')} />
         ) : null}
       </button>
 

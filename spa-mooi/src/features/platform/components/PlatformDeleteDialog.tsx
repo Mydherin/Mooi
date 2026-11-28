@@ -1,7 +1,5 @@
 import { useState } from 'react';
-import { LoaderCircle, Trash2 } from 'lucide-react';
-import { Button } from '@/shared/components/actions/Button';
-import { Dialog } from '@/shared/components/overlays/dialog/Dialog';
+import { ConfirmDialog } from '@/shared/components/overlays/confirm/ConfirmDialog';
 
 interface PlatformDeleteDialogProps {
   title: string;
@@ -25,14 +23,10 @@ export const PlatformDeleteDialog = ({ title, description, consequences, action,
     catch (failure) { setError((failure as Error).message); setBusy(false); }
   };
 
-  return <Dialog open onClose={onClose} dismissible={!busy} title={title} description={description}
-    footer={<><Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
-      <Button variant="danger" onClick={() => void confirm()} disabled={busy}>
-        {busy ? <LoaderCircle className="size-4 animate-spin" /> : <Trash2 className="size-4" />}{busy ? 'Deleting…' : action}
-      </Button></>}>
-    <ul className="flex flex-col gap-2 text-sm leading-relaxed text-ink-muted">
+  return <ConfirmDialog open tone="danger" onClose={onClose} onConfirm={() => void confirm()} title={title} description={description}
+    confirmLabel={action} busy={busy} error={error}>
+    <ul className="flex list-disc flex-col gap-1.5 pl-5 text-callout text-ink-muted">
       {consequences.map((line) => <li key={line}>{line}</li>)}
     </ul>
-    {error ? <p role="alert" className="mt-4 rounded-control border border-danger/30 bg-danger-soft px-4 py-2.5 text-sm text-danger">{error}</p> : null}
-  </Dialog>;
+  </ConfirmDialog>;
 };

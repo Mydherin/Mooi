@@ -41,15 +41,15 @@ export const TodoFilters = ({ value, counts, onChange }: TodoFiltersProps) => {
             title={count >= 1000 ? `${label}: ${count.toLocaleString('en')}` : undefined}
             onClick={() => onChange(id)}
             className={cn(
-              'flex min-h-11 min-w-0 flex-col items-center justify-center gap-0.5 rounded-[7px] px-1 py-1 text-[12px] font-medium transition-[background-color,color,box-shadow] duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand sm:min-h-9 sm:flex-row sm:gap-1.5 sm:px-2.5 sm:py-0 sm:text-[13px]',
-              active ? 'bg-surface text-ink shadow-raised ring-1 ring-line' : 'text-ink-muted hover:text-ink',
+              'flex min-h-11 min-w-0 flex-col items-center justify-center gap-0.5 rounded-[7px] px-1 py-1 text-caption font-medium transition-[background-color,color,box-shadow] duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand sm:min-h-9 sm:flex-row sm:gap-1.5 sm:px-2.5 sm:py-0 sm:text-footnote',
+              active ? 'bg-surface text-ink shadow-raised ring-1 ring-line' : 'text-ink-muted hover-device:hover:text-ink',
             )}
           >
             <span className="max-w-full truncate">{label}</span>
             <span
               aria-hidden
               className={cn(
-                'min-w-5 rounded-full px-1.5 py-px text-center font-mono text-[10.5px] leading-4 font-medium tabular-nums whitespace-nowrap transition-colors',
+                'min-w-5 rounded-full px-1.5 py-px text-center font-mono text-mono leading-4 font-medium tabular-nums whitespace-nowrap transition-colors',
                 active ? 'bg-contrast text-contrast-ink' : 'bg-surface-3 text-ink-muted',
               )}
             >

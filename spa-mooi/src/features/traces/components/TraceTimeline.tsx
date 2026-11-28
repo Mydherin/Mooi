@@ -73,7 +73,7 @@ export const TraceTimeline = ({ rows, scale, now, selectedId, collapsed, onSelec
           className="sticky top-0 z-10 grid grid-cols-[minmax(0,1fr)_38%] border-b border-line bg-surface/95 backdrop-blur"
           style={{ height: AXIS_HEIGHT }}
         >
-          <span className="flex items-center px-3 text-[11px] font-medium text-ink-subtle">Step</span>
+          <span className="flex items-center px-3 text-caption font-medium text-ink-subtle">Step</span>
           <span className="relative border-l border-line/60">
             <span className="absolute inset-x-3 inset-y-0">
               {scale.ticks.map((tick) => {
@@ -81,7 +81,7 @@ export const TraceTimeline = ({ rows, scale, now, selectedId, collapsed, onSelec
                 return (
                   <span
                     key={tick}
-                    className="absolute inset-y-0 flex items-center border-l border-line pl-1 font-mono text-[10.5px] whitespace-nowrap text-ink-subtle tabular-nums"
+                    className="absolute inset-y-0 flex items-center border-l border-line pl-1 font-mono text-mono whitespace-nowrap text-ink-subtle tabular-nums"
                     style={{ left: `${left}%` }}
                   >
                     {left > 80 ? null : formatSpanDuration(tick)}

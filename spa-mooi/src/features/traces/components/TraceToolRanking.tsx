@@ -48,18 +48,18 @@ export const TraceToolRanking = ({ tools }: TraceToolRankingProps) => {
             }`;
             return (
               <li key={`${tool.kind}:${tool.name}`} title={detail} aria-label={detail} className="flex min-w-0 flex-col gap-1">
-                <div className="flex min-w-0 items-center gap-2 text-[12px]">
+                <div className="flex min-w-0 items-center gap-2 text-caption">
                   <Icon aria-hidden className={cn('size-3.5 shrink-0', style.text)} />
                   <span className="min-w-0 flex-1 truncate font-medium text-ink">{tool.name}</span>
                   {tool.errors > 0 ? (
-                    <span className="shrink-0 rounded-full bg-danger-soft px-1.5 py-px text-[11px] font-medium text-danger tabular-nums">
+                    <span className="shrink-0 rounded-full bg-danger-soft px-1.5 py-px text-caption font-medium text-danger tabular-nums">
                       {formatCount(tool.errors)} err
                     </span>
                   ) : null}
                   <span className="shrink-0 font-mono text-ink tabular-nums">
                     {rank === 'calls' ? formatCount(tool.calls) : formatSpanDuration(tool.durationMs)}
                   </span>
-                  <span className="hidden w-14 shrink-0 text-right font-mono text-[11px] text-ink-subtle tabular-nums sm:inline">
+                  <span className="hidden w-14 shrink-0 text-right font-mono text-mono text-ink-subtle tabular-nums sm:inline">
                     {rank === 'calls' ? formatSpanDuration(tool.durationMs) : `${formatCount(tool.calls)}×`}
                   </span>
                 </div>

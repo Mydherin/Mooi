@@ -1,5 +1,6 @@
-import { FlaskConical, LoaderCircle } from 'lucide-react';
+import { FlaskConical } from 'lucide-react';
 import { buttonStyles } from '@/shared/styles/buttonStyles';
+import { Spinner } from '@/shared/components/feedback/Spinner';
 
 /** Any non-empty credential: a mocked mic-mooi ignores it and signs in its fixed development player. */
 const MOCK_CREDENTIAL = 'mock-google-credential';
@@ -21,7 +22,7 @@ export const MockSignInButton = ({ onCredential, busy = false }: MockSignInButto
     onClick={() => onCredential(MOCK_CREDENTIAL)}
     title="Development sign-in: Google is mocked"
   >
-    {busy ? <LoaderCircle className="size-4 animate-spin" /> : <FlaskConical className="size-4" />}
+    {busy ? <Spinner className="size-4" /> : <FlaskConical className="size-4" />}
     {busy ? 'Signing in…' : 'Continue as developer'}
   </button>
 );

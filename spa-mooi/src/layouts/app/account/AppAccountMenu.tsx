@@ -36,8 +36,8 @@ export const AppAccountMenu = ({ collapsed }: AppAccountMenuProps) => {
           <Avatar src={player.avatarUrl} name={player.username} size="sm" />
           {collapsed ? null : (
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-[13px] font-medium text-ink">{player.username}</span>
-              <span className="block truncate text-[11px] text-ink-subtle">{player.email}</span>
+              <span className="block truncate text-footnote font-medium text-ink">{player.username}</span>
+              <span className="block truncate text-caption text-ink-subtle">{player.email}</span>
             </span>
           )}
         </button>

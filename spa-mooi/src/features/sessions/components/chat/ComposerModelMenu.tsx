@@ -60,7 +60,7 @@ export const ComposerModelMenu = ({ model, effort, modelOptions, effortOptions, 
       <button ref={triggerRef} type="button" onClick={() => setOpen((value) => !value)}
         aria-label={`Model and effort: ${summary}`} title="Model and effort" aria-haspopup="dialog" aria-expanded={open}
         className={cn('flex h-9 min-w-0 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand',
-          open ? 'border-ink bg-surface text-ink' : 'border-line bg-surface text-ink-muted hover:text-ink')}>
+          open ? 'border-ink bg-surface text-ink' : 'border-line bg-surface text-ink-muted hover-device:hover:text-ink')}>
         <SlidersHorizontal className="size-3.5 shrink-0" aria-hidden="true" />
         <span className="truncate">{summary}</span>
       </button>

@@ -23,12 +23,12 @@ export const ProjectKindStep = ({ repository, webApplication, onChange, onBack }
         <Initials value={shortName} size="md" className="bg-surface" />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-ink">{shortName}</p>
-          <p className="truncate font-mono text-[11px] text-ink-subtle">{repository.fullName}</p>
+          <p className="truncate font-mono text-mono text-ink-subtle">{repository.fullName}</p>
         </div>
         <button
           type="button"
           onClick={onBack}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-control px-2.5 py-2 text-[12px] font-bold text-ink-muted transition hover:bg-surface hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-control px-2.5 py-2 text-caption font-bold text-ink-muted transition hover-device:hover:bg-surface hover-device:hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
         >
           <ArrowLeft className="size-3.5" />
           Change

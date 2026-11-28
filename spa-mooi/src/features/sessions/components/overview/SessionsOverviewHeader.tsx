@@ -15,7 +15,7 @@ interface SessionsOverviewHeaderProps {
 export const SessionsOverviewHeader = ({ query, onQueryChange, showSearch, refreshing, onRefresh, onNewSession }: SessionsOverviewHeaderProps) => (
   <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
     <div>
-      <p className="mb-2 font-mono text-[10.5px] font-medium tracking-[0.12em] text-ink-subtle uppercase">Development</p>
+      <p className="mb-2 font-mono text-mono font-medium tracking-[0.12em] text-ink-subtle uppercase">Development</p>
       <h1 className="text-[30px] leading-[1.1] font-semibold tracking-[-0.04em] text-ink sm:text-[34px]">Sessions</h1>
       <p className="mt-2 max-w-md text-sm leading-relaxed text-ink-muted">
         Every live session across your projects, kept up to date while agents work and apps deploy.

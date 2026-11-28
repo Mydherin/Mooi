@@ -90,7 +90,7 @@ export const Menu = ({ label, sections, header, renderTrigger, icon: Icon = More
             triggerClassName,
           )}>
           <Icon aria-hidden className="size-4.5" />
-          {count !== undefined ? <span aria-hidden className="min-w-4.5 rounded-full bg-brand-soft px-1.5 text-[11px] leading-4.5 font-bold text-brand tabular-nums">{formatCount(count)}</span> : null}
+          {count !== undefined ? <span aria-hidden className="min-w-4.5 rounded-full bg-brand-soft px-1.5 text-caption leading-4.5 font-bold text-brand tabular-nums">{formatCount(count)}</span> : null}
           {indicator ? <span aria-hidden className="absolute top-2 right-2 size-2 rounded-full bg-danger-dot ring-2 ring-surface" /> : null}
         </button>
       )}

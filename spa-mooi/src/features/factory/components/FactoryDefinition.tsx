@@ -1,4 +1,4 @@
-import { CircleCheck, LoaderCircle, Play, Stamp } from 'lucide-react';
+import { CircleCheck, Play, Stamp } from 'lucide-react';
 import { FactoryChatCard } from '@/features/factory/components/FactoryChatCard';
 import { FactoryChecklist } from '@/features/factory/components/FactoryChecklist';
 import type { Factory } from '@/features/factory/types/Factory';
@@ -8,6 +8,7 @@ import type { Session } from '@/features/sessions/types/Session';
 import { Button } from '@/shared/components/actions/Button';
 import { Card } from '@/shared/components/data-display/Card';
 import { Eyebrow } from '@/shared/components/data-display/Eyebrow';
+import { Spinner } from '@/shared/components/feedback/Spinner';
 
 interface FactoryDefinitionProps {
   project: Project;
@@ -39,23 +40,23 @@ export const FactoryDefinition = ({ project, factory, chat, approving, approvalI
       <Card className="flex h-fit flex-col gap-5 p-5">
         <div>
           <Eyebrow>{approved ? 'Approved' : 'Definition'}</Eyebrow>
-          <p className="mt-1.5 text-[13px] leading-relaxed text-ink-muted">
+          <p className="mt-1.5 text-footnote leading-relaxed text-ink-muted">
             {approved
               ? 'The definition is approved. Start the factory with the agent that runs its sessions.'
               : `The architect writes the documents in docs/factory/ and publishes them to ${branch}. Approve once you agree with them.`}
           </p>
         </div>
         <FactoryChecklist plan={factory.plan} issues={approved ? [] : approvalIssues} fullName={project.fullName} branch={branch} />
-        {actionError ? <p role="alert" className="rounded-control border border-danger/30 bg-danger-soft px-3.5 py-2.5 text-[12.5px] text-danger">{actionError}</p> : null}
+        {actionError ? <p role="alert" className="rounded-control border border-danger/30 bg-danger-soft px-3.5 py-2.5 text-footnote text-danger">{actionError}</p> : null}
         {approved ? (
           <Button variant="brand" onClick={onStart}><Play className="size-4" />Start the factory</Button>
         ) : (
           <Button variant="brand" onClick={onApprove} disabled={approving}>
-            {approving ? <LoaderCircle className="size-4 animate-spin" /> : <Stamp className="size-4" />}
+            {approving ? <Spinner className="size-4" /> : <Stamp className="size-4" />}
             Approve definition
           </Button>
         )}
-        {approved ? <p className="flex items-center gap-1.5 text-[12px] text-success"><CircleCheck className="size-3.5" />Ready to build</p> : null}
+        {approved ? <p className="flex items-center gap-1.5 text-caption text-success"><CircleCheck className="size-3.5" />Ready to build</p> : null}
       </Card>
     </div>
   );

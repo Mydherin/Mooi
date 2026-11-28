@@ -14,7 +14,7 @@ interface ImageLightboxProps {
 }
 
 const SWIPE_PX = 50;
-const control = 'inline-flex size-11 shrink-0 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-md transition hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white active:scale-95';
+const control = 'inline-flex size-11 shrink-0 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-md transition hover-device:hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white active:scale-95';
 
 const Picture = ({ sessionId, image }: { sessionId: string; image: ImageAttachment }) => {
   const { url, failed } = useSessionImageUrl(sessionId, image.id);

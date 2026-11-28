@@ -25,7 +25,7 @@ export const FactoryActiveStep = ({ factory }: { factory: Factory }) => {
     return (
       <Card as="section" className="flex flex-col p-4 sm:p-5">
         <Eyebrow>Active step</Eyebrow>
-        <p className="mt-3 flex items-center gap-2 text-[13px] text-ink-subtle">
+        <p className="mt-3 flex items-center gap-2 text-footnote text-ink-subtle">
           <Coffee className="size-4" />
           {factory.status === 'running' ? 'Between steps: reading the plan.' : 'No session is working right now.'}
         </p>
@@ -45,17 +45,17 @@ export const FactoryActiveStep = ({ factory }: { factory: Factory }) => {
       <div className="flex items-center gap-2">
         <Eyebrow className="flex-1">{live ? 'Active step' : 'Step on hold'}</Eyebrow>
         <StatusDot tone={live ? 'success' : 'neutral'} pulse={live} />
-        <span className="text-[11.5px] text-ink-subtle">
+        <span className="text-caption text-ink-subtle">
           {live ? `started ${formatRelativeTime(step.startedAt)}` : 'resumes with the factory'}
         </span>
       </div>
       <div className="min-w-0">
-        <p className="text-[15px] font-semibold text-ink">{factoryRoleLabel(step.role)}</p>
-        <p className="mt-0.5 truncate font-mono text-[12px] text-ink-muted">{factoryStepTarget(step)}</p>
-        {step.branch ? <p className="mt-0.5 truncate font-mono text-[11px] text-ink-subtle">{step.branch}</p> : null}
+        <p className="text-body font-semibold text-ink">{factoryRoleLabel(step.role)}</p>
+        <p className="mt-0.5 truncate font-mono text-mono text-ink-muted">{factoryStepTarget(step)}</p>
+        {step.branch ? <p className="mt-0.5 truncate font-mono text-mono text-ink-subtle">{step.branch}</p> : null}
       </div>
       <div>
-        <div className="flex items-center justify-between gap-2 text-[11.5px] text-ink-subtle">
+        <div className="flex items-center justify-between gap-2 text-caption text-ink-subtle">
           <span className="flex items-center gap-1.5"><Gauge className="size-3.5" />Context</span>
           <span className="tabular-nums">{percent === null ? '—' : `${Math.round(percent)}%`} / {FACTORY_CONTEXT_LIMIT}%</span>
         </div>

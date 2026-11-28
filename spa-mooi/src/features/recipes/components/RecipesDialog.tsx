@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ChefHat, LoaderCircle, RefreshCw } from 'lucide-react';
+import { ChefHat, RefreshCw } from 'lucide-react';
 import { RecipeList } from '@/features/recipes/components/RecipeList';
 import { RecipeMarketplaceChips } from '@/features/recipes/components/RecipeMarketplaceChips';
 import { RecipePreview } from '@/features/recipes/components/RecipePreview';
@@ -12,6 +12,7 @@ import { SearchInput } from '@/shared/components/forms/SearchInput';
 import { iconAction } from '@/shared/styles/iconAction';
 import { cn } from '@/shared/utils/cn';
 import { useRecipesStore } from '@/stores/recipesStore';
+import { Spinner } from '@/shared/components/feedback/Spinner';
 
 interface RecipesDialogProps {
   onClose: () => void;
@@ -59,7 +60,7 @@ export const RecipesDialog = ({ onClose, initialMarketplaceId, onApply, applyDis
         <Button variant="ghost" onClick={onClose}>{onApply ? 'Cancel' : 'Close'}</Button>
         {onApply ? (
           <Button variant="brand" onClick={() => void apply()} disabled={!selected || applying || applyDisabled}>
-            {applying ? <LoaderCircle className="size-4 animate-spin" /> : <ChefHat className="size-4" />}
+            {applying ? <Spinner className="size-4" /> : <ChefHat className="size-4" />}
             Apply recipe
           </Button>
         ) : null}

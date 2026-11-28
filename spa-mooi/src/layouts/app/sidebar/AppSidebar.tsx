@@ -25,7 +25,7 @@ export const AppSidebar = ({ className }: AppSidebarProps) => {
     <aside aria-label="Sidebar" className={cn('flex flex-col transition-[width] duration-300 ease-sheet', collapsed ? 'w-[72px]' : 'w-[252px]', className)}>
       <div className={cn('flex h-16 shrink-0 items-center gap-2', collapsed ? 'flex-col justify-center pt-3' : 'justify-between pr-2 pl-5')}>
         <Link to={ROUTES.projects} aria-label="Projects"
-          className="rounded-control transition-opacity hover:opacity-85 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand">
+          className="rounded-control transition-opacity hover-device:hover:opacity-85 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand">
           <Logo compact={collapsed} />
         </Link>
         <IconButton icon={collapsed ? PanelLeftOpen : PanelLeftClose} label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} size="sm" onClick={toggle}

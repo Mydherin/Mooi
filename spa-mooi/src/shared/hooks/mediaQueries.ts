@@ -5,3 +5,5 @@ export const DESKTOP_QUERY = '(min-width: 1024px)';
 /** Menus, selects and pickers present as action sheets on phones and on any touch screen. */
 export const SHEET_PICKER_QUERY = '(max-width: 639px), (pointer: coarse)';
 export const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
+/** Touch screens (coarse pointer): Enter inserts a line break there, and hover never happens. */
+export const TOUCH_QUERY = '(pointer: coarse)';

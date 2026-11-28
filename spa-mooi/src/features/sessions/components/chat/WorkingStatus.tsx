@@ -32,16 +32,16 @@ export const WorkingStatus = ({ label, detail, since }: WorkingStatusProps) => {
   const elapsed = useElapsedSeconds(since);
 
   return (
-    <span role="status" aria-live="polite" className="flex min-w-0 items-center gap-2 text-[13px]">
+    <span role="status" aria-live="polite" className="flex min-w-0 items-center gap-2 text-footnote">
       <span aria-hidden="true" className="relative flex size-2 shrink-0">
         <span className="absolute inset-0 animate-orb-ping rounded-full bg-brand/60" />
         <span className="relative size-2 rounded-full bg-brand-gradient" />
       </span>
       <span className="min-w-0 truncate">
         <span className="text-shimmer font-medium">{label}</span>
-        {detail ? <span className="text-shimmer ml-1.5 font-mono text-[12px]">{detail}</span> : null}
+        {detail ? <span className="text-shimmer ml-1.5 font-mono text-mono">{detail}</span> : null}
       </span>
-      {elapsed !== null ? <span className="shrink-0 font-mono text-[11px] text-ink-subtle tabular-nums">{formatElapsed(elapsed)}</span> : null}
+      {elapsed !== null ? <span className="shrink-0 font-mono text-mono text-ink-subtle tabular-nums">{formatElapsed(elapsed)}</span> : null}
     </span>
   );
 };

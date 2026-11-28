@@ -21,8 +21,8 @@ export const RecipeMarketplaceChips = ({ marketplaces, value, onChange }: Recipe
           title={marketplace.description ?? marketplace.fullName}
           onClick={() => onChange(marketplace.id)}
           className={cn(
-            'inline-flex h-9 shrink-0 items-center gap-2 rounded-full border px-3.5 text-[13px] font-bold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand',
-            active ? 'border-brand bg-brand/10 text-ink' : 'border-line bg-surface-2 text-ink-muted hover:border-line-strong hover:text-ink',
+            'inline-flex h-9 shrink-0 items-center gap-2 rounded-full border px-3.5 text-footnote font-bold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand',
+            active ? 'border-brand bg-brand/10 text-ink' : 'border-line bg-surface-2 text-ink-muted hover-device:hover:border-line-strong hover-device:hover:text-ink',
           )}
         >
           <FolderGit2 className={cn('size-4', active ? 'text-brand' : 'text-ink-subtle')} aria-hidden="true" />

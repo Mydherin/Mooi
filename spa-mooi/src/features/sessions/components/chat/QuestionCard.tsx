@@ -99,7 +99,7 @@ export const QuestionCard = ({ request, busy, onAnswer }: QuestionCardProps) => 
                         'min-h-11 rounded-xl border px-3 py-2 text-left text-sm transition',
                         active
                           ? 'border-ink bg-surface-2 text-ink'
-                          : 'border-line bg-surface text-ink-muted hover:text-ink',
+                          : 'border-line bg-surface text-ink-muted hover-device:hover:text-ink',
                       )}
                     >
                       <span className="font-medium">{option.label}</span>
@@ -118,7 +118,7 @@ export const QuestionCard = ({ request, busy, onAnswer }: QuestionCardProps) => 
                     'min-h-11 rounded-xl border px-3 py-2 text-left text-sm transition',
                     picked.includes(OTHER)
                       ? 'border-ink bg-surface-2 text-ink'
-                      : 'border-line bg-surface text-ink-muted hover:text-ink',
+                      : 'border-line bg-surface text-ink-muted hover-device:hover:text-ink',
                   )}
                 >
                   <span className="font-medium">Other</span>

@@ -15,7 +15,7 @@ export const SessionLiveStatus = ({ session, className }: SessionLiveStatusProps
   const display = session ? sessionDisplayStatus(session.status, session.deployment.state) : 'closed';
 
   return (
-    <span className={cn('inline-flex shrink-0 items-center gap-1.5 text-[11px] font-bold whitespace-nowrap text-ink-muted', className)}>
+    <span className={cn('inline-flex shrink-0 items-center gap-1.5 text-caption font-bold whitespace-nowrap text-ink-muted', className)}>
       <StatusDot tone={sessionStatusTone(display)} pulse={sessionStatusPulses(display)} />
       {sessionStatusLabel(display)}
     </span>

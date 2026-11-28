@@ -1,10 +1,10 @@
-import { LoaderCircle } from 'lucide-react';
 import type { PlatformCompletion } from '@/features/platform/types/PlatformCompletion';
 import { ChatCompletionBar } from '@/features/sessions/components/chat/ChatCompletionBar';
 import { ChatPanel } from '@/features/sessions/components/chat/ChatPanel';
 import { useSession } from '@/features/sessions/hooks/useSession';
 import { useSessionStream } from '@/features/sessions/hooks/useSessionStream';
 import { useSessionsStore } from '@/stores/sessionsStore';
+import { Spinner } from '@/shared/components/feedback/Spinner';
 
 interface PlatformChatPanelProps {
   sessionId: string;
@@ -21,8 +21,7 @@ export const PlatformChatPanel = ({ sessionId, completion, loadingLabel }: Platf
   const session = chat.session;
 
   if (!session) {
-    return <p className="flex h-full items-center justify-center gap-2 text-sm text-ink-muted">
-      <LoaderCircle className="size-4 animate-spin" />{loadingLabel}</p>;
+    return <p className="flex h-full items-center justify-center gap-2 text-callout text-ink-muted"><Spinner />{loadingLabel}</p>;
   }
 
   const idle = session.status === 'ready' && !session.pending;

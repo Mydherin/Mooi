@@ -108,7 +108,7 @@ export const RepositoryPicker = ({
             {visibleRepositories.length} reachable{' '}
             {visibleRepositories.length === 1 ? 'repository' : 'repositories'}
           </Eyebrow>
-          <span className="text-[11px] text-ink-subtle">Checked a moment ago</span>
+          <span className="text-caption text-ink-subtle">Checked a moment ago</span>
         </div>
       ) : null}
 
@@ -162,11 +162,11 @@ export const RepositoryPicker = ({
           <button
             type="button"
             onClick={onManageAccess}
-            className="mt-5 w-full border-t border-line pt-4 text-left text-[11px] leading-relaxed text-ink-subtle focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+            className="mt-5 w-full border-t border-line pt-4 text-left text-caption leading-relaxed text-ink-subtle focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
           >
             Missing a repository?
             <br />
-            <span className="font-bold text-brand underline-offset-4 hover:underline">
+            <span className="font-bold text-brand underline-offset-4 hover-device:hover:underline">
               Manage GitHub access
             </span>
           </button>

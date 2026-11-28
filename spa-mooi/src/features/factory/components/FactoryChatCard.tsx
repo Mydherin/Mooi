@@ -23,7 +23,7 @@ export const FactoryChatCard = ({ projectId, title, chat, onOpenChat, className 
   <Card className={`flex flex-col overflow-hidden ${className}`}>
     <div className="flex items-center gap-2 border-b border-line px-4 py-2.5">
       <MessagesSquare className="size-4 shrink-0 text-ink-subtle" />
-      <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">{title}</span>
+      <span className="min-w-0 flex-1 truncate text-footnote font-semibold text-ink">{title}</span>
       {chat ? (
         <Link to={sessionPath(projectId, chat.id)} className={buttonStyles('ghost', 'sm', 'h-8 px-2.5')}
           title="Open as a session, with its changes and trace">

@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, FileWarning, LoaderCircle, RotateCcw, RotateCw, Save } from 'lucide-react';
+import { ArrowLeft, FileWarning, RotateCcw, RotateCw, Save } from 'lucide-react';
 import { saveSessionFile } from '@/features/sessions/api/sessionsApi';
 import { useOpenFile } from '@/features/sessions/hooks/useOpenFile';
 import { Button } from '@/shared/components/actions/Button';
 import { cn } from '@/shared/utils/cn';
+import { Spinner } from '@/shared/components/feedback/Spinner';
 
 interface FileEditorProps {
   sessionId: string;
@@ -75,7 +76,7 @@ export const FileEditor = ({ sessionId, path, draft, active, onDraft, onBack }: 
           type="button"
           onClick={onBack}
           aria-label="Back to files"
-          className="flex size-10 shrink-0 items-center justify-center rounded-control text-ink-muted transition hover:bg-surface-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand lg:hidden"
+          className="flex size-10 shrink-0 items-center justify-center rounded-control text-ink-muted transition hover-device:hover:bg-surface-2 hover-device:hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand lg:hidden"
         >
           <ArrowLeft className="size-4.5" />
         </button>
@@ -84,7 +85,7 @@ export const FileEditor = ({ sessionId, path, draft, active, onDraft, onBack }: 
             {filename}
             {dirty ? <span role="img" aria-label="Unsaved changes" className="size-1.5 shrink-0 rounded-full bg-warning" /> : null}
           </span>
-          {directory ? <span className="truncate text-[10px] text-ink-subtle">{directory}</span> : null}
+          {directory ? <span className="truncate text-caption text-ink-subtle">{directory}</span> : null}
         </div>
         {editable ? (
           <div className="flex shrink-0 items-center gap-1.5">
@@ -93,7 +94,7 @@ export const FileEditor = ({ sessionId, path, draft, active, onDraft, onBack }: 
               <span className="max-sm:hidden">Discard</span>
             </Button>
             <Button variant="primary" size="sm" onClick={() => void save()} disabled={!dirty || saving}>
-              {saving ? <LoaderCircle className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
+              {saving ? <Spinner className="size-3.5" /> : <Save className="size-3.5" />}
               Save
             </Button>
           </div>
@@ -130,7 +131,7 @@ export const FileEditor = ({ sessionId, path, draft, active, onDraft, onBack }: 
           {unreadable[file.preview]}
         </p>
       ) : (
-        <div className="flex min-h-0 flex-1 font-mono text-base leading-5 sm:text-[13px]">
+        <div className="flex min-h-0 flex-1 font-mono text-base leading-5 sm:text-mono">
           {numbers ? (
             <div ref={gutter} aria-hidden className="scrollbar-none w-12 shrink-0 select-none overflow-hidden border-r border-line bg-surface-2 py-3 pr-2 text-right text-ink-subtle">
               <pre className="pb-8">{numbers}</pre>

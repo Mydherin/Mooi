@@ -41,7 +41,7 @@ export const WorkspacesOverview = ({ projectId, previewsEnabled, overview, loadi
       <div className="flex flex-col gap-3 border-b border-line pb-3 sm:flex-row sm:items-center">
         <div className="min-w-0 flex-1">
           <Eyebrow>Clones on disk</Eyebrow>
-          <p className="mt-1 flex min-w-0 items-center gap-1 font-mono text-[11px] text-ink-subtle">
+          <p className="mt-1 flex min-w-0 items-center gap-1 font-mono text-mono text-ink-subtle">
             <Tooltip content={overview.root} focusable>
               <span className="truncate">{shortenPath(overview.root)}</span>
             </Tooltip>
@@ -52,14 +52,14 @@ export const WorkspacesOverview = ({ projectId, previewsEnabled, overview, loadi
           type="button"
           onClick={onReload}
           disabled={loading}
-          className="inline-flex items-center gap-1.5 self-start rounded-control border border-line px-3 py-1.5 text-xs font-bold text-ink-muted transition hover:bg-surface-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:opacity-60 sm:self-auto"
+          className="inline-flex items-center gap-1.5 self-start rounded-control border border-line px-3 py-1.5 text-xs font-bold text-ink-muted transition hover-device:hover:bg-surface-2 hover-device:hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:opacity-60 sm:self-auto"
         >
           <RefreshCw className={cn('size-3.5', loading && 'animate-spin')} />
           Refresh
         </button>
       </div>
 
-      {error ? <p className="text-[12px] font-bold text-danger">{error}</p> : null}
+      {error ? <p className="text-caption font-bold text-danger">{error}</p> : null}
 
       <WorkspaceStats overview={overview} previewsEnabled={previewsEnabled} />
 

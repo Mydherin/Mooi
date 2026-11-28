@@ -31,7 +31,7 @@ User requests are what evolve Mooi, so every request also maintains this file, i
 
 # In-progress work
 
-- docs/progress/2026-11-28-ui-refactor-phase3.md: finishing the SPA UI/UX refactor (phase 3 areas D, C, B, A, then E2E and close). Interrupted task, temporary: read that file first and continue from it without re-exploring; once the task is complete, delete the file and this line (and this section when it is empty) in the same change, before reporting the task done.
+- docs/progress/2026-11-28-ui-refactor-phase3.md: finishing the SPA UI/UX refactor (typecheck green; phase 3 foundation sweep, then build, E2E and close). Interrupted task, temporary: read that file first and continue from it without re-exploring; once the task is complete, delete the file and this line (and this section when it is empty) in the same change, before reporting the task done.
 
 # Context
 

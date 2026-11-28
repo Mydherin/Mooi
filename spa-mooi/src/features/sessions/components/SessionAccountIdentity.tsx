@@ -15,7 +15,7 @@ export const SessionAccountIdentity = ({ session, compact = false }: SessionAcco
 
   if (compact) {
     return (
-      <span className="block truncate text-[11px] leading-tight text-ink-subtle" title={`${name} · ${agent}`}>
+      <span className="block truncate text-caption leading-tight text-ink-subtle" title={`${name} · ${agent}`}>
         <span className="font-bold text-ink-muted">{name}</span> · {agent}
       </span>
     );
@@ -24,7 +24,7 @@ export const SessionAccountIdentity = ({ session, compact = false }: SessionAcco
   return (
     <span className="flex min-w-0 flex-col leading-tight" title={`${name} · ${agent}`}>
       <span className="truncate text-xs font-bold text-ink">{name}</span>
-      <span className="truncate text-[11px] text-ink-subtle">{agent}</span>
+      <span className="truncate text-caption text-ink-subtle">{agent}</span>
     </span>
   );
 };

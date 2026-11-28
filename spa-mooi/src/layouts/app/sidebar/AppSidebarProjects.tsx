@@ -18,7 +18,7 @@ export const AppSidebarProjects = () => {
       <div className="mt-2 flex flex-col gap-0.5">
         {recent.map((project) => (
           <Link key={project.id} to={projectPath(project.id)}
-            className="group/project flex h-9 items-center gap-2.5 rounded-control px-2.5 text-[13px] font-medium text-ink-muted transition-colors duration-150 hover:bg-surface/60 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand">
+            className="group/project flex h-9 items-center gap-2.5 rounded-control px-2.5 text-footnote font-medium text-ink-muted transition-colors duration-150 hover-device:hover:bg-surface/60 hover-device:hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand">
             <Initials value={project.name} size="sm" />
             <span className="truncate">{project.name}</span>
           </Link>

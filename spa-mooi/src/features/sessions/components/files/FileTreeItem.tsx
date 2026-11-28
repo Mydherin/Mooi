@@ -40,7 +40,7 @@ export const FileTreeItem = ({ row, selected, unsaved, change, detail, onSelect,
         style={{ paddingLeft: `${8 + row.depth * INDENT_PX}px` }}
         className={cn(
           'flex min-h-10 w-full items-center gap-1.5 rounded-chip pr-2 text-left transition focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand lg:min-h-7',
-          selected ? 'bg-surface-3 text-ink' : 'text-ink-muted hover:bg-surface-2 hover:text-ink',
+          selected ? 'bg-surface-3 text-ink' : 'text-ink-muted hover-device:hover:bg-surface-2 hover-device:hover:text-ink',
         )}
       >
         <ChevronRight
@@ -50,7 +50,7 @@ export const FileTreeItem = ({ row, selected, unsaved, change, detail, onSelect,
         <Icon aria-hidden className={cn('size-4 shrink-0', directory ? 'text-accent' : 'text-ink-subtle')} />
         <span className="min-w-0 flex-1 truncate font-mono text-xs">
           {row.name}
-          {detail ? <span className="ml-2 text-[10px] text-ink-subtle">{detail}</span> : null}
+          {detail ? <span className="ml-2 text-caption text-ink-subtle">{detail}</span> : null}
         </span>
         {unsaved ? <span role="img" aria-label="Unsaved changes" className="size-1.5 shrink-0 rounded-full bg-warning" /> : null}
         {change ? <span role="img" aria-label={`File ${change}`} className={cn('size-1.5 shrink-0 rounded-full bg-current', changeTone[change])} /> : null}

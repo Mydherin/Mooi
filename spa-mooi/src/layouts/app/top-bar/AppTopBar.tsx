@@ -21,11 +21,11 @@ export const AppTopBar = () => {
   return (
     <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line bg-canvas px-5">
       <nav aria-label="Breadcrumbs" className="min-w-0 flex-1">
-        <ol className="flex min-w-0 items-center gap-1.5 text-[13px] font-medium text-ink-muted">
+        <ol className="flex min-w-0 items-center gap-1.5 text-footnote font-medium text-ink-muted">
           {section && SectionIcon ? (
             <li className="flex min-w-0 shrink-0 items-center">
               <Link to={section.to} aria-current={current || middle ? undefined : 'page'}
-                className="flex items-center gap-2 rounded-chip px-1 py-0.5 transition-colors hover:text-ink">
+                className="flex items-center gap-2 rounded-chip px-1 py-0.5 transition-colors hover-device:hover:text-ink">
                 <SectionIcon aria-hidden className="size-4 shrink-0 text-ink-subtle" />
                 <span className={current || middle ? undefined : 'text-ink'}>{section.label}</span>
               </Link>
@@ -34,7 +34,7 @@ export const AppTopBar = () => {
           {middle ? (
             <li className="flex min-w-0 items-center gap-1.5">
               <ChevronRight aria-hidden className="size-3.5 shrink-0 text-line-strong" />
-              <Link to={middle.to} className="truncate rounded-chip px-1 py-0.5 transition-colors hover:text-ink">{middle.label}</Link>
+              <Link to={middle.to} className="truncate rounded-chip px-1 py-0.5 transition-colors hover-device:hover:text-ink">{middle.label}</Link>
             </li>
           ) : null}
           {current ? (

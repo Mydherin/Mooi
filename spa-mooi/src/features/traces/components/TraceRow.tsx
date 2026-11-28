@@ -74,7 +74,7 @@ export const TraceRow = ({ node, scale, now, selected, expanded, style, onSelect
       onClick={() => onSelect(span.id)}
       className={cn(
         'group absolute inset-x-0 grid cursor-pointer select-none grid-cols-1 border-b border-line/60 transition-colors duration-100 lg:grid-cols-[minmax(0,1fr)_38%]',
-        selected ? 'bg-brand-soft' : 'hover:bg-surface-2/70',
+        selected ? 'bg-brand-soft' : 'hover-device:hover:bg-surface-2/70',
       )}
     >
       <div className="relative flex min-w-0 items-center gap-1.5 pr-3 pl-2 sm:pl-3" style={{ height: TRACE_ROW_HEIGHT }}>
@@ -93,7 +93,7 @@ export const TraceRow = ({ node, scale, now, selected, expanded, style, onSelect
               event.stopPropagation();
               onToggle(span.id);
             }}
-            className="-my-1 flex size-7 shrink-0 items-center justify-center rounded-chip text-ink-subtle transition hover:bg-surface-3 hover:text-ink"
+            className="-my-1 flex size-7 shrink-0 items-center justify-center rounded-chip text-ink-subtle transition hover-device:hover:bg-surface-3 hover-device:hover:text-ink"
           >
             <ChevronRight className={cn('size-3.5 transition-transform duration-150', expanded && 'rotate-90')} />
           </button>
@@ -106,20 +106,20 @@ export const TraceRow = ({ node, scale, now, selected, expanded, style, onSelect
         </span>
 
         <span className="flex min-w-0 flex-1 items-baseline gap-1.5" title={label}>
-          <span className={cn('shrink-0 truncate text-[13px] font-medium text-ink', span.title ? 'max-w-[55%]' : 'max-w-full')}>{span.name}</span>
-          {span.title ? <span className="min-w-0 truncate text-[12px] text-ink-muted">{span.title}</span> : null}
+          <span className={cn('shrink-0 truncate text-footnote font-medium text-ink', span.title ? 'max-w-[55%]' : 'max-w-full')}>{span.name}</span>
+          {span.title ? <span className="min-w-0 truncate text-caption text-ink-muted">{span.title}</span> : null}
           {!hasChildren || expanded ? null : (
-            <span className="shrink-0 font-mono text-[10.5px] text-ink-subtle tabular-nums">+{node.descendants}</span>
+            <span className="shrink-0 font-mono text-mono text-ink-subtle tabular-nums">+{node.descendants}</span>
           )}
         </span>
 
         {span.model ? (
-          <span title={span.model} className="hidden max-w-32 shrink-0 truncate rounded-full bg-surface-2 px-1.5 py-px font-mono text-[10.5px] text-ink-muted sm:inline">
+          <span title={span.model} className="hidden max-w-32 shrink-0 truncate rounded-full bg-surface-2 px-1.5 py-px font-mono text-mono text-ink-muted sm:inline">
             {span.model}
           </span>
         ) : null}
         {usage ? (
-          <span title={tokenDetail} aria-label={tokenDetail} className="shrink-0 rounded-full bg-info-soft px-1.5 py-px font-mono text-[10.5px] text-info tabular-nums">
+          <span title={tokenDetail} aria-label={tokenDetail} className="shrink-0 rounded-full bg-info-soft px-1.5 py-px font-mono text-mono text-info tabular-nums">
             {formatTokens(usage.context)}
             <span className="text-info/60"> → </span>
             {formatTokens(usage.output)}
@@ -130,7 +130,7 @@ export const TraceRow = ({ node, scale, now, selected, expanded, style, onSelect
             <StatusIcon aria-label={status.label} className={cn('size-3.5', status.className)} />
           </span>
         ) : null}
-        <span className={cn('w-12 shrink-0 text-right font-mono text-[11px] tabular-nums', span.status === 'error' ? 'text-danger' : 'text-ink-subtle')}>
+        <span className={cn('w-12 shrink-0 text-right font-mono text-mono tabular-nums', span.status === 'error' ? 'text-danger' : 'text-ink-subtle')}>
           {formatSpanDuration(duration)}
         </span>
 

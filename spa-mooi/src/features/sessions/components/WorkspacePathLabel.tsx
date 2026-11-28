@@ -11,7 +11,7 @@ interface WorkspacePathLabelProps {
 
 /** Where a session's clone lives: a compact path, with the full one in a tooltip. */
 export const WorkspacePathLabel = ({ path, className, focusable = false }: WorkspacePathLabelProps) => (
-  <span className={cn('flex min-w-0 items-center gap-1.5 font-mono text-[10.5px] text-ink-subtle', className)}>
+  <span className={cn('flex min-w-0 items-center gap-1.5 font-mono text-mono text-ink-subtle', className)}>
     <FolderGit2 className="size-3 shrink-0" />
     {path ? (
       <Tooltip content={path} focusable={focusable}>

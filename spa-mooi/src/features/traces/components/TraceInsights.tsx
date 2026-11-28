@@ -29,7 +29,7 @@ const InsightCard = ({ icon: Icon, title, hint, action, children, className }: I
     <header className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-2">
       <Icon aria-hidden className="size-4 shrink-0 text-ink-muted" />
       <h3 className="min-w-0 truncate text-sm font-semibold text-ink">{title}</h3>
-      {hint ? <span className="min-w-0 truncate text-[12px] text-ink-subtle">{hint}</span> : null}
+      {hint ? <span className="min-w-0 truncate text-caption text-ink-subtle">{hint}</span> : null}
       {action ? <div className="ml-auto shrink-0">{action}</div> : null}
     </header>
     {children}

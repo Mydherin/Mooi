@@ -63,7 +63,7 @@ export const TodoListEditor = ({ projectId, branch, list, items, saveError, stat
   return (
     <>
       {saveError ? (
-        <p role="alert" className={cn('rounded-control border border-danger/30 bg-danger-soft px-3 py-2 text-[13px] font-semibold text-danger', !framed && 'mx-3 sm:mx-5')}>
+        <p role="alert" className={cn('rounded-control border border-danger/30 bg-danger-soft px-3 py-2 text-footnote font-semibold text-danger', !framed && 'mx-3 sm:mx-5')}>
           {saveError} The list shows the latest version from GitHub.
         </p>
       ) : null}
@@ -78,8 +78,8 @@ export const TodoListEditor = ({ projectId, branch, list, items, saveError, stat
               <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                 {framed ? (
                   <div className="min-w-0">
-                    <h2 className="truncate text-[17px] font-semibold tracking-[-0.02em] text-ink">{list.title}</h2>
-                    <p className="mt-0.5 text-[13px] text-ink-muted">
+                    <h2 className="truncate text-headline font-semibold tracking-[-0.02em] text-ink">{list.title}</h2>
+                    <p className="mt-0.5 text-footnote text-ink-muted">
                       {items.length === 0 ? 'Nothing planned yet' : `${counts.done} of ${items.length} done`}
                       {counts.inProgress > 0 ? ` · ${counts.inProgress} in progress` : null}
                     </p>
@@ -105,7 +105,7 @@ export const TodoListEditor = ({ projectId, branch, list, items, saveError, stat
                 {items.length === 0 ? (list.state === 'missing' ? 'Start the project’s to-do list' : 'All clear')
                   : emptyFilter[filter]}
               </p>
-              <p className="mt-1 max-w-sm text-[13px] leading-relaxed text-ink-muted">
+              <p className="mt-1 max-w-sm text-footnote leading-relaxed text-ink-muted">
                 {list.state === 'missing'
                   ? `Add a first item: Mooi creates ${list.path} on ${branch} and commits every change you make.`
                   : 'Items you add here are committed to the repository, and agents can manage them from any session chat.'}

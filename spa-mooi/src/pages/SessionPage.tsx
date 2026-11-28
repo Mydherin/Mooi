@@ -45,7 +45,7 @@ export const SessionPage = () => {
     updateLimitsResume,
   } = useSession(sessionId);
   useSessionStream(sessionId);
-  const { close, busy: closing } = useProjectSessions(projectId);
+  const { close, busy: closing, actionError: closeError } = useProjectSessions(projectId);
   const transcript = useSessionsStore((state) => (sessionId ? state.byId[sessionId] : undefined));
   const back = useBackLink(project ? { to: projectPath(project.id), label: project.name } : { to: ROUTES.projects, label: 'projects' });
 
@@ -82,13 +82,10 @@ export const SessionPage = () => {
   const streamState = transcript?.streamState ?? 'closed';
   const deployEnabled = deploymentAvailable(project, session.deployment);
 
-  const handleClose = () => {
-    void close(session.id).then((closed) => {
-      if (closed) {
-        navigate(back.to, { replace: true });
-      }
-    });
-  };
+  const handleClose = () => close(session.id).then((closed) => {
+    if (closed) navigate(back.to, { replace: true });
+    return closed;
+  });
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -100,6 +97,7 @@ export const SessionPage = () => {
         deployEnabled={deployEnabled}
         onClose={handleClose}
         closeBusy={closing}
+        closeError={closeError}
       />
 
       {isTerminal ? (

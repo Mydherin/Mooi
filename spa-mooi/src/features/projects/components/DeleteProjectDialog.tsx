@@ -19,7 +19,7 @@ export const DeleteProjectDialog = ({ project, busy, error, onClose, onDelete }:
   };
 
   return (
-    <Dialog open onClose={onClose} title="Delete GitHub repository"
+    <Dialog open onClose={onClose} dismissible={!busy} title="Delete GitHub repository"
       description={`This permanently deletes ${project.fullName} from GitHub and removes it from Mooi.`}
       footer={<><Button variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
         <Button variant="danger" type="submit" form="delete-project-form"

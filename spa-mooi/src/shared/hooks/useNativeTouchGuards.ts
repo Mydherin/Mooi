@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { TOUCH_QUERY } from '@/shared/hooks/mediaQueries';
 
 /** Where a long press would open the browser's link/image menu instead of acting like an app. */
 const CONTROL_SELECTOR = 'a, button, img, svg, [role="button"], [role="tab"], [role^="menuitem"], [role="option"], [role="link"]';
@@ -10,7 +11,7 @@ const CONTROL_SELECTOR = 'a, button, img, svg, [role="button"], [role="tab"], [r
  */
 export const useNativeTouchGuards = (): void => {
   useEffect(() => {
-    const touch = window.matchMedia('(pointer: coarse)');
+    const touch = window.matchMedia(TOUCH_QUERY);
 
     const blockGesture = (event: Event) => event.preventDefault();
     const blockMenu = (event: MouseEvent) => {

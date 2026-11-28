@@ -66,7 +66,7 @@ export const TraceContextChart = ({ bars, onOpenSpan }: TraceContextChartProps) 
 
   return (
     <div className="flex min-w-0 flex-col gap-3">
-      <ul className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12px] text-ink-muted" aria-label="Legend">
+      <ul className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-caption text-ink-muted" aria-label="Legend">
         {PARTS.map((part) => (
           <li key={part.key} className="inline-flex items-center gap-1.5">
             <span aria-hidden className={cn('size-2.5 rounded-[3px]', part.dot)} />
@@ -76,7 +76,7 @@ export const TraceContextChart = ({ bars, onOpenSpan }: TraceContextChartProps) 
       </ul>
 
       <div className="flex min-w-0 gap-2">
-        <div aria-hidden className="flex w-9 shrink-0 flex-col justify-between py-px text-right font-mono text-[10px] text-ink-subtle tabular-nums">
+        <div aria-hidden className="flex w-9 shrink-0 flex-col justify-between py-px text-right font-mono text-mono text-ink-subtle tabular-nums">
           <span>{formatTokens(max)}</span>
           <span>{formatTokens(max / 2)}</span>
           <span>0</span>
@@ -141,15 +141,15 @@ export const TraceContextChart = ({ bars, onOpenSpan }: TraceContextChartProps) 
           className="flex min-w-0 flex-col gap-2 rounded-control border border-line bg-surface-2/60 px-3 py-2.5 sm:flex-row sm:items-center sm:gap-3"
         >
           <div className="min-w-0 flex-1">
-            <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-[12px] text-ink-muted">
+            <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-caption text-ink-muted">
               <span className="font-semibold text-ink">
                 {shown ? `Request #${readout.index}` : `Peak · request #${readout.index}`}
               </span>
               {readout.model ? <span className="min-w-0 truncate font-mono" title={readout.model}>{readout.model}</span> : null}
-              {readout.subAgent ? <span className="rounded-full bg-accent-soft px-1.5 py-px text-[11px] text-accent">sub-agent</span> : null}
+              {readout.subAgent ? <span className="rounded-full bg-accent-soft px-1.5 py-px text-caption text-accent">sub-agent</span> : null}
               {readout.calls > 1 ? <span className="text-ink-subtle">largest of {readout.calls}</span> : null}
             </p>
-            <p className="mt-1 font-mono text-[12px] text-ink tabular-nums" title={`Context ${exact(readout.context)} tokens`}>
+            <p className="mt-1 font-mono text-mono text-ink tabular-nums" title={`Context ${exact(readout.context)} tokens`}>
               <span className="font-semibold">{formatTokens(readout.context)}</span>
               <span className="text-ink-subtle"> context · </span>
               {PARTS.map((part, index) => (
@@ -169,7 +169,7 @@ export const TraceContextChart = ({ bars, onOpenSpan }: TraceContextChartProps) 
       ) : null}
 
       {bucketed ? (
-        <p className="text-[11px] text-ink-subtle">
+        <p className="text-caption text-ink-subtle">
           Long trace: each bar shows the largest of {bars[0]?.calls ?? 1} consecutive requests.
         </p>
       ) : null}

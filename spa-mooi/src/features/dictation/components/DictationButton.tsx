@@ -17,7 +17,7 @@ interface DictationButtonProps {
 }
 
 const tones = {
-  idle: 'text-ink-muted hover:bg-surface-3 hover:text-ink',
+  idle: 'text-ink-muted hover-device:hover:bg-surface-3 hover-device:hover:text-ink',
   connecting: 'text-ink-muted',
   recording: 'bg-danger-soft text-danger',
   stopping: 'bg-danger-soft text-danger',
@@ -49,7 +49,7 @@ export const DictationButton = ({ field, dictation, disabled = false, className 
         aria-pressed={state === 'recording'}
         className={cn(
           'relative inline-flex size-11 shrink-0 touch-none items-center justify-center rounded-control transition duration-200 select-none [-webkit-touch-callout:none] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand active:scale-95 disabled:cursor-not-allowed disabled:opacity-50',
-          error && state === 'idle' ? 'text-danger hover:bg-danger-soft' : tones[state],
+          error && state === 'idle' ? 'text-danger hover-device:hover:bg-danger-soft' : tones[state],
           className,
         )}
       >

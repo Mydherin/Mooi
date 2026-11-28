@@ -23,7 +23,7 @@ interface TodoRowProps {
 }
 
 const rowAction =
-  'flex size-8 shrink-0 items-center justify-center rounded-md text-ink-subtle transition hover:bg-surface-3 hover:text-ink focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand';
+  'flex size-8 shrink-0 items-center justify-center rounded-md text-ink-subtle transition hover-device:hover:bg-surface-3 hover-device:hover:text-ink focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand';
 
 /** Shown on hover with a pointer, always visible on touch screens, where nothing hovers. */
 const revealOnHover =
@@ -58,8 +58,8 @@ export const TodoRow = ({ id, item, taken, locked, onStatus, onEdit, onRemove }:
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform), transition }}
       className={cn(
-        'group/todo relative flex min-h-12 animate-fade-in items-start gap-1 bg-surface py-1.5 pr-3 pl-1 transition-colors hover:bg-surface-2/60 sm:pr-4 sm:pl-1.5',
-        isDragging && 'z-10 rounded-control bg-surface shadow-raised ring-1 ring-line hover:bg-surface',
+        'group/todo relative flex min-h-12 animate-fade-in items-start gap-1 bg-surface py-1.5 pr-3 pl-1 transition-colors hover-device:hover:bg-surface-2/60 sm:pr-4 sm:pl-1.5',
+        isDragging && 'z-10 rounded-control bg-surface shadow-raised ring-1 ring-line hover-device:hover:bg-surface',
       )}
     >
       <button
@@ -71,7 +71,7 @@ export const TodoRow = ({ id, item, taken, locked, onStatus, onEdit, onRemove }:
         aria-label={`Reorder “${item.text}”`}
         title="Drag to reorder"
         className={cn(
-          'mt-1.5 flex h-8 w-5 shrink-0 touch-none items-center justify-center rounded-md text-ink-subtle hover:text-ink focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-brand disabled:invisible',
+          'mt-1.5 flex h-8 w-5 shrink-0 touch-none items-center justify-center rounded-md text-ink-subtle hover-device:hover:text-ink focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-brand disabled:invisible',
           isDragging ? 'cursor-grabbing opacity-100' : cn('cursor-grab', revealOnHover),
         )}
       >
@@ -142,7 +142,7 @@ export const TodoRow = ({ id, item, taken, locked, onStatus, onEdit, onRemove }:
             <Pencil className="size-3.5" />
           </button>
           <button type="button" onClick={onRemove} aria-label={`Remove “${item.text}”`} title="Remove"
-            className={cn(rowAction, 'hover:bg-danger-soft hover:text-danger')}>
+            className={cn(rowAction, 'hover-device:hover:bg-danger-soft hover-device:hover:text-danger')}>
             <Trash2 className="size-3.5" />
           </button>
         </div>

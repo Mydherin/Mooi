@@ -15,7 +15,7 @@ import { useTodoProjectSelectionStore } from '@/stores/todoProjectSelectionStore
 
 const Stat = ({ label, value }: { label: string; value: number }) => (
   <div>
-    <dt className="font-mono text-[10.5px] font-medium tracking-[0.12em] text-ink-subtle uppercase">{label}</dt>
+    <dt className="font-mono text-mono font-medium tracking-[0.12em] text-ink-subtle uppercase">{label}</dt>
     <dd className="text-xl font-extrabold text-ink tabular-nums" title={value >= 1000 ? value.toLocaleString('en') : undefined}>
       {formatCount(value)}
     </dd>
@@ -62,7 +62,7 @@ export const TodosPage = () => {
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-5 pt-7 pb-[calc(1.75rem+var(--safe-bottom))] sm:px-8 lg:px-10 lg:pt-10 lg:pb-10">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="mb-2 font-mono text-[10.5px] font-medium tracking-[0.12em] text-ink-subtle uppercase">Workspace</p>
+          <p className="mb-2 font-mono text-mono font-medium tracking-[0.12em] text-ink-subtle uppercase">Workspace</p>
           <h1 className="text-[30px] leading-[1.1] font-semibold tracking-[-0.04em] text-ink sm:text-[34px]">To-dos</h1>
           <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-ink-muted">
             Choose the projects you want to see. Expand a project to add, start, complete and reorder its items.

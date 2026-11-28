@@ -6,7 +6,8 @@ import { MessageImageGrid } from './MessageImageGrid';
 import { NoticeItem } from './NoticeItem';
 import { OpenedSessionCard } from './OpenedSessionCard';
 import { TurnFooter } from '@/features/sessions/components/chat/TurnFooter';
-import { groupTurnBlocks } from '@/features/sessions/lib/groupTurnBlocks';
+import { groupTurnBlocks } from '@/features/sessions/lib/activity/groupTurnBlocks';
+import { turnText } from '@/features/sessions/lib/transcript/visibleEntries';
 import type { AgentCapabilities } from '@/features/sessions/types/AgentCapabilities';
 import type { TranscriptEntry } from '@/features/sessions/types/TranscriptEntry';
 import { LogoMark } from '@/shared/components/brand/LogoMark';
@@ -26,7 +27,7 @@ interface ChatMessageItemProps {
 /** Unchanged text keeps its identity while the turn streams, so Markdown is parsed only when it changes. */
 const AssistantText = memo(function AssistantText({ text }: { text: string }) {
   return (
-    <div className="min-w-0 break-words text-[15px] leading-7 text-ink">
+    <div className="min-w-0 break-words text-body text-ink">
       <Suspense fallback={<span className="whitespace-pre-wrap">{text}</span>}>
         <MarkdownContent text={text} />
       </Suspense>
@@ -44,8 +45,8 @@ const AssistantText = memo(function AssistantText({ text }: { text: string }) {
 export const ChatMessageItem = memo(function ChatMessageItem({ sessionId, entry, providerLabel, capabilities, live }: ChatMessageItemProps) {
   if (entry.kind === 'error') {
     return (
-      <li className="flex animate-fade-up items-start gap-2.5 rounded-xl border border-danger/30 bg-danger-soft px-3.5 py-2.5 text-sm leading-relaxed text-danger">
-        <CircleAlert className="mt-0.5 size-4 shrink-0" />
+      <li className="flex animate-fade-up items-start gap-2.5 rounded-xl border border-danger/30 bg-danger-soft px-3.5 py-2.5 text-callout text-danger">
+        <CircleAlert aria-hidden className="mt-0.5 size-4 shrink-0" />
         <span className="min-w-0 flex-1 break-words">{entry.text}</span>
       </li>
     );
@@ -60,11 +61,11 @@ export const ChatMessageItem = memo(function ChatMessageItem({ sessionId, entry,
       <li className="flex animate-fade-up flex-col items-end gap-1.5">
         {entry.images.length > 0 ? <MessageImageGrid sessionId={sessionId} images={entry.images} /> : null}
         {entry.text ? (
-          <p className="max-w-[95%] break-words rounded-[18px] rounded-br-[6px] border border-brand/15 bg-brand-soft px-4 py-3 text-[15px] leading-relaxed whitespace-pre-wrap text-ink sm:max-w-[85%] sm:px-5 sm:py-3.5">
+          <p className="max-w-[95%] break-words rounded-[18px] rounded-br-[6px] border border-brand/15 bg-brand-soft px-4 py-3 text-body whitespace-pre-wrap text-ink sm:max-w-[85%] sm:px-5 sm:py-3.5">
             {entry.text}
           </p>
         ) : null}
-        <span className="font-mono text-[10.5px] text-ink-subtle">{formatTime(entry.at)}</span>
+        <span className="text-caption text-ink-subtle tabular-nums">{formatTime(entry.at)}</span>
       </li>
     );
   }
@@ -77,8 +78,8 @@ export const ChatMessageItem = memo(function ChatMessageItem({ sessionId, entry,
 
       <div className="min-w-0 flex-1">
         <p className="flex items-center gap-2">
-          <span className="text-[13px] font-semibold text-ink">{providerLabel}</span>
-          <span className="font-mono text-[10.5px] text-ink-subtle">{formatTime(entry.at)}</span>
+          <span className="text-footnote font-semibold text-ink">{providerLabel}</span>
+          <span className="text-caption text-ink-subtle tabular-nums">{formatTime(entry.at)}</span>
         </p>
 
         <div className="mt-1.5 flex flex-col gap-3">
@@ -93,7 +94,7 @@ export const ChatMessageItem = memo(function ChatMessageItem({ sessionId, entry,
           ) : null}
         </div>
 
-        {entry.result ? <TurnFooter result={entry.result} showCost={capabilities.cost} /> : null}
+        {entry.result ? <TurnFooter result={entry.result} showCost={capabilities.cost} text={turnText(entry)} /> : null}
       </div>
     </li>
   );

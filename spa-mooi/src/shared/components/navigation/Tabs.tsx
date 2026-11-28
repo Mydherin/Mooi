@@ -105,7 +105,7 @@ export const Tabs = ({ items, value, onChange, ariaLabel, idPrefix, className }:
             tabIndex={isActive ? 0 : -1}
             onClick={() => onChange(item.id)}
             className={cn(
-              'group/tab relative flex min-h-11 shrink-0 items-center gap-2 rounded-chip px-2.5 text-[13px] font-medium transition-colors duration-150 active:opacity-70',
+              'group/tab relative flex min-h-11 shrink-0 items-center gap-2 rounded-chip px-2.5 text-footnote font-medium transition-colors duration-150 active:opacity-70',
               isActive ? 'text-ink' : 'text-ink-muted hover-device:hover:text-ink',
             )}
           >

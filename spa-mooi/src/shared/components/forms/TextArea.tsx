@@ -59,7 +59,7 @@ export const TextArea = ({ label, value, onChange, placeholder, hint, error, req
         autoFocus={autoFocus}
         aria-invalid={error ? true : undefined}
         aria-describedby={error || hint ? hintId : undefined}
-        className={cn(fieldControl, 'resize-none overscroll-contain py-3 leading-[22px]', mono && 'font-mono text-[14px]')}
+        className={cn(fieldControl, 'resize-none overscroll-contain py-3 leading-[22px]', mono && 'font-mono text-callout')}
       />
     </Field>
   );

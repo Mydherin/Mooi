@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Eraser, LoaderCircle, Trash2 } from 'lucide-react';
+import { Eraser, Trash2 } from 'lucide-react';
 import type { Backup } from '@/features/backups/types/Backup';
 import { Button } from '@/shared/components/actions/Button';
+import { Alert } from '@/shared/components/feedback/Alert';
 import { Dialog } from '@/shared/components/overlays/dialog/Dialog';
 import { formatDate } from '@/shared/utils/formatDate';
 import { formatTime } from '@/shared/utils/formatTime';
@@ -29,17 +30,17 @@ export const BackupDeleteDialog = ({ backup, canRunScript, onClose, onDelete, on
   return <Dialog open onClose={onClose} dismissible={!busy} title="Delete backup"
     description={`Backup of ${formatDate(backup.startedAt)} at ${formatTime(backup.startedAt)}, release ${backup.releaseTag}.`}
     footer={<>
-      <Button variant="ghost" onClick={() => void run('forget')} disabled={busy !== null} className="sm:mr-auto">
-        {busy === 'forget' ? <LoaderCircle className="size-4 animate-spin" /> : <Eraser className="size-4" />}Remove record only</Button>
+      <Button variant="ghost" icon={Eraser} loading={busy === 'forget'} onClick={() => void run('forget')} disabled={busy === 'delete'} className="sm:mr-auto">
+        Remove record only</Button>
       <Button variant="ghost" onClick={onClose} disabled={busy !== null}>Cancel</Button>
-      <Button variant="danger" onClick={() => void run('delete')} disabled={busy !== null || !canRunScript}>
-        {busy === 'delete' ? <LoaderCircle className="size-4 animate-spin" /> : <Trash2 className="size-4" />}Delete backup</Button>
+      <Button variant="danger" icon={Trash2} loading={busy === 'delete'} onClick={() => void run('delete')} disabled={busy === 'forget' || !canRunScript}>
+        Delete backup</Button>
     </>}>
-    <ul className="flex flex-col gap-2 text-sm leading-relaxed text-ink-muted">
+    <ul className="flex list-disc flex-col gap-1.5 pl-5 text-callout text-ink-muted">
       <li>delete.sh permanently removes the stored data; the record disappears once it succeeds.</li>
       <li>Remove the record only when its data is already gone, e.g. a backup that failed before storing anything.</li>
       {!canRunScript ? <li className="text-danger">delete.sh cannot run now: wait for the running operation, or set up backups again.</li> : null}
     </ul>
-    {error ? <p role="alert" className="mt-4 rounded-control border border-danger/30 bg-danger-soft px-4 py-2.5 text-sm text-danger">{error}</p> : null}
+    {error ? <Alert tone="danger" className="mt-4">{error}</Alert> : null}
   </Dialog>;
 };

@@ -29,7 +29,7 @@ export const TodoComposer = ({ existing, disabled, onAdd }: TodoComposerProps) =
       <div className="flex items-start gap-2">
         <label
           className={cn(
-            'flex min-h-11 min-w-0 flex-1 items-start gap-2.5 rounded-control border border-line bg-surface px-3 shadow-card transition-[border-color,box-shadow] duration-150 hover:border-line-strong focus-within:border-brand/60 focus-within:ring-4 focus-within:ring-brand/12',
+            'flex min-h-11 min-w-0 flex-1 items-start gap-2.5 rounded-control border border-line bg-surface px-3 shadow-card transition-[border-color,box-shadow] duration-150 hover-device:hover:border-line-strong focus-within:border-brand/60 focus-within:ring-4 focus-within:ring-brand/12',
             duplicate && 'border-warning/60 focus-within:border-warning/60 focus-within:ring-warning/12',
           )}
         >
@@ -49,7 +49,7 @@ export const TodoComposer = ({ existing, disabled, onAdd }: TodoComposerProps) =
           Add
         </Button>
       </div>
-      {duplicate ? <p className="px-1 text-[12px] font-semibold text-warning">Already on the list.</p> : null}
+      {duplicate ? <p className="px-1 text-caption font-semibold text-warning">Already on the list.</p> : null}
     </form>
   );
 };

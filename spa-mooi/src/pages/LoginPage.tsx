@@ -68,7 +68,7 @@ export const LoginPage = () => {
 
         <div className="relative z-10 flex items-center justify-between">
           <Logo />
-          <span className="flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 font-mono text-[10.5px] tracking-[0.08em] text-white/70 uppercase">
+          <span className="flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 font-mono text-mono tracking-[0.08em] text-white/70 uppercase">
             <span className="size-1.5 rounded-full bg-[#10b981] shadow-[0_0_8px_#10b981]" />
             AI-native dev platform
           </span>
@@ -82,7 +82,7 @@ export const LoginPage = () => {
             <span className="bg-gradient-to-r from-[#8fb0ff] to-[#b9a4ff] bg-clip-text text-transparent">More creating.</span>
           </h2>
 
-          <p className="mt-4 max-w-md text-[15px] leading-relaxed text-white/65">From the first prompt to production. A calmer place to build software with your agents.</p>
+          <p className="mt-4 max-w-md text-body leading-relaxed text-white/65">From the first prompt to production. A calmer place to build software with your agents.</p>
           <ul className="mt-6 hidden flex-col gap-3 [@media(min-height:960px)]:flex">
             {highlights.map((highlight) => (
               <li key={highlight} className="flex items-start gap-3 text-sm text-white/75">
@@ -93,7 +93,7 @@ export const LoginPage = () => {
           </ul>
         </div>
 
-        <p className="relative z-10 mt-8 font-mono text-[11px] text-white/45">
+        <p className="relative z-10 mt-8 font-mono text-mono text-white/45">
           © {new Date().getFullYear()} {env.appName}
         </p>
       </aside>
@@ -106,7 +106,7 @@ export const LoginPage = () => {
           <LogoMark live className="size-11 drop-shadow-[0_6px_18px_rgb(39_110_241/0.35)] lg:hidden" />
 
           <h1 className="mt-8 text-[40px] leading-[1.05] font-semibold tracking-[-0.05em] text-ink lg:mt-0">Welcome to Mooi<span className="text-brand-gradient">.</span></h1>
-          <p className="mt-3 text-[15px] leading-relaxed text-ink-muted">
+          <p className="mt-3 text-body leading-relaxed text-ink-muted">
             Continue with Google to open your workspace. Your first sign-in creates your account.
           </p>
 

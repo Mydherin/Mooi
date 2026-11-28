@@ -72,24 +72,24 @@ export const TraceInspector = ({ sessionId, span, revision, traceStartMs, now, r
     <div className="flex min-w-0 items-start gap-2">
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-          <span className={cn('inline-flex items-center gap-1 rounded-chip px-1.5 py-0.5 text-[11px] font-semibold', kind.chip)}>
+          <span className={cn('inline-flex items-center gap-1 rounded-chip px-1.5 py-0.5 text-caption font-semibold', kind.chip)}>
             <KindIcon className="size-3" />
             {kind.label}
           </span>
-          <span className={cn('inline-flex items-center gap-1 rounded-chip px-1.5 py-0.5 text-[11px] font-semibold', status.className)}>
+          <span className={cn('inline-flex items-center gap-1 rounded-chip px-1.5 py-0.5 text-caption font-semibold', status.className)}>
             <StatusIcon className="size-3" />
             {status.label}
           </span>
         </div>
-        <h3 className="mt-1.5 truncate text-[15px] font-semibold tracking-[-0.01em] text-ink" title={span.name}>
+        <h3 className="mt-1.5 truncate text-body font-semibold tracking-[-0.01em] text-ink" title={span.name}>
           {span.name}
         </h3>
         {span.title ? (
-          <p className="mt-0.5 line-clamp-2 text-[12px] break-words text-ink-muted" title={span.title}>
+          <p className="mt-0.5 line-clamp-2 text-caption break-words text-ink-muted" title={span.title}>
             {span.title}
           </p>
         ) : null}
-        <p className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-[11px] text-ink-subtle tabular-nums">
+        <p className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-mono text-ink-subtle tabular-nums">
           <span title="Start, from the beginning of the trace">{formatSpanOffset(span.startMs, traceStartMs)}</span>
           <span title="Duration">{formatSpanDuration(spanDuration(span, now))}</span>
           {index >= 0 ? <span title="Position in the timeline">{index + 1} / {rows.length}</span> : null}
@@ -107,7 +107,7 @@ export const TraceInspector = ({ sessionId, span, revision, traceStartMs, now, r
     <>
       <TraceMetrics span={span} />
       {error ? (
-        <div role="alert" className="mx-3 mb-3 flex items-center gap-3 rounded-control border border-danger/30 bg-danger-soft px-3 py-2 text-[12px] text-danger">
+        <div role="alert" className="mx-3 mb-3 flex items-center gap-3 rounded-control border border-danger/30 bg-danger-soft px-3 py-2 text-caption text-danger">
           <span className="min-w-0 flex-1 break-words">{error}</span>
           <Button variant="danger" size="sm" onClick={retry}>
             <RotateCw className="size-3.5" />
@@ -168,8 +168,8 @@ const TraceMetrics = ({ span }: { span: TraceSpan }) => {
     <dl className="grid grid-cols-2 gap-px border-b border-line bg-line sm:grid-cols-3 lg:grid-cols-2">
       {items.map((item) => (
         <div key={item.label} className={cn('min-w-0 bg-surface px-4 py-2.5', (item.label === 'Model' || item.label === 'Stop reason') && 'max-sm:col-span-2 lg:col-span-2')}>
-          <dt className="text-[11px] font-medium text-ink-subtle">{item.label}</dt>
-          <dd className="mt-0.5 truncate font-mono text-[13px] text-ink tabular-nums" title={item.title}>
+          <dt className="text-caption font-medium text-ink-subtle">{item.label}</dt>
+          <dd className="mt-0.5 truncate font-mono text-mono text-ink tabular-nums" title={item.title}>
             {item.value}
           </dd>
         </div>

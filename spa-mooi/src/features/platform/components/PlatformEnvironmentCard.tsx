@@ -1,5 +1,6 @@
 import { Settings2 } from 'lucide-react';
 import { inheritedEnvironment } from '@/features/platform/lib/inheritedEnvironment';
+import { shortVariableName } from '@/features/platform/lib/environmentNames';
 import type { PlatformEnvironmentVariable } from '@/features/platform/types/PlatformEnvironmentVariable';
 import { Button } from '@/shared/components/actions/Button';
 import { Card } from '@/shared/components/data-display/Card';
@@ -10,8 +11,6 @@ interface PlatformEnvironmentCardProps {
   emptyDescription: string;
   onEdit: () => void;
 }
-
-const shortName = (name: string) => name.replace(/^MOOI_[A-Z]+?_/, '');
 
 const stateLabel = (variable: PlatformEnvironmentVariable): string =>
   variable.configured ? 'set' : variable.required ? 'missing' : 'optional, not set';
@@ -35,7 +34,7 @@ export const PlatformEnvironmentCard = ({ variables, emptyDescription, onEdit }:
           {variables.map((variable) => <li key={variable.name} aria-label={`${variable.name}: ${stateLabel(variable)}${variable.inherited ? ', inherited' : ''}`}
             className="inline-flex max-w-full min-w-0 items-center gap-2 rounded-full border border-line bg-surface-2 py-1.5 pr-3 pl-2.5">
             <StatusDot tone={variable.configured ? 'success' : variable.required ? 'danger' : 'neutral'} />
-            <span className="truncate font-mono text-caption font-semibold text-ink">{shortName(variable.name)}</span>
+            <span className="truncate font-mono text-caption font-semibold text-ink">{shortVariableName(variable.name)}</span>
             {variable.inherited ? <span className="text-caption font-semibold text-ink-subtle uppercase">{inheritedEnvironment(variable.name).tag}</span> : null}
           </li>)}
         </ul>}

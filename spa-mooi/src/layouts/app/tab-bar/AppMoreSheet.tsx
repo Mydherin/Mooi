@@ -41,7 +41,7 @@ export const AppMoreSheet = ({ open, onClose, links }: AppMoreSheetProps) => {
             const Icon = link.icon;
             return <ListRow key={link.id} to={link.to} title={link.label}
               leading={<Icon aria-hidden className="size-5 text-ink-subtle" />}
-              trailing={link.attention ? <span className="rounded-full bg-warning-dot px-1.5 text-[11px] font-bold text-white">{link.attention}</span> : undefined} />;
+              trailing={link.attention ? <span className="rounded-full bg-warning-dot px-1.5 text-caption font-bold text-white">{link.attention}</span> : undefined} />;
           })}
         </ListGroup>
 

@@ -67,7 +67,7 @@ export const TodoProjectFilter = ({ projects, selectedIds, onChange }: TodoProje
           </div>
           <div className="min-h-0 max-h-[min(15rem,35dvh)] flex-1 overflow-y-auto overscroll-contain p-1">
             {matches.map((project) => (
-              <label key={project.id} className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 hover:bg-surface-2 focus-within:bg-surface-2">
+              <label key={project.id} className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 hover-device:hover:bg-surface-2 focus-within:bg-surface-2">
                 <input type="checkbox" checked={selectedIds.has(project.id)} onChange={() => toggle(project.id)}
                   className="size-4 shrink-0 accent-brand focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand" />
                 <span className="min-w-0">

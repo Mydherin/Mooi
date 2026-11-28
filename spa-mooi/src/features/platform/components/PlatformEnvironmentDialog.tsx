@@ -1,12 +1,16 @@
 import { useState } from 'react';
-import { KeyRound, LoaderCircle, Plus, Trash2 } from 'lucide-react';
+import { KeyRound, Plus, RotateCcw, Trash2, X } from 'lucide-react';
+import { useEnvironmentDraft } from '@/features/platform/hooks/useEnvironmentDraft';
 import { inheritedEnvironment } from '@/features/platform/lib/inheritedEnvironment';
 import type { PlatformEnvironmentVariable } from '@/features/platform/types/PlatformEnvironmentVariable';
 import { Button } from '@/shared/components/actions/Button';
+import { IconButton } from '@/shared/components/actions/IconButton';
+import { Badge } from '@/shared/components/data-display/Badge';
+import { Alert } from '@/shared/components/feedback/Alert';
+import { Spinner } from '@/shared/components/feedback/Spinner';
+import { TextField } from '@/shared/components/forms/TextField';
 import { Dialog } from '@/shared/components/overlays/dialog/Dialog';
 import { cn } from '@/shared/utils/cn';
-
-const NAME = /^[A-Z0-9_]{1,100}$/;
 
 interface PlatformEnvironmentDialogProps {
   /** The name prefix of the variables this configuration owns, e.g. `MOOI_PRODUCTION_`. */
@@ -22,6 +26,10 @@ interface PlatformEnvironmentDialogProps {
   onSaved: () => void;
 }
 
+const status = (variable: PlatformEnvironmentVariable) => (variable.configured
+  ? <Badge tone="success">Set</Badge>
+  : variable.required ? <Badge tone="danger">Missing</Badge> : <Badge>Not set</Badge>);
+
 /**
  * Values are write-only: a blank field keeps the stored value, so secrets never travel back to
  * the browser. Optional variables can be removed; required ones are read by the scripts. Inherited
@@ -31,77 +39,56 @@ export const PlatformEnvironmentDialog = ({
   prefix, description, variables, loading = false, loadError = null,
   emptyDescription = 'The scripts do not read any variable yet.', save, onClose, onSaved,
 }: PlatformEnvironmentDialogProps) => {
-  const [values, setValues] = useState<Record<string, string>>({});
-  const [removed, setRemoved] = useState<Set<string>>(new Set());
-  const [added, setAdded] = useState<{ name: string; value: string }[]>([]);
+  const draft = useEnvironmentDraft(prefix, variables);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const invalid = added.some((entry) => !NAME.test(entry.name));
 
   const submit = async () => {
-    const update: Record<string, string | null> = {};
-    Object.entries(values).forEach(([name, value]) => { if (value.length > 0) update[name] = value; });
-    removed.forEach((name) => { update[name] = null; });
-    added.forEach(({ name, value }) => { if (value.length > 0) update[`${prefix}${name}`] = value; });
-    if (Object.keys(update).length === 0) { onClose(); return; }
+    if (draft.changes === 0) { onClose(); return; }
     setBusy(true); setError(null);
-    try { await save(update); onSaved(); }
+    try { await save(draft.update); onSaved(); }
     catch (failure) { setError((failure as Error).message); }
     finally { setBusy(false); }
   };
 
-  const field = 'h-10 min-w-0 rounded-control border border-line bg-surface-2 px-3 font-mono text-xs text-ink outline-none focus:border-brand/50';
-
   return <Dialog open size="lg" onClose={onClose} dismissible={!busy} title="Environment variables"
     description={`${description} Leave a field blank to keep its current value.`}
     footer={<><Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
-      <Button variant="brand" onClick={() => void submit()} disabled={busy || invalid || loading}>
-        {busy ? <LoaderCircle className="size-4 animate-spin" /> : <KeyRound className="size-4" />}{busy ? 'Saving…' : 'Save variables'}
-      </Button></>}>
-    <ul className="flex flex-col gap-3">
+      <Button variant="brand" icon={KeyRound} loading={busy} onClick={() => void submit()} disabled={!draft.valid || loading}>
+        Save variables</Button></>}>
+    <div className="flex flex-col gap-4">
+      {loadError ? <Alert tone="danger">{loadError}</Alert> : null}
       {variables.map((variable) => {
-        const removing = removed.has(variable.name);
-        return <li key={variable.name} className={cn('flex flex-col gap-1.5', removing && 'opacity-50')}>
-          <div className="flex items-center justify-between gap-2">
-            <span className="min-w-0 truncate font-mono text-xs font-bold text-ink">{variable.name}</span>
-            <span className="flex shrink-0 items-center gap-2 text-[11px] font-semibold">
-              <span className={variable.configured ? 'text-success' : variable.required ? 'text-danger' : 'text-ink-subtle'}>
-                {variable.configured ? 'Set' : variable.required ? 'Missing' : 'Not set'}</span>
-              {!variable.required && !variable.inherited && variable.configured ? <button type="button" disabled={busy}
-                onClick={() => setRemoved((current) => { const next = new Set(current); if (removing) next.delete(variable.name); else next.add(variable.name); return next; })}
-                aria-label={removing ? `Keep ${variable.name}` : `Remove ${variable.name}`} title={removing ? 'Keep' : 'Remove'}
-                className="grid size-7 place-items-center rounded-md text-ink-subtle hover:bg-danger-soft hover:text-danger">
-                <Trash2 className="size-3.5" /></button> : null}
-            </span>
-          </div>
-          {variable.inherited ? <p className="rounded-control bg-surface-2 px-3 py-2.5 text-xs text-ink-muted">
-            Managed in {inheritedEnvironment(variable.name).owner}.</p>
-            : <input type="password" autoComplete="new-password" spellCheck={false} disabled={busy || removing}
-              value={values[variable.name] ?? ''} onChange={(event) => setValues((current) => ({ ...current, [variable.name]: event.target.value }))}
-              placeholder={variable.configured ? '•••••••• (unchanged)' : 'Value'} aria-label={`${variable.name} value`} className={field} />}
-        </li>;
+        const removing = draft.removed.has(variable.name);
+        const removable = !variable.required && !variable.inherited && variable.configured;
+        return <div key={variable.name} className={cn('flex min-w-0 flex-col gap-1.5', removing && 'opacity-60')}>
+          {variable.inherited ? <>
+            <div className="flex min-w-0 items-center justify-between gap-2">
+              <span className="min-w-0 truncate font-mono text-mono font-semibold text-ink">{variable.name}</span>
+              {status(variable)}
+            </div>
+            <p className="rounded-control bg-surface-2 px-3 py-2.5 text-footnote text-ink-muted">
+              Managed in {inheritedEnvironment(variable.name).owner}.</p>
+          </> : <TextField label={variable.name} mono type="password" autoComplete="new-password" spellCheck={false} enterKeyHint="next"
+            value={draft.values[variable.name] ?? ''} onChange={(value) => draft.setValue(variable.name, value)}
+            disabled={busy || removing} placeholder={variable.configured ? '•••••••• (unchanged)' : 'Value'}
+            labelAction={status(variable)} hint={removing ? 'Removed when you save.' : undefined}
+            trailing={removable ? <IconButton size="sm" icon={removing ? RotateCcw : Trash2} disabled={busy}
+              label={removing ? `Keep ${variable.name}` : `Remove ${variable.name}`} onClick={() => draft.toggleRemoved(variable.name)} /> : undefined} />}
+        </div>;
       })}
-      {added.map((entry, index) => <li key={index} className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
-        <span className={cn(field, 'flex items-center gap-0.5 pr-1')}>
-          <span className="shrink-0 text-ink-subtle">{prefix}</span>
-          <input value={entry.name} autoFocus autoCapitalize="characters" autoCorrect="off" spellCheck={false} disabled={busy} aria-label="Variable name" placeholder="NAME"
-            onChange={(event) => setAdded((current) => current.map((item, position) => position === index ? { ...item, name: event.target.value.toUpperCase() } : item))}
-            className="h-full min-w-0 flex-1 bg-transparent outline-none" />
-        </span>
-        <input type="password" autoComplete="new-password" value={entry.value} disabled={busy} aria-label="Variable value" placeholder="Value"
-          onChange={(event) => setAdded((current) => current.map((item, position) => position === index ? { ...item, value: event.target.value } : item))}
-          className={field} />
-        <button type="button" onClick={() => setAdded((current) => current.filter((_, position) => position !== index))} disabled={busy}
-          aria-label="Discard variable" title="Discard" className="grid size-10 place-items-center rounded-control text-ink-subtle hover:bg-surface-2 hover:text-ink">
-          <Trash2 className="size-4" /></button>
-      </li>)}
-    </ul>
-    {loading ? <p className="flex items-center gap-2 text-sm text-ink-muted"><LoaderCircle className="size-4 animate-spin" />Loading variables…</p>
-      : variables.length === 0 && added.length === 0 ? <p className="text-sm text-ink-muted">{emptyDescription}</p> : null}
-    {loadError ? <p role="alert" className="mt-4 rounded-control border border-danger/30 bg-danger-soft px-4 py-2.5 text-sm text-danger">{loadError}</p> : null}
-    <button type="button" onClick={() => setAdded((current) => [...current, { name: '', value: '' }])} disabled={busy || loading}
-      className="mt-4 inline-flex items-center gap-1.5 rounded-control px-2 py-1.5 text-xs font-bold text-ink-muted transition hover:bg-surface-2 hover:text-ink">
-      <Plus className="size-3.5" />Add variable</button>
-    {error ? <p role="alert" className="mt-4 rounded-control border border-danger/30 bg-danger-soft px-4 py-2.5 text-sm text-danger">{error}</p> : null}
+      {draft.added.map((entry) => <div key={entry.key} className="grid min-w-0 gap-3 rounded-card border border-line p-3 sm:grid-cols-2">
+        <TextField label="Name" mono value={entry.name} autoFocus autoCapitalize="characters" spellCheck={false} autoComplete="off" enterKeyHint="next"
+          placeholder="NAME" disabled={busy} onChange={(name) => draft.edit(entry.key, { name })}
+          error={draft.nameErrors[entry.key]} hint={`Saved with the ${prefix} prefix.`} />
+        <TextField label="Value" mono type="password" autoComplete="new-password" spellCheck={false} enterKeyHint="done"
+          placeholder="Value" disabled={busy} value={entry.value} onChange={(value) => draft.edit(entry.key, { value })}
+          trailing={<IconButton size="sm" icon={X} label="Discard variable" disabled={busy} onClick={() => draft.discard(entry.key)} />} />
+      </div>)}
+      {loading ? <p className="flex items-center gap-2 text-callout text-ink-muted"><Spinner />Loading variables…</p>
+        : variables.length === 0 && draft.added.length === 0 ? <p className="text-callout text-ink-muted">{emptyDescription}</p> : null}
+      <div><Button variant="ghost" size="sm" icon={Plus} onClick={draft.add} disabled={busy || loading}>Add variable</Button></div>
+      {error ? <Alert tone="danger">{error}</Alert> : null}
+    </div>
   </Dialog>;
 };

@@ -30,13 +30,13 @@ const CHIPS: { id: string; label: string; kinds: TraceSpanKind[] }[] = [
 
 const chipClass = (active: boolean) =>
   cn(
-    'inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-[12px] font-medium whitespace-nowrap transition-[background-color,border-color,color] duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand',
-    active ? 'border-line-strong bg-surface text-ink shadow-raised' : 'border-line bg-surface-2/60 text-ink-muted hover:text-ink',
+    'inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-caption font-medium whitespace-nowrap transition-[background-color,border-color,color] duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand',
+    active ? 'border-line-strong bg-surface text-ink shadow-raised' : 'border-line bg-surface-2/60 text-ink-muted hover-device:hover:text-ink',
   );
 
 const countClass = (active: boolean) =>
   cn(
-    'min-w-5 rounded-full px-1.5 py-px text-center font-mono text-[10.5px] leading-4 tabular-nums',
+    'min-w-5 rounded-full px-1.5 py-px text-center font-mono text-mono leading-4 tabular-nums',
     active ? 'bg-contrast text-contrast-ink' : 'bg-surface-3 text-ink-muted',
   );
 

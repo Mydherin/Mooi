@@ -51,7 +51,7 @@ const GeneratedImage = ({ sessionId, image }: { sessionId: string; image: ImageA
       >
         {url ? (
           <img src={url} alt={image.name} draggable={false} decoding="async"
-            className="absolute inset-0 size-full animate-menu-in object-cover transition duration-300 group-hover:scale-[1.02]" />
+            className="absolute inset-0 size-full animate-menu-in object-cover transition duration-300 hover-device:group-hover:scale-[1.02]" />
         ) : failed ? (
           <span className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-xs text-ink-subtle">
             <ImageOff aria-hidden="true" className="size-5" />

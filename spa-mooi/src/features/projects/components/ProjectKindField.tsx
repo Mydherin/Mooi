@@ -18,10 +18,10 @@ export const ProjectKindField = ({ value, onChange, hint }: ProjectKindFieldProp
     <div role="radiogroup" aria-labelledby={questionId} className="flex flex-col gap-3">
       <div>
         <Eyebrow>Project type</Eyebrow>
-        <p id={questionId} className="mt-1 text-[17px] font-extrabold tracking-[-0.02em] text-ink">
+        <p id={questionId} className="mt-1 text-headline font-extrabold tracking-[-0.02em] text-ink">
           Is this a web application?
         </p>
-        <p className="mt-1 text-[12px] leading-relaxed text-ink-muted">{hint}</p>
+        <p className="mt-1 text-caption leading-relaxed text-ink-muted">{hint}</p>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">

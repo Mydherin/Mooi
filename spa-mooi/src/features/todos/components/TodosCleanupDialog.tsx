@@ -25,14 +25,14 @@ export const TodosCleanupDialog = ({ list, branch, onClose, onConfirm }: TodosCl
       </>
     )}
   >
-    <p className="text-[13px] font-semibold text-ink">
+    <p className="text-footnote font-semibold text-ink">
       {list.salvage.length === 0 ? 'No task could be recovered: the list starts empty.'
         : `${list.salvage.length} ${list.salvage.length === 1 ? 'task is' : 'tasks are'} kept, in order:`}
     </p>
     {list.salvage.length > 0 ? (
       <ul className="mt-3 max-h-72 divide-y divide-line overflow-y-auto rounded-control border border-line">
         {list.salvage.map((item, index) => (
-          <li key={`${index}:${item.text}`} className="flex items-start gap-2.5 px-3 py-2 text-[13px]">
+          <li key={`${index}:${item.text}`} className="flex items-start gap-2.5 px-3 py-2 text-footnote">
             {item.status === 'done' ? <Check className="mt-0.5 size-3.5 shrink-0 text-success-dot" strokeWidth={3} />
               : item.status === 'inProgress' ? <CircleDot className="mt-0.5 size-3.5 shrink-0 text-info-dot" />
                 : <Circle className="mt-0.5 size-3.5 shrink-0 text-ink-subtle" />}
@@ -41,7 +41,7 @@ export const TodosCleanupDialog = ({ list, branch, onClose, onConfirm }: TodosCl
         ))}
       </ul>
     ) : null}
-    <p className="mt-3 text-[12px] leading-relaxed text-ink-muted">
+    <p className="mt-3 text-caption leading-relaxed text-ink-muted">
       <code className="font-mono">[x]</code> stays done and <code className="font-mono">[/]</code> stays in progress; other
       markers (such as <code className="font-mono">[*]</code>) become open tasks.
     </p>

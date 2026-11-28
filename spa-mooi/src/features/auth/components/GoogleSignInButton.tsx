@@ -1,6 +1,7 @@
-import { LoaderCircle, LogIn } from 'lucide-react';
+import { LogIn } from 'lucide-react';
 import { useGoogleIdentityServices } from '@/features/auth/hooks/useGoogleIdentityServices';
 import { buttonStyles } from '@/shared/styles/buttonStyles';
+import { Spinner } from '@/shared/components/feedback/Spinner';
 
 interface GoogleSignInButtonProps {
   onCredential: (idToken: string) => void;
@@ -22,7 +23,7 @@ export const GoogleSignInButton = ({
         className={buttonStyles('brand', 'lg', 'w-full')}
         data-loading={busy || !isReady}
       >
-        {busy ? <LoaderCircle className="size-4 animate-spin" /> : <LogIn className="size-4" />}
+        {busy ? <Spinner className="size-4" /> : <LogIn className="size-4" />}
         {busy ? 'Signing in…' : label}
       </span>
 

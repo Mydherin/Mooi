@@ -27,7 +27,7 @@ export const ProjectKindOption = ({
   <label
     className={cn(
       'relative flex cursor-pointer flex-col gap-3 rounded-card border p-4 transition duration-200 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-brand',
-      checked ? 'border-brand bg-brand-soft/60 ring-1 ring-brand' : 'border-line hover:border-line-strong hover:bg-surface-2',
+      checked ? 'border-brand bg-brand-soft/60 ring-1 ring-brand' : 'border-line hover-device:hover:border-line-strong hover-device:hover:bg-surface-2',
     )}
   >
     <input type="radio" name={name} checked={checked} onChange={onSelect} className="sr-only" />
@@ -53,8 +53,8 @@ export const ProjectKindOption = ({
     </span>
 
     <span className="min-w-0">
-      <span className="block text-[15px] font-extrabold tracking-[-0.01em] text-ink">{title}</span>
-      <span className="mt-1 block text-[12px] leading-relaxed text-ink-muted">{description}</span>
+      <span className="block text-body font-extrabold tracking-[-0.01em] text-ink">{title}</span>
+      <span className="mt-1 block text-caption leading-relaxed text-ink-muted">{description}</span>
     </span>
 
     <span className="mt-auto flex flex-wrap gap-1.5">
@@ -62,7 +62,7 @@ export const ProjectKindOption = ({
         <span
           key={feature}
           className={cn(
-            'rounded-full px-2 py-0.5 text-[10.5px] font-bold',
+            'rounded-full px-2 py-0.5 text-caption font-bold',
             checked ? 'bg-surface text-brand-strong' : 'bg-surface-2 text-ink-subtle',
           )}
         >

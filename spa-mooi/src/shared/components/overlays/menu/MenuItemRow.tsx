@@ -18,7 +18,7 @@ export const MenuItemRow = ({ item, variant, onSelect }: MenuItemRowProps) => {
   const className = cn(
     'group/item flex w-full min-w-0 items-center gap-3 text-left outline-none transition-colors duration-100',
     variant === 'popover'
-      ? 'min-h-10 rounded-chip px-2.5 py-1.5 text-[13.5px] font-medium hover-device:hover:bg-surface-2 focus-visible:bg-surface-2'
+      ? 'min-h-10 rounded-chip px-2.5 py-1.5 text-footnote font-medium hover-device:hover:bg-surface-2 focus-visible:bg-surface-2'
       : 'min-h-13 px-4 py-2.5 text-body active:bg-surface-2 focus-visible:bg-surface-2',
     item.destructive ? 'text-danger' : 'text-ink',
     item.disabled && 'pointer-events-none opacity-45',

@@ -83,7 +83,7 @@ export const Tooltip = ({ content, children, className, focusable = false, place
       {open ? (
         <OverlayPortal>
           <div ref={bubble} id={id} role="tooltip"
-            className={cn('pointer-events-none fixed z-(--z-tooltip) w-max animate-fade-in rounded-chip border border-line-strong bg-surface px-2.5 py-1.5 text-[11.5px] leading-snug text-ink shadow-pop',
+            className={cn('pointer-events-none fixed z-(--z-tooltip) w-max animate-fade-in rounded-chip border border-line-strong bg-surface px-2.5 py-1.5 text-caption leading-snug text-ink shadow-pop',
               mono ? 'font-mono break-all' : 'font-sans font-medium break-words whitespace-pre-line')}
             style={{ maxWidth: 'min(32rem, calc(100vw - 1rem))' }}>
             {content}

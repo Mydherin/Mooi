@@ -58,7 +58,7 @@ export const DiffView = ({ sessionId, path }: DiffViewProps) => {
 
   return (
     <div className="min-h-0 flex-1 overflow-auto">
-      <p className="sticky top-0 z-10 truncate border-b border-line bg-surface px-4 py-2.5 font-mono text-[11px] font-medium text-ink-muted">
+      <p className="sticky top-0 z-10 truncate border-b border-line bg-surface px-4 py-2.5 font-mono text-mono font-medium text-ink-muted">
         {path}
       </p>
 

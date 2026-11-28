@@ -14,7 +14,7 @@ interface BadgeProps {
 export const Badge = ({ children, tone = 'neutral', icon: Icon, className }: BadgeProps) => (
   <span
     className={cn(
-      'inline-flex h-5.5 items-center gap-1.5 rounded-full border px-2 text-[11px] leading-none font-semibold tracking-[0.01em] whitespace-nowrap',
+      'inline-flex h-5.5 items-center gap-1.5 rounded-full border px-2 text-caption leading-none font-semibold tracking-[0.01em] whitespace-nowrap',
       toneStyles(tone),
       className,
     )}

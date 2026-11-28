@@ -34,21 +34,21 @@ export const TraceDetailSection = ({ title, value, loading = false, emptyLabel =
           className="flex min-h-11 min-w-0 flex-1 items-center gap-1.5 rounded-control px-2 text-left focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-brand"
         >
           <ChevronRight className={cn('size-3.5 shrink-0 text-ink-subtle transition-transform duration-150', open && 'rotate-90')} />
-          <span className="text-[12px] font-semibold tracking-wide text-ink uppercase">{title}</span>
-          {text ? <span className="truncate font-mono text-[11px] text-ink-subtle tabular-nums">{text.length.toLocaleString()} chars</span> : null}
+          <span className="text-caption font-semibold tracking-wide text-ink uppercase">{title}</span>
+          {text ? <span className="truncate font-mono text-mono text-ink-subtle tabular-nums">{text.length.toLocaleString()} chars</span> : null}
         </button>
         {text ? <CopyButton value={text} label={`Copy ${title.toLowerCase()}`} /> : null}
       </div>
       {open ? (
         <div id={bodyId} className="px-3 pb-3">
           {text ? (
-            <pre className="max-h-[22rem] overflow-auto overscroll-contain rounded-control border border-line bg-surface-2 px-3 py-2.5 font-mono text-[12px] leading-relaxed break-words whitespace-pre-wrap text-ink">
+            <pre className="max-h-[22rem] overflow-auto overscroll-contain rounded-control border border-line bg-surface-2 px-3 py-2.5 font-mono text-mono leading-relaxed break-words whitespace-pre-wrap text-ink">
               {text}
             </pre>
           ) : loading ? (
             <div aria-label={`Loading ${title.toLowerCase()}`} className="h-16 animate-pulse-soft rounded-control bg-surface-2" />
           ) : (
-            <p className="rounded-control border border-dashed border-line px-3 py-2.5 text-[12px] text-ink-subtle">{emptyLabel}</p>
+            <p className="rounded-control border border-dashed border-line px-3 py-2.5 text-caption text-ink-subtle">{emptyLabel}</p>
           )}
         </div>
       ) : null}

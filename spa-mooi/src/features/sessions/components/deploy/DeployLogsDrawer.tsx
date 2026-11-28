@@ -49,14 +49,14 @@ export const DeployLogsDrawer = ({ sessionId }: { sessionId: string }) => {
       <header className="flex shrink-0 items-center gap-3 border-b border-neutral-800 px-4 py-3 text-neutral-100">
         <div className="min-w-0 flex-1">
           <h2 className="text-sm font-semibold">Deployment logs</h2>
-          <p className="mt-1 flex flex-wrap gap-x-2 font-mono text-[11px] text-neutral-400" aria-live="polite" aria-atomic="true">
+          <p className="mt-1 flex flex-wrap gap-x-2 font-mono text-mono text-neutral-400" aria-live="polite" aria-atomic="true">
             <span className="capitalize">{deployment?.state ?? 'idle'}</span>
             {deployment?.phase ? <span>{deployment.phase}</span> : null}
             <span>{lines.length} lines</span>
           </p>
         </div>
         <button data-close-logs type="button" aria-label="Close deployment logs" title="Close deployment logs" onClick={close}
-          className="inline-flex size-9 items-center justify-center rounded-md text-neutral-300 hover:bg-neutral-800 hover:text-white focus-visible:outline-2 focus-visible:outline-emerald-400"><X className="size-4" /></button>
+          className="inline-flex size-9 items-center justify-center rounded-md text-neutral-300 hover-device:hover:bg-neutral-800 hover-device:hover:text-white focus-visible:outline-2 focus-visible:outline-emerald-400"><X className="size-4" /></button>
       </header>
       <DeployTerminal lines={lines} operationId={operationId} />
     </aside>

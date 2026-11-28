@@ -26,7 +26,7 @@ export const FactoryRoadmap = ({ phases, activeStep }: FactoryRoadmapProps) => {
     <Card as="section" className="flex flex-col p-4 sm:p-5">
       <Eyebrow>Roadmap</Eyebrow>
       {phases.length === 0 ? (
-        <p className="mt-3 flex items-center gap-2 text-[13px] text-ink-subtle"><MapIcon className="size-4" />No phases yet.</p>
+        <p className="mt-3 flex items-center gap-2 text-footnote text-ink-subtle"><MapIcon className="size-4" />No phases yet.</p>
       ) : (
         <ol className="mt-3 flex flex-col gap-2">
           {phases.map((phase) => {
@@ -37,9 +37,9 @@ export const FactoryRoadmap = ({ phases, activeStep }: FactoryRoadmapProps) => {
               <li key={phase.id} className={cn('rounded-control border bg-surface-2/50', active ? 'border-brand/40' : 'border-line')}>
                 <button type="button" aria-expanded={open} onClick={() => setToggled((current) => ({ ...current, [phase.id]: !open }))}
                   className="flex w-full min-w-0 items-center gap-2.5 rounded-control px-3 py-2.5 text-left focus-visible:outline-2 focus-visible:outline-brand">
-                  <span className="shrink-0 font-mono text-[11px] text-ink-subtle">{phase.id.slice(0, 2)}</span>
-                  <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold text-ink">{phase.title}</span>
-                  {total > 0 ? <span className="shrink-0 text-[11.5px] text-ink-subtle tabular-nums">{done}/{total}</span> : null}
+                  <span className="shrink-0 font-mono text-mono text-ink-subtle">{phase.id.slice(0, 2)}</span>
+                  <span className="min-w-0 flex-1 truncate text-footnote font-semibold text-ink">{phase.title}</span>
+                  {total > 0 ? <span className="shrink-0 text-caption text-ink-subtle tabular-nums">{done}/{total}</span> : null}
                   <Badge tone={PHASE_TONES[phase.status]} className="max-sm:hidden">{PHASE_LABELS[phase.status]}</Badge>
                   <ChevronDown className={cn('size-4 shrink-0 text-ink-subtle transition-transform', open && 'rotate-180')} />
                 </button>
@@ -52,7 +52,7 @@ export const FactoryRoadmap = ({ phases, activeStep }: FactoryRoadmapProps) => {
                       ))}
                     </ol>
                   ) : (
-                    <p className="border-t border-line px-3 py-2.5 text-[12.5px] text-ink-subtle">
+                    <p className="border-t border-line px-3 py-2.5 text-footnote text-ink-subtle">
                       Expanded into milestones when its turn comes.
                     </p>
                   )

@@ -31,7 +31,7 @@ export const RecipePreview = ({ recipe, onBack }: RecipePreviewProps) => {
         <div className="min-w-0 flex-1">
           <h3 className="text-lg font-extrabold tracking-[-0.02em] [overflow-wrap:anywhere] text-ink">{recipe.name}</h3>
           {recipe.description ? <p className="mt-1 text-sm leading-relaxed text-ink-muted">{recipe.description}</p> : null}
-          <p className="mt-1.5 truncate font-mono text-[11px] text-ink-subtle">{recipe.path}</p>
+          <p className="mt-1.5 truncate font-mono text-mono text-ink-subtle">{recipe.path}</p>
         </div>
         {recipe.htmlUrl ? (
           <a href={recipe.htmlUrl} target="_blank" rel="noreferrer" aria-label="Open on GitHub" title="Open on GitHub" className={iconAction}>

@@ -92,10 +92,10 @@ export const TraceSummaryStrip = ({ summary, live, now }: TraceSummaryStripProps
           kpi.tone === 'danger' ? 'border-danger/30 bg-danger-soft' : 'border-line bg-surface-2/60',
         )}
       >
-        <dt className="truncate text-[11px] font-medium text-ink-subtle">{kpi.label}</dt>
+        <dt className="truncate text-caption font-medium text-ink-subtle">{kpi.label}</dt>
         <dd
           aria-label={kpi.detail}
-          className={cn('truncate font-mono text-[15px] font-semibold tabular-nums', kpi.tone === 'danger' ? 'text-danger' : 'text-ink')}
+          className={cn('truncate font-mono text-body font-semibold tabular-nums', kpi.tone === 'danger' ? 'text-danger' : 'text-ink')}
         >
           {kpi.value}
         </dd>

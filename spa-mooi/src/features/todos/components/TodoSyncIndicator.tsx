@@ -16,7 +16,7 @@ export const TodoSyncIndicator = ({ status, branch }: TodoSyncIndicatorProps) =>
   }[status];
 
   return (
-    <span role="status" aria-live="polite" className={cn('inline-flex min-w-0 items-center gap-1.5 text-[12px] font-semibold', tone)}>
+    <span role="status" aria-live="polite" className={cn('inline-flex min-w-0 items-center gap-1.5 text-caption font-semibold', tone)}>
       <Icon className={cn('size-3.5 shrink-0', status === 'saving' && 'animate-spin', status === 'idle' && 'text-success-dot')} />
       <span className="truncate">{label}</span>
     </span>

@@ -1,11 +1,12 @@
 import { useEffect, useRef } from 'react';
-import { LoaderCircle, Play } from 'lucide-react';
+import { Play } from 'lucide-react';
 import type { AgentConnection } from '@/features/agents/types/AgentConnection';
 import type { FactoryRunConfig } from '@/features/factory/types/FactoryRunConfig';
 import { AgentModelFields } from '@/features/sessions/components/AgentModelFields';
 import { useAgentModelChoice } from '@/features/sessions/hooks/useAgentModelChoice';
 import { Button } from '@/shared/components/actions/Button';
 import { Dialog } from '@/shared/components/overlays/dialog/Dialog';
+import { Spinner } from '@/shared/components/feedback/Spinner';
 
 interface FactoryRunDialogProps {
   title: string;
@@ -64,7 +65,7 @@ export const FactoryRunDialog = ({ title, description, action, connections, prev
     footer={<>
       <Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
       <Button variant="brand" onClick={submit} disabled={!choice.ready || busy}>
-        {busy ? <LoaderCircle className="size-4 animate-spin" /> : <Play className="size-4" />}
+        {busy ? <Spinner className="size-4" /> : <Play className="size-4" />}
         {action}
       </Button>
     </>}>

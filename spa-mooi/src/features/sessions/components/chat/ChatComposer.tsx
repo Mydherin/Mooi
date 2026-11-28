@@ -200,7 +200,7 @@ export const ChatComposer = ({
         {suggestCompact ? (
           <div className="absolute inset-x-0 bottom-full z-20 mb-2 rounded-xl border border-line bg-surface p-2 shadow-pop">
             <button type="button" onClick={selectCompact}
-              className="w-full rounded-lg px-3 py-2 text-left hover:bg-surface-2 focus-visible:outline-brand">
+              className="w-full rounded-lg px-3 py-2 text-left hover-device:hover:bg-surface-2 focus-visible:outline-brand">
               <span className="text-sm font-semibold text-ink">/compact</span>
               <span className="ml-2 text-xs text-ink-subtle">[optional instructions]</span>
               <span className="mt-1 block text-xs text-ink-muted">Compact context. Optionally specify what to preserve, condense, or how to structure the summary.</span>
@@ -302,7 +302,7 @@ export const ChatComposer = ({
           </div>
 
           <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-1.5">
-            {!activeTurn && !blocked ? <span className="mr-1 hidden items-center gap-1 text-[11px] text-ink-subtle lg:flex"><kbd className="rounded border border-line bg-surface-2 px-1 font-mono text-[10px]">Enter</kbd> to send · <kbd className="rounded border border-line bg-surface-2 px-1 font-mono text-[10px]">Shift</kbd>+<kbd className="rounded border border-line bg-surface-2 px-1 font-mono text-[10px]">Enter</kbd> new line</span> : null}
+            {!activeTurn && !blocked ? <span className="mr-1 hidden items-center gap-1 text-caption text-ink-subtle lg:flex"><kbd className="rounded border border-line bg-surface-2 px-1 font-mono text-mono">Enter</kbd> to send · <kbd className="rounded border border-line bg-surface-2 px-1 font-mono text-mono">Shift</kbd>+<kbd className="rounded border border-line bg-surface-2 px-1 font-mono text-mono">Enter</kbd> new line</span> : null}
 
             {acceptsImages && !blocked ? (
               <AttachImageButton onPick={attach} disabled={!canAttach} reason={imagesReason} className="max-sm:size-10" />

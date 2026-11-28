@@ -21,7 +21,7 @@ export const FactoryIntro = ({ onEnable }: { onEnable: () => void }) => (
           <h2 className="mt-2 text-xl font-bold tracking-[-0.02em] text-ink sm:text-2xl">Build the whole project autonomously</h2>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-muted">
             For large projects: once you approve its definition, the factory builds it phase by phase and milestone by
-            milestone, for days or weeks, with nobody connected. Everything it decides lives in <code className="font-mono text-[12.5px]">docs/factory/</code>.
+            milestone, for days or weeks, with nobody connected. Everything it decides lives in <code className="font-mono text-mono">docs/factory/</code>.
           </p>
         </div>
         <span className="hidden size-12 shrink-0 items-center justify-center rounded-xl border border-line bg-surface text-brand shadow-raised sm:flex">
@@ -33,8 +33,8 @@ export const FactoryIntro = ({ onEnable }: { onEnable: () => void }) => (
           <li key={title} className="flex gap-3 rounded-control border border-line bg-surface-2/60 p-3.5">
             <Icon className="mt-0.5 size-4 shrink-0 text-brand" />
             <span className="min-w-0">
-              <span className="block text-[13px] font-semibold text-ink">{title}</span>
-              <span className="mt-0.5 block text-[12.5px] leading-relaxed text-ink-muted">{text}</span>
+              <span className="block text-footnote font-semibold text-ink">{title}</span>
+              <span className="mt-0.5 block text-footnote leading-relaxed text-ink-muted">{text}</span>
             </span>
           </li>
         ))}

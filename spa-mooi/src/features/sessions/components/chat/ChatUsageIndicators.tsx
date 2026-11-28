@@ -66,7 +66,7 @@ export const ChatUsageIndicators = ({ usage, loading = false, actionsDisabled, o
     }}>
       <button type="button" aria-label="Context usage and conversation actions" aria-haspopup="true" aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
-        className="flex size-8 shrink-0 items-center justify-center rounded-full sm:size-9 text-sky-500 transition hover:bg-sky-500/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+        className="flex size-8 shrink-0 items-center justify-center rounded-full sm:size-9 text-sky-500 transition hover-device:hover:bg-sky-500/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
       >
         {loading ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <Activity className="size-4" aria-hidden="true" />}
       </button>
@@ -81,12 +81,12 @@ export const ChatUsageIndicators = ({ usage, loading = false, actionsDisabled, o
           <span className="mr-auto font-semibold text-ink-subtle">Conversation</span>
           <button type="button" title="Compact context" aria-label="Compact conversation context" disabled={actionsDisabled}
             onClick={() => void onCompact()}
-            className="flex size-8 items-center justify-center rounded-lg text-ink-muted transition hover:bg-surface-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-brand disabled:cursor-not-allowed disabled:opacity-40">
+            className="flex size-8 items-center justify-center rounded-lg text-ink-muted transition hover-device:hover:bg-surface-2 hover-device:hover:text-ink focus-visible:outline-2 focus-visible:outline-brand disabled:cursor-not-allowed disabled:opacity-40">
             <Layers3 className="size-4" aria-hidden="true" />
           </button>
           <button type="button" title="Clear conversation" aria-label="Clear conversation and start fresh" disabled={actionsDisabled}
             onClick={() => void onClear()}
-            className="flex size-8 items-center justify-center rounded-lg text-ink-muted transition hover:bg-danger-soft hover:text-danger focus-visible:outline-2 focus-visible:outline-brand disabled:cursor-not-allowed disabled:opacity-40">
+            className="flex size-8 items-center justify-center rounded-lg text-ink-muted transition hover-device:hover:bg-danger-soft hover-device:hover:text-danger focus-visible:outline-2 focus-visible:outline-brand disabled:cursor-not-allowed disabled:opacity-40">
             <Eraser className="size-4" aria-hidden="true" />
           </button>
         </span>

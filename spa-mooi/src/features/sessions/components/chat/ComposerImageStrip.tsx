@@ -29,7 +29,7 @@ export const ComposerImageStrip = ({ images, onRemove }: ComposerImageStripProps
           onClick={() => onRemove(image.key)}
           aria-label={`Remove ${image.name}`}
           title="Remove image"
-          className="absolute top-0 right-0 inline-flex size-5 items-center justify-center rounded-full bg-contrast text-contrast-ink shadow-md ring-2 ring-surface-2 transition hover:scale-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand active:scale-95 max-sm:after:absolute max-sm:after:-inset-2.5"
+          className="absolute top-0 right-0 inline-flex size-5 items-center justify-center rounded-full bg-contrast text-contrast-ink shadow-md ring-2 ring-surface-2 transition hover-device:hover:scale-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand active:scale-95 max-sm:after:absolute max-sm:after:-inset-2.5"
         >
           <X aria-hidden="true" className="size-3" strokeWidth={2.75} />
         </button>

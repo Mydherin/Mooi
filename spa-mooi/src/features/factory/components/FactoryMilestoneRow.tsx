@@ -12,12 +12,12 @@ export const FactoryMilestoneRow = ({ milestone, active }: { milestone: FactoryM
   return (
     <li className={cn('flex min-w-0 items-center gap-2.5 rounded-chip px-2 py-2', active && 'bg-brand-soft/60')}>
       <StatusDot tone={tone} pulse={active} />
-      <span className="shrink-0 font-mono text-[10.5px] text-ink-subtle">{milestone.id.slice(0, 2)}</span>
-      <span className={cn('min-w-0 flex-1 truncate text-[13px]', milestone.status === 'done' ? 'text-ink-muted' : 'text-ink')}>
+      <span className="shrink-0 font-mono text-mono text-ink-subtle">{milestone.id.slice(0, 2)}</span>
+      <span className={cn('min-w-0 flex-1 truncate text-footnote', milestone.status === 'done' ? 'text-ink-muted' : 'text-ink')}>
         {milestone.title}
       </span>
       {milestone.attempts > 0 ? (
-        <span className="flex shrink-0 items-center gap-1 text-[11px] text-warning tabular-nums" title={`${milestone.attempts} failed test cycles`}>
+        <span className="flex shrink-0 items-center gap-1 text-caption text-warning tabular-nums" title={`${milestone.attempts} failed test cycles`}>
           <FlaskConical className="size-3" />{milestone.attempts}
         </span>
       ) : null}

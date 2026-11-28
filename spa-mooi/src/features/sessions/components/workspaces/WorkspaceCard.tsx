@@ -33,9 +33,9 @@ export const WorkspaceCard = ({ projectId, workspace, previewsEnabled }: Workspa
           >
             <GitBranch className="size-3.5 shrink-0 text-ink-subtle" />
             <span className="truncate font-mono">{workspace.branch}</span>
-            <ArrowRight className="size-3.5 shrink-0 text-ink-subtle transition group-hover:translate-x-0.5 group-hover:text-ink" />
+            <ArrowRight className="size-3.5 shrink-0 text-ink-subtle transition hover-device:group-hover:translate-x-0.5 hover-device:group-hover:text-ink" />
           </Link>
-          <p className="mt-0.5 text-[11px] text-ink-subtle">
+          <p className="mt-0.5 text-caption text-ink-subtle">
             Cloned {formatDate(workspace.createdAt)} · {formatTime(workspace.createdAt)}
           </p>
         </div>
@@ -48,50 +48,50 @@ export const WorkspaceCard = ({ projectId, workspace, previewsEnabled }: Workspa
         {workspace.path ? (
           <>
             <Tooltip content={workspace.path} focusable className="flex-1">
-              <span className="truncate font-mono text-[11px] text-ink-muted">{shortenPath(workspace.path)}</span>
+              <span className="truncate font-mono text-mono text-ink-muted">{shortenPath(workspace.path)}</span>
             </Tooltip>
             <CopyButton value={workspace.path} label="Copy clone path" />
           </>
         ) : (
-          <span className="py-1.5 text-[11px] text-ink-subtle italic">Clone not ready yet</span>
+          <span className="py-1.5 text-caption text-ink-subtle italic">Clone not ready yet</span>
         )}
       </div>
 
-      <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-[12px] sm:grid-cols-4">
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-caption sm:grid-cols-4">
         <div className="min-w-0">
-          <dt className="font-mono text-[10.5px] font-medium tracking-[0.12em] text-ink-subtle uppercase">Base</dt>
+          <dt className="font-mono text-mono font-medium tracking-[0.12em] text-ink-subtle uppercase">Base</dt>
           <dd className="mt-0.5 flex min-w-0 items-center gap-1 font-mono text-ink">
             <GitBranch className="size-3 shrink-0 text-ink-subtle" />
             <span className="truncate" title={workspace.baseBranch}>{workspace.baseBranch || '—'}</span>
           </dd>
           {drifted ? (
-            <dd className="mt-0.5 truncate font-mono text-[10.5px] text-warning">checked out {workspace.headBranch}</dd>
+            <dd className="mt-0.5 truncate font-mono text-mono text-warning">checked out {workspace.headBranch}</dd>
           ) : (
-            <dd className="mt-0.5 truncate text-[10.5px] text-ink-subtle">branched from</dd>
+            <dd className="mt-0.5 truncate text-caption text-ink-subtle">branched from</dd>
           )}
         </div>
 
         <div className="min-w-0">
-          <dt className="font-mono text-[10.5px] font-medium tracking-[0.12em] text-ink-subtle uppercase">Commit</dt>
+          <dt className="font-mono text-mono font-medium tracking-[0.12em] text-ink-subtle uppercase">Commit</dt>
           <dd className="mt-0.5 flex items-center gap-1 font-mono text-ink">
             <GitCommitHorizontal className="size-3 shrink-0 text-ink-subtle" />
             {shortCommit(workspace.headCommit)}
           </dd>
-          <dd className="mt-0.5 truncate font-mono text-[10.5px] text-ink-subtle">
+          <dd className="mt-0.5 truncate font-mono text-mono text-ink-subtle">
             {advanced ? `base ${shortCommit(workspace.baseCommit)}` : 'at base'}
           </dd>
         </div>
 
         <div className="min-w-0">
-          <dt className="font-mono text-[10.5px] font-medium tracking-[0.12em] text-ink-subtle uppercase">Changes</dt>
+          <dt className="font-mono text-mono font-medium tracking-[0.12em] text-ink-subtle uppercase">Changes</dt>
           <dd className="mt-0.5 font-extrabold text-ink tabular-nums">{workspace.dirtyFiles}</dd>
-          <dd className="mt-0.5 text-[10.5px] text-ink-subtle">
+          <dd className="mt-0.5 text-caption text-ink-subtle">
             {workspace.dirtyFiles === 0 ? 'Clean tree' : 'Uncommitted files'}
           </dd>
         </div>
 
         <div className="min-w-0">
-          <dt className="font-mono text-[10.5px] font-medium tracking-[0.12em] text-ink-subtle uppercase">Size</dt>
+          <dt className="font-mono text-mono font-medium tracking-[0.12em] text-ink-subtle uppercase">Size</dt>
           <dd className="mt-0.5 font-extrabold text-ink tabular-nums">{formatBytes(workspace.sizeBytes)}</dd>
           {preview ? (
             <dd className="mt-0.5">
@@ -99,16 +99,16 @@ export const WorkspaceCard = ({ projectId, workspace, previewsEnabled }: Workspa
                 href={preview}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-1 text-[10.5px] font-bold text-success hover:underline"
+                className="inline-flex items-center gap-1 text-caption font-bold text-success hover-device:hover:underline"
               >
                 Preview live
                 <ExternalLink className="size-3" />
               </a>
             </dd>
           ) : previewsEnabled ? (
-            <dd className="mt-0.5 text-[10.5px] text-ink-subtle">No preview</dd>
+            <dd className="mt-0.5 text-caption text-ink-subtle">No preview</dd>
           ) : (
-            <dd className="mt-0.5 text-[10.5px] text-ink-subtle">On disk</dd>
+            <dd className="mt-0.5 text-caption text-ink-subtle">On disk</dd>
           )}
         </div>
       </dl>

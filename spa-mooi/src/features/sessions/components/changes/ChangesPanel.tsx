@@ -8,6 +8,7 @@ import { EmptyState } from '@/shared/components/feedback/EmptyState';
 import { useSessionsStore } from '@/stores/sessionsStore';
 import { Button } from '@/shared/components/actions/Button';
 import { useIncrementalCount } from '@/shared/hooks/useIncrementalCount';
+import { Spinner } from '@/shared/components/feedback/Spinner';
 
 interface ChangesPanelProps {
   sessionId: string;
@@ -91,7 +92,7 @@ export const ChangesPanel = ({
           </ul>
 
           <div className="relative flex min-w-0 min-h-0 flex-col">
-            {changesStatus === 'loading' ? <p role="status" className="absolute right-3 top-3 z-20 inline-flex items-center gap-1.5 rounded-full border border-line bg-surface px-2.5 py-1 text-[11px] text-ink-muted shadow-sm"><LoaderCircle className="size-3 animate-spin" />Refreshing</p> : null}
+            {changesStatus === 'loading' ? <p role="status" className="absolute right-3 top-3 z-20 inline-flex items-center gap-1.5 rounded-full border border-line bg-surface px-2.5 py-1 text-caption text-ink-muted shadow-sm"><Spinner className="size-3" />Refreshing</p> : null}
             {selectedPath ? <DiffView key={selectedPath} sessionId={sessionId} path={selectedPath} /> : null}
           </div>
         </div>

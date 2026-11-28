@@ -19,9 +19,9 @@ export const AppSidebarItem = ({ link, collapsed }: AppSidebarItemProps) => {
       aria-label={collapsed ? link.label : undefined}
       className={({ isActive }) =>
         cn(
-          'group/nav relative flex h-9 w-full items-center gap-2.5 rounded-control px-2.5 text-[13.5px] font-medium transition-[background-color,color,box-shadow] duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand',
+          'group/nav relative flex h-9 w-full items-center gap-2.5 rounded-control px-2.5 text-footnote font-medium transition-[background-color,color,box-shadow] duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand',
           collapsed && 'justify-center px-0',
-          isActive ? 'bg-surface text-ink shadow-card ring-1 ring-line' : 'text-ink-muted hover:bg-surface/60 hover:text-ink',
+          isActive ? 'bg-surface text-ink shadow-card ring-1 ring-line' : 'text-ink-muted hover-device:hover:bg-surface/60 hover-device:hover:text-ink',
         )
       }
     >

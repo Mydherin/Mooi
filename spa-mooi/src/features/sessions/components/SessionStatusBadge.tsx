@@ -18,7 +18,7 @@ export const SessionStatusBadge = ({ status, deployment }: SessionStatusBadgePro
   return (
     <span
       className={cn(
-        'inline-flex w-full shrink-0 items-center gap-2 rounded-full border px-2.5 py-1 text-[11px] font-extrabold',
+        'inline-flex w-full shrink-0 items-center gap-2 rounded-full border px-2.5 py-1 text-caption font-extrabold',
         toneStyles(tone),
       )}
     >

@@ -37,12 +37,12 @@ export const ChangedFileRow = ({ file, selected, onSelect }: ChangedFileRowProps
         aria-pressed={selected}
         className={cn(
           'flex w-full items-center gap-2.5 rounded-chip px-2.5 py-2 text-left transition focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand',
-          selected ? 'bg-surface-3 text-ink' : 'hover:bg-surface-2',
+          selected ? 'bg-surface-3 text-ink' : 'hover-device:hover:bg-surface-2',
         )}
       >
         <span
           className={cn(
-            'flex size-5 shrink-0 items-center justify-center rounded font-mono text-[11px] font-semibold',
+            'flex size-5 shrink-0 items-center justify-center rounded font-mono text-mono font-semibold',
             letterStyles[file.change],
           )}
         >
@@ -51,11 +51,11 @@ export const ChangedFileRow = ({ file, selected, onSelect }: ChangedFileRowProps
 
         <span className="flex min-w-0 flex-1 flex-col gap-0.5 font-mono">
           <span className="truncate text-xs font-medium text-ink">{filename}</span>
-          {directory ? <span className="truncate text-[10px] text-ink-subtle">{directory}</span> : null}
+          {directory ? <span className="truncate text-caption text-ink-subtle">{directory}</span> : null}
         </span>
 
-        <span className="shrink-0 font-mono text-[10px] font-medium text-success">+{file.added}</span>
-        <span className="shrink-0 font-mono text-[10px] font-medium text-danger">−{file.removed}</span>
+        <span className="shrink-0 font-mono text-mono font-medium text-success">+{file.added}</span>
+        <span className="shrink-0 font-mono text-mono font-medium text-danger">−{file.removed}</span>
       </button>
       </Tooltip>
     </li>

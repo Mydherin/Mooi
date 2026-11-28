@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { TOUCH_QUERY } from '@/shared/hooks/mediaQueries';
 import { isTextEntry } from '@/shared/utils/isTextEntry';
 
 /**
@@ -15,7 +16,7 @@ export const useAppViewport = (): void => {
   useEffect(() => {
     const root = document.documentElement;
     const viewport = window.visualViewport;
-    const touch = window.matchMedia('(pointer: coarse)');
+    const touch = window.matchMedia(TOUCH_QUERY);
     let frame = 0;
     let lastHeight = 0;
 

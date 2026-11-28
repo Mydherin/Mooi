@@ -21,7 +21,7 @@ interface ProjectTodosSectionProps {
 }
 
 const headerAction =
-  'inline-flex size-9 shrink-0 items-center justify-center rounded-control text-ink-subtle transition hover:bg-surface-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:opacity-60';
+  'inline-flex size-9 shrink-0 items-center justify-center rounded-control text-ink-subtle transition hover-device:hover:bg-surface-2 hover-device:hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:opacity-60';
 
 /**
  * One project on the To-dos page: a header with its progress, expanding into the same editor as
@@ -55,17 +55,17 @@ export const ProjectTodosSection = ({ project, expanded, onToggle }: ProjectTodo
           onClick={onToggle}
           aria-expanded={expanded}
           aria-controls={bodyId}
-          className="group/head flex min-h-12 min-w-0 flex-1 items-center gap-2.5 rounded-control px-1.5 py-1 text-left transition-colors hover:bg-surface-2/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand sm:gap-3"
+          className="group/head flex min-h-12 min-w-0 flex-1 items-center gap-2.5 rounded-control px-1.5 py-1 text-left transition-colors hover-device:hover:bg-surface-2/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand sm:gap-3"
         >
           <ChevronRight className={cn('size-4 shrink-0 text-ink-subtle transition-transform duration-200 ease-out-expo group-hover/head:text-ink', expanded && 'rotate-90')} />
           <Initials value={project.name} />
           <span className="flex min-w-0 flex-1 flex-col gap-1">
-            <span className="truncate text-[14px] font-semibold tracking-[-0.01em] text-ink">{project.name}</span>
-            <span className={cn('truncate text-[12px] font-medium', summary.tone)}>{summary.text}</span>
+            <span className="truncate text-callout font-semibold tracking-[-0.01em] text-ink">{project.name}</span>
+            <span className={cn('truncate text-caption font-medium', summary.tone)}>{summary.text}</span>
           </span>
           {list && items.length > 0 ? (
             <span className="hidden w-28 shrink-0 flex-col gap-1.5 md:flex">
-              <span className="text-right font-mono text-[10.5px] font-medium text-ink-subtle tabular-nums">
+              <span className="text-right font-mono text-mono font-medium text-ink-subtle tabular-nums">
                 {Math.round((counts.done / items.length) * 100)}%
               </span>
               <TodoProgressBar counts={counts} />
@@ -74,7 +74,7 @@ export const ProjectTodosSection = ({ project, expanded, onToggle }: ProjectTodo
           {remaining > 0 ? (
             <span
               title={`${remaining.toLocaleString('en')} left to do`}
-              className="shrink-0 rounded-full bg-surface-3 px-2 py-0.5 font-mono text-[11px] font-medium text-ink-muted tabular-nums"
+              className="shrink-0 rounded-full bg-surface-3 px-2 py-0.5 font-mono text-mono font-medium text-ink-muted tabular-nums"
             >
               <span className="sr-only">Left to do: </span>
               {formatCount(remaining)}
@@ -92,9 +92,9 @@ export const ProjectTodosSection = ({ project, expanded, onToggle }: ProjectTodo
         <div id={bodyId} className="flex animate-fade-in flex-col gap-3 border-t border-line pt-3">
           {!list ? (
             loadError ? (
-              <div className="flex items-center justify-between gap-3 px-4 pb-4 text-[13px] text-danger sm:px-5">
+              <div className="flex items-center justify-between gap-3 px-4 pb-4 text-footnote text-danger sm:px-5">
                 <span>{loadError}</span>
-                <button type="button" onClick={reload} className="font-semibold underline-offset-2 hover:underline">Retry</button>
+                <button type="button" onClick={reload} className="font-semibold underline-offset-2 hover-device:hover:underline">Retry</button>
               </div>
             ) : (
               <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
@@ -105,10 +105,10 @@ export const ProjectTodosSection = ({ project, expanded, onToggle }: ProjectTodo
           ) : (
             <>
               <div className="flex items-center gap-2 px-4 sm:px-5">
-                <p className="flex min-w-0 flex-1 items-center gap-1.5 font-mono text-[11px] text-ink-subtle">
+                <p className="flex min-w-0 flex-1 items-center gap-1.5 font-mono text-mono text-ink-subtle">
                   {list.htmlUrl && list.state !== 'missing' ? (
                     <a href={list.htmlUrl} target="_blank" rel="noreferrer"
-                      className="inline-flex min-w-0 items-center gap-1.5 rounded transition hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand">
+                      className="inline-flex min-w-0 items-center gap-1.5 rounded transition hover-device:hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand">
                       <span className="truncate">{list.path}</span>
                       <ExternalLink className="size-3 shrink-0" />
                     </a>

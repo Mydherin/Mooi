@@ -1,4 +1,4 @@
-import { LoaderCircle, Rocket, Settings2, Square, SquareTerminal } from 'lucide-react';
+import { Rocket, Settings2, Square, SquareTerminal } from 'lucide-react';
 import { HeaderActionHint } from '@/features/sessions/components/HeaderActionHint';
 import { HEADER_ACTION_CLASS } from '@/features/sessions/lib/headerActionClass';
 import type { DeployControl } from '@/features/sessions/types/DeployControl';
@@ -22,9 +22,7 @@ export const DeployButton = ({ control }: { control: DeployControl }) => {
         <Button variant={canStop ? 'secondary' : 'brand'} size="sm" disabled={blocked}
           className={cn(HEADER_ACTION_CLASS, segmented && 'sm:rounded-r-none')}
           ariaLabel={starting ? 'Cancel deployment' : `${label} deployment`}
-          onClick={control.run}>
-          {loading ? <LoaderCircle className="size-4 animate-spin" />
-            : canStop ? <Square className="size-4" /> : <Rocket className="size-4" />}
+          loading={loading} icon={canStop ? Square : Rocket} onClick={control.run}>
           <span className="hidden sm:inline">{label}</span>
           {failure ? <span aria-hidden className="absolute top-1 right-1 size-1.5 rounded-full bg-danger-dot" /> : null}
         </Button>

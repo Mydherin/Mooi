@@ -169,7 +169,7 @@ const TracePanelBody = ({ sessionId, active }: TracePanelProps) => {
             {trace.title ?? 'Agent trace'}
           </span>
           {trace.conversations > 1 ? (
-            <span className="hidden shrink-0 rounded-full bg-surface-2 px-2 py-px text-[11px] font-medium text-ink-muted sm:inline">
+            <span className="hidden shrink-0 rounded-full bg-surface-2 px-2 py-px text-caption font-medium text-ink-muted sm:inline">
               {trace.conversations} conversations
             </span>
           ) : null}
@@ -193,21 +193,21 @@ const TracePanelBody = ({ sessionId, active }: TracePanelProps) => {
       </div>
 
       {trace.truncated ? (
-        <p role="status" className="flex shrink-0 items-center gap-2 border-b border-warning/30 bg-warning-soft px-4 py-2 text-[12px] text-warning">
+        <p role="status" className="flex shrink-0 items-center gap-2 border-b border-warning/30 bg-warning-soft px-4 py-2 text-caption text-warning">
           <TriangleAlert className="size-3.5 shrink-0" />
           <span className="min-w-0">The trace reached its step limit: the oldest steps are not shown.</span>
         </p>
       ) : null}
 
       {logs.error ? (
-        <div role="alert" className="flex shrink-0 items-center gap-3 border-b border-danger/30 bg-danger-soft px-4 py-2 text-[12px] text-danger">
+        <div role="alert" className="flex shrink-0 items-center gap-3 border-b border-danger/30 bg-danger-soft px-4 py-2 text-caption text-danger">
           <span className="min-w-0 flex-1 break-words">{logs.error}</span>
-          <IconButton icon={X} label="Dismiss" onClick={logs.dismissError} className="text-danger hover:bg-danger/10 hover:text-danger" />
+          <IconButton icon={X} label="Dismiss" onClick={logs.dismissError} className="text-danger hover-device:hover:bg-danger/10 hover-device:hover:text-danger" />
         </div>
       ) : null}
 
       {error ? (
-        <div role="alert" className="flex shrink-0 items-center gap-3 border-b border-danger/30 bg-danger-soft px-4 py-2 text-[12px] text-danger">
+        <div role="alert" className="flex shrink-0 items-center gap-3 border-b border-danger/30 bg-danger-soft px-4 py-2 text-caption text-danger">
           <span className="min-w-0 flex-1 break-words">{error}</span>
           <Button variant="danger" size="sm" onClick={refresh}>
             <RotateCw className="size-3.5" />

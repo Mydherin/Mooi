@@ -32,7 +32,7 @@ export const TodosUnsupported = ({ list, kept, onCleanUp, onKeep }: TodosUnsuppo
     return (
       <Card className="overflow-hidden">
         <div className="flex flex-col gap-3 border-b border-line bg-surface-2/60 px-4 py-3 sm:flex-row sm:items-center sm:px-5">
-          <p className="min-w-0 flex-1 text-[13px] leading-relaxed text-ink-muted">
+          <p className="min-w-0 flex-1 text-footnote leading-relaxed text-ink-muted">
             <span className="font-semibold text-ink">Managed by hand.</span> Mooi shows this file read-only because it does not match the to-do format.
           </p>
           <div className="flex shrink-0 gap-2">
@@ -62,8 +62,8 @@ export const TodosUnsupported = ({ list, kept, onCleanUp, onKeep }: TodosUnsuppo
         </span>
         <div className="min-w-0">
           <h3 className="text-base font-semibold tracking-[-0.015em] text-ink">This to-do list can't be rendered by Mooi</h3>
-          <p className="mt-1.5 max-w-2xl text-[13px] leading-relaxed text-ink-muted">
-            <code className="font-mono text-[12px] text-ink">{list.path}</code> already exists, but some of its content
+          <p className="mt-1.5 max-w-2xl text-footnote leading-relaxed text-ink-muted">
+            <code className="font-mono text-mono text-ink">{list.path}</code> already exists, but some of its content
             does not match the format Mooi edits: a title and plain task items (<code className="font-mono">- [ ]</code>,{' '}
             <code className="font-mono">- [/]</code> or <code className="font-mono">- [x]</code>). Mooi will not change it unless you ask to.
           </p>
@@ -71,10 +71,10 @@ export const TodosUnsupported = ({ list, kept, onCleanUp, onKeep }: TodosUnsuppo
       </div>
 
       <div className="overflow-hidden rounded-control border border-line">
-        <p className="border-b border-line bg-surface-2/60 px-3 py-2 font-mono text-[10.5px] font-medium tracking-[0.12em] text-ink-subtle uppercase">
+        <p className="border-b border-line bg-surface-2/60 px-3 py-2 font-mono text-mono font-medium tracking-[0.12em] text-ink-subtle uppercase">
           {list.issues.length} {list.issues.length === 1 ? 'line' : 'lines'} not understood
         </p>
-        <ul className="divide-y divide-line font-mono text-[12px]">
+        <ul className="divide-y divide-line font-mono text-mono">
           {list.issues.slice(0, SHOWN_ISSUES).map((issue) => (
             <li key={issue.line} className="flex gap-3 px-3 py-1.5">
               <span className="w-8 shrink-0 text-right text-ink-subtle tabular-nums">{issue.line}</span>
@@ -82,7 +82,7 @@ export const TodosUnsupported = ({ list, kept, onCleanUp, onKeep }: TodosUnsuppo
             </li>
           ))}
         </ul>
-        {hidden > 0 ? <p className="border-t border-line px-3 py-1.5 text-[12px] text-ink-subtle">and {hidden} more</p> : null}
+        {hidden > 0 ? <p className="border-t border-line px-3 py-1.5 text-caption text-ink-subtle">and {hidden} more</p> : null}
       </div>
 
       <div className="flex flex-col gap-2 sm:flex-row">

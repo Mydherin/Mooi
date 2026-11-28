@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { SessionConfiguration } from '@/features/sessions/types/SessionConfiguration';
 import type { SessionProvider } from '@/features/sessions/types/SessionProvider';
-import { CircleAlert, LoaderCircle } from 'lucide-react';
+import { CircleAlert } from 'lucide-react';
 import { ChatComposer } from '@/features/sessions/components/chat/ChatComposer';
 import { ChatMessageList } from '@/features/sessions/components/chat/ChatMessageList';
 import { LimitsWaitBar } from '@/features/sessions/components/chat/LimitsWaitBar';
@@ -11,6 +11,7 @@ import type { PreparedImage } from '@/features/sessions/types/PreparedImage';
 import type { Session } from '@/features/sessions/types/Session';
 import type { SessionPendingRequest } from '@/features/sessions/types/SessionPendingRequest';
 import type { TranscriptEntry } from '@/features/sessions/types/TranscriptEntry';
+import { Spinner } from '@/shared/components/feedback/Spinner';
 
 interface ChatPanelProps {
   session: Session;
@@ -82,7 +83,7 @@ export const ChatPanel = ({
   <div className="flex h-full min-h-0 flex-col">
     {streamState === 'reconnecting' ? (
       <p className="flex shrink-0 items-center gap-2 border-b border-line bg-warning-soft px-4 py-2 text-xs text-warning">
-        <LoaderCircle className="size-3.5 animate-spin" />
+        <Spinner className="size-3.5" />
         Reconnecting to the session stream…
       </p>
     ) : null}
