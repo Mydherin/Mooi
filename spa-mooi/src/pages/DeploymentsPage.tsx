@@ -17,6 +17,7 @@ import { Skeleton } from '@/shared/components/feedback/Skeleton';
 import { SearchInput } from '@/shared/components/forms/SearchInput';
 import { Page } from '@/shared/components/layout/Page';
 import { PageHeader } from '@/shared/components/layout/PageHeader';
+import { PageSection } from '@/shared/components/layout/PageSection';
 import { SegmentedControl } from '@/shared/components/navigation/SegmentedControl';
 import { useTabParam } from '@/shared/components/navigation/useTabParam';
 
@@ -60,20 +61,20 @@ export const DeploymentsPage = () => {
         </div>
       </PageHeader>
 
-      {view === 'projects' ? <section aria-label="Projects" className="flex flex-col gap-4">
+      {view === 'projects' ? <PageSection className="flex flex-col gap-4">
         {projectsError ? <ErrorState description={projectsError} onRetry={reloadProjects} />
           : loadingProjects ? <div aria-busy className="flex flex-col gap-px overflow-hidden rounded-card">{[0, 1, 2].map((item) => <Skeleton key={item} className="h-16 rounded-none" />)}</div>
             : projects.length === 0 ? <EmptyState icon={FolderGit2} title="No projects yet" description="Add a project to your workspace to deploy it to production." />
               : visibleProjects.length === 0 ? <EmptyState icon={SearchX} title="No matches" description={`No project matches “${query}”.`} />
                 : <ListGroup>{visibleProjects.map((project) => <ProductionProjectCard key={project.id} project={project} latest={latestByProject.get(project.id)} />)}</ListGroup>}
-      </section> : <section aria-label="History" className="flex flex-col gap-4">
+      </PageSection> : <PageSection className="flex flex-col gap-4">
         {history.error && history.deployments.length === 0 ? <ErrorState description={history.error} onRetry={history.reload} />
           : history.loading && history.deployments.length === 0 ? <Skeleton className="h-48 rounded-card" />
             : history.deployments.length === 0 ? <EmptyState icon={Rocket} title="No deployments yet"
               description="Every production release appears here with its outcome, files and output." />
               : <ProductionHistoryList deployments={history.deployments} projects={projectById} onOpen={setSelected} />}
         {history.hasMore ? <Button variant="secondary" loading={history.loading} onClick={() => void history.loadMore()} className="self-center">Load more</Button> : null}
-      </section>}
+      </PageSection>}
 
       {selected ? <ProductionDeploymentDetailDialog key={selected.operationId} deployment={selected}
         projectName={projectById.get(selected.projectId)?.name ?? 'Removed project'} onClose={() => setSelected(null)}

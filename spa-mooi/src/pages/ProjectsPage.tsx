@@ -19,6 +19,7 @@ import { Skeleton } from '@/shared/components/feedback/Skeleton';
 import { SearchInput } from '@/shared/components/forms/SearchInput';
 import { Page } from '@/shared/components/layout/Page';
 import { PageHeader } from '@/shared/components/layout/PageHeader';
+import { PageSection } from '@/shared/components/layout/PageSection';
 
 type Overlay = { kind: 'add' } | { kind: 'create' } | { kind: 'edit' | 'environment'; project: Project } | null;
 
@@ -65,7 +66,7 @@ export const ProjectsPage = () => {
         {projects.length > 0 ? <SearchInput value={query} onChange={setQuery} placeholder="Search projects" className="min-w-0 sm:max-w-xs" /> : null}
       </PageHeader>
 
-      <section aria-label="Projects" className="flex flex-col gap-4">
+      <PageSection className="flex flex-col gap-4">
         {actionError ? <Alert tone="danger">{actionError}</Alert> : null}
         {status === 'error' ? <ErrorState description={error ?? 'The projects could not be loaded.'} onRetry={reload} />
           : loading ? <div aria-busy className="flex flex-col gap-px overflow-hidden rounded-card">
@@ -78,7 +79,7 @@ export const ProjectsPage = () => {
                 <Button variant="ghost" onClick={() => setQuery('')}>Clear search</Button>
               </EmptyState>
                 : <ListGroup>{visibleProjects.map((project) => <ProjectRow key={project.id} project={project} onEdit={edit} onEnvironment={environment} />)}</ListGroup>}
-      </section>
+      </PageSection>
 
       <AddProjectDialog open={overlay?.kind === 'add'} onClose={close} />
       <CreateProjectDialog open={overlay?.kind === 'create'} onClose={close} />

@@ -8,6 +8,7 @@ import type { Project } from '@/features/projects/types/Project';
 import { useReachableRepositories } from '@/features/projects/hooks/useReachableRepositories';
 import { Button } from '@/shared/components/actions/Button';
 import { Dialog } from '@/shared/components/overlays/dialog/Dialog';
+import { Alert } from '@/shared/components/feedback/Alert';
 
 interface AddProjectDialogProps {
   open: boolean;
@@ -106,9 +107,7 @@ export const AddProjectDialog = ({ open, onClose, onAdded }: AddProjectDialogPro
             onBack={handleBack}
           />
           {actionError ? (
-            <p className="mt-5 rounded-xl border border-danger/40 bg-danger-soft px-4 py-2.5 text-sm text-danger">
-              {actionError}
-            </p>
+            <Alert tone="danger" className="mt-5">{actionError}</Alert>
           ) : null}
         </>
       ) : (

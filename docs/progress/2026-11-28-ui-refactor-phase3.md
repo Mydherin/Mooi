@@ -51,43 +51,21 @@ files you touch; pre-refactor versions via `git show fcb897d^:spa-mooi/src/<path
 
 ## In progress
 
-Step 2 of Pending (legacy-marker sweep). **Typecheck is green** (all of step 1 is done). A mechanical sweep
-(`/tmp/uiref/sweep.py`, may be gone; not needed again) already ran over `spa-mooi/src`: `text-[N px]` ≤18 px →
-text styles (`text-mono` when the literal has `font-mono`; skipped Initials, Logo, <10 px and <11 px in
-layouts/shared), bare `hover:`/`group-hover:` → `hover-device:` variants, `<LoaderCircle … animate-spin/>` →
-`Spinner`. Typecheck stayed green; the diff was spot-checked in shared/layouts (fine).
-**Next step**: re-run the marker grep
-`grep -rnE "text-\[[0-9]|<select|<[a-z]+ [^>]*\btitle=|opacity-0[^\"]*hover-device:group-hover" spa-mooi/src --include=*.tsx`
-and fix by hand: the 4 native `<select>` (ChatUsageIndicators:96, ComposerSelect, ComposerModelMenu:30,
-NewSessionDialog:136 → shared `Select`/`SelectField`); `title=` on native elements (→ `Tooltip`/`IconButton`, drop when
-aria-label + visible text); hover-only reveals (`opacity-0 … hover-device:group-hover:opacity-100` must stay visible
-on touch: use `hover-device:opacity-0`); remaining ≥20 px sizes (LoginPage etc. → `text-title`/`text-large-title`);
-hand-made alerts (`role="alert" className="… bg-danger-soft"` → `Alert`). Then pages still without Page/PageHeader
-(SessionsPage, TodosPage, LoginPage, GithubCallbackPage, NotFoundPage + Back) and the heaviest files first:
-WorkspaceCard, TraceInspector, ProjectTodosSection, TraceRow, FactoryChangeRequests/Journal/Checklist, TracePanel,
-TraceContextChart, ChatUsageIndicators, OpenedSessionCard. Check the session **Workspace** tab exists in
-`SessionWorkspace`. Finished since the previous handover:
-- D/platform leftovers: `PlatformEnvironmentDialog` on `useEnvironmentDraft` + `TextField`; `PlatformEnvironmentCard`
-  uses `shortVariableName`; `PlatformAgentDialog` (Enter submits only off touch via new shared `TOUCH_QUERY` in
-  `shared/hooks/mediaQueries.ts`, also used by `useAppViewport`, `useNativeTouchGuards`, `PreviewPanel`);
-  `PlatformFilesPanel`, `PlatformChatPanel`; `PlatformDeleteDialog` and `BackupRestoreDialog` on `ConfirmDialog`.
-- C typecheck: `ProjectsPage` (Page/PageHeader, ResponsiveActions New project/Add repository/Refresh hidden while
-  empty, the empty state holds both; SearchInput; ListGroup of new `features/projects/components/ProjectRow.tsx`
-  with long-press Menu: open, GitHub, variables, edit), `ProjectPage` (PageHeader with Initials, fact Badges,
-  ResponsiveActions New session/GitHub/variables/edit/Delete GitHub repository; Tabs + `TabPanels swipeable`,
-  idPrefix "project", `useTabParam`). `SessionList` is now a plain `ListGroup` (no onNewSession), `SessionListItem`
-  and `overview/SessionGroupSection` restyled on ListGroup.
-- B typecheck: `WorkspaceHeader` rewritten (BackButton, title button opening `session/SessionDetailsSheet`,
-  `useMerge` → `MergeButton merge`, `session/SessionActionsMenu` with onDetails/closeError, LinkedSessionsMenu from
-  sm); deleted old root `SessionActionsMenu.tsx` and `WorkspaceCompactTitle.tsx`; `SessionPage.handleClose` returns
-  the promise; `DeployTerminalToolbar` accepts `sticky`; `DeployGroupButton` Tooltip; `DeployButton` loading/icon.
-- A typecheck: `ActivityGroup`/`ActivityStepRow`/`ChatMessageItem` on `lib/activity/*` (currentAction, stepDetails,
-  summarizeActivity), `ChatMessageList` on `transcript/visibleEntries`, `TurnFooter` gained a Copy answer action
-  (`turnText`). Every `lib/activity|commands|transcript` module is now imported.
+Steps 1–2 done (typecheck green, uncommitted on top of 6867269). Manual sweep finished: composer pickers on
+`Select` (`ComposerSelect`, `ComposerModelMenu` on `Popover` + `SelectField`, `lib/keepCurrentOption.ts`),
+`ChatUsageIndicators` on `Popover` + `IconButton` + `SelectField` (no hover-only reveal), `NewSessionDialog`
+(SelectField, TextField, Alert); boxed hand-made alerts → `Alert` (panel edge banners kept on purpose); `text-xl`
+headings → `text-title`; new token `text-display` (brand hero only, LoginPage). Pages: SessionsPage (Page/PageHeader/
+ResponsiveActions/ErrorState; `SessionsOverviewHeader` deleted), TodosPage (Page/PageHeader, shared Stat), GithubCallback
+and NotFound (Page + EmptyState, NotFound has Back when history exists); Deployments/Backups/Projects content now in
+`PageSection` (they had no gutters). New session **Workspace** tab: `workspaces/SessionWorkspacePanel.tsx` (lazy) on
+`useProjectWorkspaces`, `WorkspaceCard linked={false}`; `WORKSPACE_PANES`/`isWorkspacePane` in `types/WorkspacePane.ts`.
+Remaining `title=` are icon controls (same native tooltip IconButton uses) or plain spans — accepted.
+**Next step**: step 3, `cd spa-mooi && bun run build`, then step 4.
 
 ## Pending (in order)
 
-1. Typecheck green. Remaining errors (15) at handover, all outside D:
+1. (done) Typecheck green. Remaining errors (15) at handover, all outside D:
    - C: `pages/ProjectsPage.tsx` imports deleted `ProjectGrid`/`ProjectsHeader`; `pages/ProjectPage.tsx` imports
      deleted `ProjectHeader` (also deleted: `ProjectCard`, `AddProjectTile`). Rebuild on the foundation (AUDIT.md
      "Projects"/"Project": compact header, ResponsiveActions with destructive "Delete GitHub repository" last,

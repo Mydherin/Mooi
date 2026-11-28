@@ -7,6 +7,9 @@ import { useAgentModelChoice } from '@/features/sessions/hooks/useAgentModelChoi
 import { contextHandoverOptions, parseContextHandover } from '@/features/sessions/lib/contextHandover';
 import type { CreateSessionRequest } from '@/features/sessions/types/CreateSessionRequest';
 import { Button } from '@/shared/components/actions/Button';
+import { Alert } from '@/shared/components/feedback/Alert';
+import { SelectField } from '@/shared/components/forms/select/SelectField';
+import { TextField } from '@/shared/components/forms/TextField';
 import { Dialog } from '@/shared/components/overlays/dialog/Dialog';
 
 interface NewSessionDialogProps {
@@ -125,55 +128,31 @@ export const NewSessionDialog = ({
     >
       <div className="flex flex-col gap-5">
         {projectPicker ? <div className="flex flex-col gap-2">
-          <span className="text-xs font-medium text-ink-muted">Project</span>
+          <span className="text-footnote font-medium text-ink-muted">Project</span>
           {projectPicker}
         </div> : null}
 
         <AgentModelFields choice={choice} onLeave={onClose} />
 
-        {choice.selectedProvider && !choice.selectedProvider.unavailable ? <label className="flex flex-col gap-2">
-          <span className="text-xs font-medium text-ink-muted">Context handover</span>
-          <select aria-label="Context handover" value={contextHandover == null ? '' : String(contextHandover)}
-            onChange={(event) => setContextHandover(parseContextHandover(event.target.value))}
-            className="h-11 min-w-0 rounded-control border border-line bg-surface-2 px-3 text-sm text-ink outline-none focus:border-brand">
-            {contextHandoverOptions(contextHandover).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-          </select>
-          <span className="text-xs text-ink-subtle">
-            Past this context, the agent wraps up and leaves a progress file in docs/progress/ so a fresh conversation continues the task. You can change it later from the chat.
-          </span>
-        </label> : null}
+        {choice.selectedProvider && !choice.selectedProvider.unavailable ? (
+          <SelectField label="Context handover" value={contextHandover == null ? '' : String(contextHandover)}
+            options={contextHandoverOptions(contextHandover)} onChange={(value) => setContextHandover(parseContextHandover(value))}
+            hint="Past this context, the agent wraps up and leaves a progress file in docs/progress/ so a fresh conversation continues the task. You can change it later from the chat." />
+        ) : null}
 
-        {connections.length > 0 ? <label className="flex flex-col gap-2">
-          <span className="text-xs font-medium text-ink-muted">Branch</span>
-          <span className="flex h-12 w-full items-center gap-2 rounded-control border border-line bg-surface-2 px-3 transition focus-within:border-brand/50">
-            <GitBranch className="size-4 shrink-0 text-ink-subtle" />
-            <input
-              value={branch}
-              onChange={(event) => {
-                branchEditedRef.current = true;
-                setBranch(event.target.value);
-              }}
-              placeholder="feat/my-change"
-              autoComplete="off"
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellCheck={false}
-              aria-label="Branch name"
-              maxLength={MAX_BRANCH_LENGTH}
-              className="h-full w-full min-w-0 bg-transparent font-mono text-sm text-ink placeholder:text-ink-subtle focus:outline-none"
-            />
-          </span>
-          <span className="text-xs text-ink-subtle">
-            Created from {project?.defaultBranch ?? 'the default branch'}. Reusing this branch replaces its previous live session safely; the remote branch is never deleted.
-          </span>
-        </label> : null}
+        {connections.length > 0 ? (
+          <TextField label="Branch" value={branch} mono placeholder="feat/my-change" autoComplete="off" autoCapitalize="none"
+            spellCheck={false} enterKeyHint="done" maxLength={MAX_BRANCH_LENGTH}
+            leading={<GitBranch aria-hidden className="size-4 shrink-0 text-ink-subtle" />}
+            onChange={(value) => {
+              branchEditedRef.current = true;
+              setBranch(value);
+            }}
+            hint={`Created from ${project?.defaultBranch ?? 'the default branch'}. Reusing this branch replaces its previous live session safely; the remote branch is never deleted.`} />
+        ) : null}
       </div>
 
-      {actionError ? (
-        <p className="mt-4 rounded-control border border-danger/30 bg-danger-soft px-4 py-2.5 text-sm text-danger">
-          {actionError}
-        </p>
-      ) : null}
+      {actionError ? <Alert tone="danger" className="mt-4">{actionError}</Alert> : null}
     </Dialog>
   );
 };

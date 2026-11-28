@@ -4,6 +4,7 @@ import { useProjects } from '@/features/projects/hooks/useProjects';
 import type { Project } from '@/features/projects/types/Project';
 import { Button } from '@/shared/components/actions/Button';
 import { Dialog } from '@/shared/components/overlays/dialog/Dialog';
+import { Alert } from '@/shared/components/feedback/Alert';
 
 interface CreateProjectDialogProps {
   open: boolean;
@@ -68,7 +69,7 @@ export const CreateProjectDialog = ({ open, onClose, onAdded }: CreateProjectDia
         </fieldset>
         <ProjectKindField value={webApplication} onChange={(value) => { setWebApplication(value); clearActionError(); }}
           hint="Deploy and live preview are only offered for web applications. You can change this later by editing the project." />
-        {actionError ? <p role="alert" className="rounded-xl border border-danger/40 bg-danger-soft px-4 py-3 text-sm text-danger">{actionError}</p> : null}
+        {actionError ? <Alert tone="danger">{actionError}</Alert> : null}
       </form>
     </Dialog>
   );

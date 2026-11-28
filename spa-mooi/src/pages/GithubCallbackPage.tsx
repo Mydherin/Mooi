@@ -3,7 +3,10 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { TriangleAlert } from 'lucide-react';
 import { ROUTES } from '@/app/routes';
 import { completeGithubAuthorization } from '@/features/github/api/githubApi';
-import { Card } from '@/shared/components/data-display/Card';
+import { EmptyState } from '@/shared/components/feedback/EmptyState';
+import { Page } from '@/shared/components/layout/Page';
+import { PageHeader } from '@/shared/components/layout/PageHeader';
+import { PageSection } from '@/shared/components/layout/PageSection';
 import { buttonStyles } from '@/shared/styles/buttonStyles';
 import { useGithubStore } from '@/stores/githubStore';
 import { Spinner } from '@/shared/components/feedback/Spinner';
@@ -62,31 +65,21 @@ export const GithubCallbackPage = () => {
       });
   }, [navigate, searchParams]);
 
-  if (failure) {
-    return (
-      <div className="mx-auto w-full max-w-7xl px-4 py-16 lg:px-6">
-        <Card className="mx-auto w-full max-w-md p-8 text-center">
-          <span className="mx-auto flex size-12 items-center justify-center rounded-card bg-danger-soft text-danger">
-            <TriangleAlert className="size-5" />
-          </span>
-
-          <h1 className="mt-6 text-lg font-extrabold tracking-[-0.03em] text-ink">
-            GitHub was not connected
-          </h1>
-          <p className="mt-2 text-sm leading-relaxed text-ink-muted">{failure}</p>
-
-          <Link to={ROUTES.account} className={buttonStyles('primary', 'md', 'mt-7 w-full')}>
-            Back to account
-          </Link>
-        </Card>
-      </div>
-    );
-  }
-
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col items-center px-4 py-24 text-center lg:px-6">
-      <Spinner className="size-6 text-brand" />
-      <p className="mt-4 text-sm text-ink-muted">Linking your GitHub account…</p>
-    </div>
+    <Page width="narrow">
+      <PageHeader title="GitHub" largeTitle={false} />
+      <PageSection>
+        {failure ? (
+          <EmptyState icon={TriangleAlert} title="GitHub was not connected" description={failure}>
+            <Link to={ROUTES.account} className={buttonStyles('primary', 'md')}>Back to account</Link>
+          </EmptyState>
+        ) : (
+          <div className="flex flex-col items-center gap-4 text-center">
+            <Spinner className="size-6 text-brand" />
+            <p role="status" className="text-callout text-ink-muted">Linking your GitHub account…</p>
+          </div>
+        )}
+      </PageSection>
+    </Page>
   );
 };

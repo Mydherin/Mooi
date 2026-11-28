@@ -15,6 +15,7 @@ import { Skeleton } from '@/shared/components/feedback/Skeleton';
 import { SearchInput } from '@/shared/components/forms/SearchInput';
 import { Page } from '@/shared/components/layout/Page';
 import { PageHeader } from '@/shared/components/layout/PageHeader';
+import { PageSection } from '@/shared/components/layout/PageSection';
 import { SegmentedControl } from '@/shared/components/navigation/SegmentedControl';
 import { useTabParam } from '@/shared/components/navigation/useTabParam';
 
@@ -57,21 +58,21 @@ export const BackupsPage = () => {
         </div>
       </PageHeader>
 
-      {view === 'projects' ? <section aria-label="Projects" className="flex flex-col gap-4">
+      {view === 'projects' ? <PageSection className="flex flex-col gap-4">
         {projectsError ? <ErrorState description={projectsError} onRetry={reloadProjects} />
           : loadingProjects ? <div aria-busy className="flex flex-col gap-px overflow-hidden rounded-card">{[0, 1, 2].map((item) => <Skeleton key={item} className="h-16 rounded-none" />)}</div>
             : projects.length === 0 ? <EmptyState icon={FolderGit2} title="No projects yet" description="Add a project to your workspace to back it up." />
               : visibleProjects.length === 0 ? <EmptyState icon={SearchX} title="No matches" description={`No project matches “${query}”.`} />
                 : <ListGroup>{visibleProjects.map((project) => <BackupProjectCard key={project.id} project={project}
                   latest={byProject.get(project.id)?.[0]} count={byProject.get(project.id)?.length ?? 0} />)}</ListGroup>}
-      </section> : <section aria-label="History" className="flex flex-col gap-4">
+      </PageSection> : <PageSection className="flex flex-col gap-4">
         {history.error && history.backups.length === 0 ? <ErrorState description={history.error} onRetry={history.reload} />
           : history.loading && history.backups.length === 0 ? <Skeleton className="h-48 rounded-card" />
             : history.backups.length === 0 ? <EmptyState icon={DatabaseBackup} title="No backups yet"
               description="Every backup appears here with its date, time, release and outcome." />
               : <BackupHistoryList backups={history.backups} projects={projectById} onOpen={setSelected} />}
         {history.hasMore ? <Button variant="secondary" loading={history.loading} onClick={history.loadMore} className="self-center">Load more</Button> : null}
-      </section>}
+      </PageSection>}
 
       {selected ? <BackupDetailDialog key={selected.id} backup={selected}
         projectName={projectById.get(selected.projectId)?.name ?? 'Removed project'} onClose={() => setSelected(null)}

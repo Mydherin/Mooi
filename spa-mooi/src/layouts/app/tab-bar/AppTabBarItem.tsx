@@ -28,12 +28,12 @@ export const AppTabBarItem = ({ link }: AppTabBarItemProps) => {
 
   return (
     <NavLink to={link.to} end={link.end} className={({ isActive }) => tabItemClass(isActive)}
-      aria-label={link.attention ? `${link.label}, ${link.attention} waiting for you` : undefined}>
+      aria-label={link.attention ? `${link.label}, ${link.attention} waiting for you` : link.tabLabel ? link.label : undefined}>
       {({ isActive }) => (
         <>
           <TabIndicator active={isActive} />
           <Icon aria-hidden className="relative size-5.5" strokeWidth={isActive ? 2.25 : 2} />
-          <span className="relative max-w-full truncate px-1">{link.label}</span>
+          <span className="relative max-w-full truncate px-1">{link.tabLabel ?? link.label}</span>
           {link.attention ? <TabBadge count={link.attention} /> : null}
         </>
       )}

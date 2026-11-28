@@ -1,15 +1,17 @@
 import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
-import { Activity, FolderTree, GitCompareArrows, MessagesSquare, Monitor } from 'lucide-react';
+import { Activity, FolderTree, GitCompareArrows, HardDrive, MessagesSquare, Monitor } from 'lucide-react';
 import { PreviewPanel } from './preview/PreviewPanel';
 import { Tabs } from '@/shared/components/navigation/Tabs';
 import type { TabItem } from '@/shared/types/TabItem';
 import { DeployLogsDrawer } from './deploy/DeployLogsDrawer';
+import { isWorkspacePane } from '@/features/sessions/types/WorkspacePane';
 import { deploymentConsoleHidden } from '@/features/sessions/lib/deploymentConsoleHidden';
 import { useSessionsStore } from '@/stores/sessionsStore';
 import { cn } from '@/shared/utils/cn';
 
 const ChangesPanel = lazy(() => import('./changes/ChangesPanel').then((module) => ({ default: module.ChangesPanel })));
 const FilesPanel = lazy(() => import('./files/FilesPanel').then((module) => ({ default: module.FilesPanel })));
+const SessionWorkspacePanel = lazy(() => import('./workspaces/SessionWorkspacePanel').then((module) => ({ default: module.SessionWorkspacePanel })));
 const TracePanel = lazy(() => import('@/features/traces/components/TracePanel').then((module) => ({ default: module.TracePanel })));
 
 interface SessionWorkspaceProps {
@@ -66,7 +68,7 @@ export const SessionWorkspace = ({ sessionId, deployEnabled, children }: Session
   }, [setup, deployment?.state, operationId, sessionId, setPane]);
 
   const selectPane = (id: string) => {
-    if (id !== 'conversation' && id !== 'changes' && id !== 'files' && id !== 'preview' && id !== 'trace') return;
+    if (!isWorkspacePane(id)) return;
     setPane(sessionId, id);
     if (id === 'files') setFilesVisited(true);
     if (id === 'trace') setTraceVisited(true);
@@ -79,6 +81,7 @@ export const SessionWorkspace = ({ sessionId, deployEnabled, children }: Session
     { id: 'files', label: 'Files', icon: FolderTree },
     ...(hasPreview ? [{ id: 'preview', label: 'Preview', icon: Monitor, dot: running }] : []),
     { id: 'trace', label: 'Trace', icon: Activity },
+    { id: 'workspace', label: 'Workspace', icon: HardDrive },
   ];
   const visiblePane = pane === 'preview' && !hasPreview ? 'conversation' : pane;
   const keepFiles = filesVisited || visiblePane === 'files';
@@ -104,6 +107,12 @@ export const SessionWorkspace = ({ sessionId, deployEnabled, children }: Session
         {keepTrace ? <section role="tabpanel" id="session-trace" aria-label="Agent trace" hidden={visiblePane !== 'trace'}
           className={cn('min-h-0 min-w-0', visiblePane !== 'trace' && 'hidden')}>
           <Suspense fallback={<p className="p-6 text-sm text-ink-muted">Loading trace…</p>}><TracePanel sessionId={sessionId} active={visiblePane === 'trace'} /></Suspense>
+        </section> : null}
+        {visiblePane === 'workspace' && session ? <section role="tabpanel" id="session-workspace" aria-label="Session workspace" className="min-h-0 min-w-0">
+          <Suspense fallback={<p className="p-6 text-sm text-ink-muted">Loading workspace…</p>}>
+            <SessionWorkspacePanel projectId={session.projectId} sessionId={sessionId} previewsEnabled={deployEnabled}
+              revision={`${session.status}:${changes?.files.length ?? 0}`} />
+          </Suspense>
         </section> : null}
         {keepPreview && deployment ? <section role="tabpanel" aria-label="Application preview" hidden={visiblePane !== 'preview'}
           className={cn('min-h-0 min-w-0', visiblePane !== 'preview' && 'hidden')}>

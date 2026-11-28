@@ -15,6 +15,7 @@ import { ComposerImageStrip } from './ComposerImageStrip';
 import { ComposerModelMenu } from './ComposerModelMenu';
 import { ComposerSelect } from './ComposerSelect';
 import { Button } from '@/shared/components/actions/Button';
+import { TruncatedText } from '@/shared/components/data-display/TruncatedText';
 import { cn } from '@/shared/utils/cn';
 import { compactInstructions } from '@/features/sessions/lib/compactCommand';
 
@@ -88,6 +89,9 @@ export const ChatComposer = ({
   const draft = useImageDraft();
 
   const effortOptions = modelOptions.find((option) => option.id === model)?.efforts ?? [];
+  const modelChoices = modelOptions.map((option) => ({ value: option.id, label: option.label }));
+  const effortChoices = effortOptions.map((option) => ({ value: option, label: option }));
+  const changeEffort = (value: string) => onConfigurationChange({ model, effort: value || null });
   const configurationDisabled = deploying || busy || status === 'closed' || status === 'failed' || status === 'compacting' || modelLoading || Boolean(modelError);
 
   const changeModel = (nextModel: string) => {
@@ -273,31 +277,26 @@ export const ChatComposer = ({
           {actions}
           {modelOptions.length > 0 ? (
             <div className="flex min-w-0 flex-1 sm:hidden">
-              <ComposerModelMenu model={model} effort={effort} effortOptions={effortOptions}
-                modelOptions={modelOptions.map((option) => ({ value: option.id, label: option.label }))}
-                onModelChange={changeModel} onEffortChange={(value) => onConfigurationChange({ model, effort: value || null })}
-                disabled={configurationDisabled} />
+              <ComposerModelMenu model={model} effort={effort} effortOptions={effortChoices} modelOptions={modelChoices}
+                onModelChange={changeModel} onEffortChange={changeEffort} disabled={configurationDisabled} />
             </div>
           ) : null}
           <div className={cn('min-w-0 flex-1 items-center gap-1.5 overflow-x-auto [scrollbar-width:none] sm:flex sm:gap-2 [&::-webkit-scrollbar]:hidden',
             modelOptions.length > 0 ? 'hidden' : 'flex')}>
           {modelOptions.length > 0 ? (
             <>
-              <ComposerSelect value={model} options={modelOptions.map((option) => ({ value: option.id, label: option.label }))}
-                onChange={changeModel} disabled={configurationDisabled} ariaLabel="Agent model"
-                describedBy={modelError ? 'model-error' : undefined} />
-              {modelError ? <span id="model-error" className="sr-only">{modelError}</span> : null}
+              <ComposerSelect value={model} options={modelChoices} onChange={changeModel} disabled={configurationDisabled} label="Agent model" />
+              {modelError ? <span className="sr-only" role="status">{modelError}</span> : null}
             </>
           ) : modelLoading ? (
             <span className="text-xs text-ink-subtle" role="status">Loading models…</span>
           ) : modelError ? (
-            <span className="max-w-[16rem] truncate text-xs text-danger" role="alert" title={modelError}>{modelError}</span>
+            <span role="alert" className="max-w-[16rem] min-w-0 text-caption text-danger"><TruncatedText text={modelError} /></span>
           ) : null}
 
           {effortOptions.length > 0 ? (
-            <ComposerSelect value={effort ?? ''} options={effortOptions.map((option) => ({ value: option, label: option }))}
-              onChange={(value) => onConfigurationChange({ model, effort: value || null })}
-              disabled={configurationDisabled} ariaLabel="Agent effort" caption="Effort" />
+            <ComposerSelect value={effort ?? ''} options={effortChoices} onChange={changeEffort}
+              disabled={configurationDisabled} label="Agent effort" caption="Effort" />
           ) : null}
           </div>
 

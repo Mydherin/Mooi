@@ -6,6 +6,7 @@ import { Button } from '@/shared/components/actions/Button';
 import { EmptyState } from '@/shared/components/feedback/EmptyState';
 import { Eyebrow } from '@/shared/components/data-display/Eyebrow';
 import { SearchInput } from '@/shared/components/forms/SearchInput';
+import { Alert } from '@/shared/components/feedback/Alert';
 
 interface RepositoryPickerProps {
   repositories: GithubRepository[];
@@ -116,15 +117,7 @@ export const RepositoryPicker = ({
         {loading ? <Skeleton /> : null}
 
         {!loading && failure ? (
-          <div className="flex flex-col gap-3 rounded-xl border border-danger/40 bg-danger-soft px-4 py-3.5 sm:flex-row sm:items-center">
-            <p className="min-w-0 flex-1 text-sm text-danger">{failure}</p>
-            <span className="shrink-0">
-              <Button variant="secondary" size="sm" onClick={onReload}>
-                <RefreshCw className="size-4" />
-                Try again
-              </Button>
-            </span>
-          </div>
+          <Alert tone="danger" action={<Button variant="secondary" size="sm" icon={RefreshCw} onClick={onReload}>Try again</Button>}>{failure}</Alert>
         ) : null}
 
         {!loading && !failure && repositories.length === 0 ? (

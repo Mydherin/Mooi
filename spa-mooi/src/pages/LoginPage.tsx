@@ -9,6 +9,7 @@ import { GoogleSignInButton } from '@/features/auth/components/GoogleSignInButto
 import { MockSignInButton } from '@/features/auth/components/MockSignInButton';
 import { setAccessSession } from '@/features/auth/lib/accessTokenProvider';
 import { toAuthSession } from '@/features/auth/lib/toAuthSession';
+import { Alert } from '@/shared/components/feedback/Alert';
 import { ThemeToggle } from '@/shared/components/actions/ThemeToggle';
 import { Logo } from '@/shared/components/brand/Logo';
 import { LogoMark } from '@/shared/components/brand/LogoMark';
@@ -77,7 +78,7 @@ export const LoginPage = () => {
         <PipelineShowcase className="my-8 flex-1" />
 
         <div className="relative z-10">
-          <h2 className="max-w-lg text-4xl leading-[1.05] font-semibold tracking-[-0.045em] text-balance xl:text-[52px]">
+          <h2 className="max-w-lg text-display text-balance xl:text-[3.25rem]">
             Less friction.{' '}
             <span className="bg-gradient-to-r from-[#8fb0ff] to-[#b9a4ff] bg-clip-text text-transparent">More creating.</span>
           </h2>
@@ -105,13 +106,13 @@ export const LoginPage = () => {
         <div className="mx-auto w-full max-w-sm animate-fade-up">
           <LogoMark live className="size-11 drop-shadow-[0_6px_18px_rgb(39_110_241/0.35)] lg:hidden" />
 
-          <h1 className="mt-8 text-[40px] leading-[1.05] font-semibold tracking-[-0.05em] text-ink lg:mt-0">Welcome to Mooi<span className="text-brand-gradient">.</span></h1>
+          <h1 className="mt-8 text-display text-ink lg:mt-0">Welcome to Mooi<span className="text-brand-gradient">.</span></h1>
           <p className="mt-3 text-body leading-relaxed text-ink-muted">
             Continue with Google to open your workspace. Your first sign-in creates your account.
           </p>
 
           <div className="mt-8 rounded-panel border border-line bg-surface p-5 shadow-raised">
-            <p className="mb-4 flex items-center gap-2 text-sm font-medium text-ink">Your next idea starts here <ArrowUpRight className="size-4 text-brand" /></p>
+            <p className="mb-4 flex items-center gap-2 text-callout font-medium text-ink">Your next idea starts here <ArrowUpRight className="size-4 text-brand" /></p>
             {env.googleAuthMock ? (
               <MockSignInButton onCredential={handleCredential} busy={busy} />
             ) : (
@@ -119,13 +120,9 @@ export const LoginPage = () => {
             )}
           </div>
 
-          {message ? (
-            <p role="alert" className="mt-4 animate-fade-up rounded-control border border-danger/30 bg-danger-soft px-4 py-2.5 text-sm text-danger">
-              {message}
-            </p>
-          ) : null}
+          {message ? <Alert tone="danger" className="mt-4 animate-fade-up">{message}</Alert> : null}
 
-          <p className="mt-8 text-xs leading-relaxed text-ink-subtle">
+          <p className="mt-8 text-caption text-ink-subtle">
             Mooi works on your own repositories. Nothing is imported until you connect GitHub, and
             you can unlink it at any time from the account screen.
           </p>

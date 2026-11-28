@@ -4,6 +4,7 @@ import { formatTokens } from '@/features/traces/lib/formatTokens';
 import type { TraceContextBar } from '@/features/traces/types/TraceContextBar';
 import { Button } from '@/shared/components/actions/Button';
 import { cn } from '@/shared/utils/cn';
+import { TruncatedText } from '@/shared/components/data-display/TruncatedText';
 
 interface TraceContextChartProps {
   bars: readonly TraceContextBar[];
@@ -145,7 +146,7 @@ export const TraceContextChart = ({ bars, onOpenSpan }: TraceContextChartProps) 
               <span className="font-semibold text-ink">
                 {shown ? `Request #${readout.index}` : `Peak · request #${readout.index}`}
               </span>
-              {readout.model ? <span className="min-w-0 truncate font-mono" title={readout.model}>{readout.model}</span> : null}
+              {readout.model ? <TruncatedText text={readout.model} mono className="min-w-0" /> : null}
               {readout.subAgent ? <span className="rounded-full bg-accent-soft px-1.5 py-px text-caption text-accent">sub-agent</span> : null}
               {readout.calls > 1 ? <span className="text-ink-subtle">largest of {readout.calls}</span> : null}
             </p>

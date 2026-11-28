@@ -3,6 +3,7 @@ import { RecipeListItem } from '@/features/recipes/components/RecipeListItem';
 import type { MarketplaceRecipes } from '@/features/recipes/types/MarketplaceRecipes';
 import type { Recipe } from '@/features/recipes/types/Recipe';
 import { Button } from '@/shared/components/actions/Button';
+import { Alert } from '@/shared/components/feedback/Alert';
 
 interface RecipeListProps {
   state: MarketplaceRecipes;
@@ -18,7 +19,7 @@ export const RecipeList = ({ state, recipes, selectedSlug, emptyHint, onSelect, 
   if (state.status === 'error' && state.recipes.length === 0) {
     return (
       <div className="flex flex-col items-start gap-3 p-2">
-        <p role="alert" className="rounded-control border border-danger/30 bg-danger-soft px-3 py-2 text-sm text-danger">{state.error}</p>
+        <Alert tone="danger">{state.error}</Alert>
         <Button variant="secondary" size="sm" onClick={onRetry}><RefreshCw className="size-4" /> Try again</Button>
       </div>
     );

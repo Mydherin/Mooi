@@ -70,8 +70,12 @@
   /*
    * Named text styles (`text-title`, `text-body`...): size, line height, tracking and weight in one
    * class. Use them instead of ad-hoc `text-[13px]` values. `text-input` is for every field (16 px,
-   * so iOS never zooms); `text-mono` pairs with `font-mono` for paths, code and ids.
+   * so iOS never zooms); `text-display` is only for brand hero headlines; `text-mono` pairs with `font-mono` for paths, code and ids.
    */
+  --text-display: 2.5rem;
+  --text-display--line-height: 1.05;
+  --text-display--letter-spacing: -0.045em;
+  --text-display--font-weight: 600;
   --text-large-title: 1.875rem;
   --text-large-title--line-height: 1.15;
   --text-large-title--letter-spacing: -0.03em;

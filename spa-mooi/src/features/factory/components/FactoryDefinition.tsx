@@ -9,6 +9,7 @@ import { Button } from '@/shared/components/actions/Button';
 import { Card } from '@/shared/components/data-display/Card';
 import { Eyebrow } from '@/shared/components/data-display/Eyebrow';
 import { Spinner } from '@/shared/components/feedback/Spinner';
+import { Alert } from '@/shared/components/feedback/Alert';
 
 interface FactoryDefinitionProps {
   project: Project;
@@ -47,7 +48,7 @@ export const FactoryDefinition = ({ project, factory, chat, approving, approvalI
           </p>
         </div>
         <FactoryChecklist plan={factory.plan} issues={approved ? [] : approvalIssues} fullName={project.fullName} branch={branch} />
-        {actionError ? <p role="alert" className="rounded-control border border-danger/30 bg-danger-soft px-3.5 py-2.5 text-footnote text-danger">{actionError}</p> : null}
+        {actionError ? <Alert tone="danger">{actionError}</Alert> : null}
         {approved ? (
           <Button variant="brand" onClick={onStart}><Play className="size-4" />Start the factory</Button>
         ) : (

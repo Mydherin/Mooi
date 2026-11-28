@@ -7,6 +7,7 @@ import type { OpenedSession } from '@/features/sessions/types/OpenedSession';
 import { buttonStyles } from '@/shared/styles/buttonStyles';
 import { cn } from '@/shared/utils/cn';
 import { useSessionsStore } from '@/stores/sessionsStore';
+import { TruncatedText } from '@/shared/components/data-display/TruncatedText';
 
 interface OpenedSessionCardProps {
   /** The session whose agent opened it, the one this transcript belongs to. */
@@ -46,7 +47,7 @@ export const OpenedSessionCard = ({ sessionId, opened }: OpenedSessionCardProps)
           {title ? <h3 className="mt-1 text-body leading-snug font-semibold tracking-[-0.01em] break-words text-ink">{title}</h3> : null}
           <p className="mt-1 flex min-w-0 items-center gap-1.5 text-caption text-ink-muted">
             <GitBranch aria-hidden className="size-3.5 shrink-0 text-ink-subtle" />
-            <span className="truncate font-mono" title={opened.branch}>{opened.branch}</span>
+            <TruncatedText text={opened.branch} mono />
           </p>
         </div>
       </div>

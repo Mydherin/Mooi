@@ -5,6 +5,7 @@ import type { Project } from '@/features/projects/types/Project';
 import type { ProjectSettings } from '@/features/projects/types/ProjectSettings';
 import { Button } from '@/shared/components/actions/Button';
 import { Dialog } from '@/shared/components/overlays/dialog/Dialog';
+import { Alert } from '@/shared/components/feedback/Alert';
 
 interface EditProjectDialogProps {
   project: Project;
@@ -56,9 +57,7 @@ export const EditProjectDialog = ({ project, onClose }: EditProjectDialogProps) 
         hint="Deploy and live preview are only offered for web applications. A deployment already running stays stoppable from its session."
       />
       {error ? (
-        <p className="mt-5 rounded-xl border border-danger/40 bg-danger-soft px-4 py-2.5 text-sm text-danger">
-          {error}
-        </p>
+        <Alert tone="danger" className="mt-5">{error}</Alert>
       ) : null}
     </Dialog>
   );

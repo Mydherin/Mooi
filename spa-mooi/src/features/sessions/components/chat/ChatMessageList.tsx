@@ -86,7 +86,7 @@ export const ChatMessageList = ({
               <span aria-hidden className="absolute -inset-6 -z-10 rounded-full bg-[radial-gradient(circle,var(--glow-a),transparent_70%)]" />
               {loading || working ? <Spinner className="size-6" /> : <MessagesSquare className="size-6" />}
             </span>
-            <h2 className="mt-6 text-xl font-semibold tracking-[-0.03em] text-ink">{loading ? 'Loading conversation…' : working ? 'Processing your message…' : 'What shall we build?'}</h2>
+            <h2 className="mt-6 text-title text-ink">{loading ? 'Loading conversation…' : working ? 'Processing your message…' : 'What shall we build?'}</h2>
             <p className="mt-2 max-w-sm text-sm leading-relaxed text-ink-muted">{loading ? 'Restoring the messages in this session.' : 'Describe an idea, ask about your code, or work through a change together.'}</p>
           </li> : <>
             {shown.map((entry) => <ChatMessageItem key={entry.id} sessionId={sessionId} entry={entry} providerLabel={providerLabel} capabilities={capabilities}

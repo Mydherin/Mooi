@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import type { Project } from '@/features/projects/types/Project';
 import { Button } from '@/shared/components/actions/Button';
 import { Dialog } from '@/shared/components/overlays/dialog/Dialog';
+import { Alert } from '@/shared/components/feedback/Alert';
 
 interface DeleteProjectDialogProps {
   project: Project;
@@ -34,7 +35,7 @@ export const DeleteProjectDialog = ({ project, busy, error, onClose, onDelete }:
             autoComplete="off" autoCapitalize="none" autoCorrect="off" spellCheck={false}
             className="w-full rounded-xl border border-line bg-surface px-4 py-3 font-mono text-sm text-ink outline-none focus:border-danger" />
         </label>
-        {error ? <p role="alert" className="rounded-xl border border-danger/40 bg-danger-soft px-4 py-3 text-sm text-danger">{error}</p> : null}
+        {error ? <Alert tone="danger">{error}</Alert> : null}
       </form>
     </Dialog>
   );

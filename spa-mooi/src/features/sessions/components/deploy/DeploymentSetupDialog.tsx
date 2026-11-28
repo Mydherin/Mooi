@@ -3,6 +3,7 @@ import { CornerDownLeft, Sparkles } from 'lucide-react';
 import { Button } from '@/shared/components/actions/Button';
 import { Dialog } from '@/shared/components/overlays/dialog/Dialog';
 import { Spinner } from '@/shared/components/feedback/Spinner';
+import { Alert } from '@/shared/components/feedback/Alert';
 
 interface DeploymentSetupDialogProps {
   busy: boolean;
@@ -58,7 +59,7 @@ export const DeploymentSetupDialog = ({ busy, error, onClose, onSubmit }: Deploy
           </button>)}
         </div> : null}
       </label>
-      {error ? <p role="alert" className="rounded-control border border-danger/30 bg-danger-soft px-4 py-2.5 text-sm text-danger">{error}</p> : null}
+      {error ? <Alert tone="danger">{error}</Alert> : null}
     </div>
   </Dialog>;
 };

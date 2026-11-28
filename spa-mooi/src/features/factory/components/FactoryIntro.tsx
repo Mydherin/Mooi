@@ -18,7 +18,7 @@ export const FactoryIntro = ({ onEnable }: { onEnable: () => void }) => (
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <Eyebrow>Software Factory</Eyebrow>
-          <h2 className="mt-2 text-xl font-bold tracking-[-0.02em] text-ink sm:text-2xl">Build the whole project autonomously</h2>
+          <h2 className="mt-2 text-title text-ink">Build the whole project autonomously</h2>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-muted">
             For large projects: once you approve its definition, the factory builds it phase by phase and milestone by
             milestone, for days or weeks, with nobody connected. Everything it decides lives in <code className="font-mono text-mono">docs/factory/</code>.

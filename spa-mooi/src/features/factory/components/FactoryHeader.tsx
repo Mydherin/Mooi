@@ -8,6 +8,7 @@ import { Card } from '@/shared/components/data-display/Card';
 import { Menu } from '@/shared/components/overlays/menu/Menu';
 import { cn } from '@/shared/utils/cn';
 import { Spinner } from '@/shared/components/feedback/Spinner';
+import { Alert } from '@/shared/components/feedback/Alert';
 
 interface FactoryHeaderProps {
   factory: Factory;
@@ -82,7 +83,7 @@ export const FactoryHeader = ({ factory, busy, actionError, onPause, onResume, o
           </span>
         </p>
       ) : null}
-      {actionError ? <p role="alert" className="rounded-control border border-danger/30 bg-danger-soft px-3.5 py-2.5 text-footnote text-danger">{actionError}</p> : null}
+      {actionError ? <Alert tone="danger">{actionError}</Alert> : null}
     </Card>
   );
 };

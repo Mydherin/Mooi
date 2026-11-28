@@ -5,6 +5,7 @@ import { SessionStatusBadge } from '@/features/sessions/components/SessionStatus
 import type { ProjectWorkspace } from '@/features/sessions/types/ProjectWorkspace';
 import { previewUrl } from '@/features/sessions/lib/previewUrl';
 import { CopyButton } from '@/shared/components/actions/CopyButton';
+import { TruncatedText } from '@/shared/components/data-display/TruncatedText';
 import { Tooltip } from '@/shared/components/overlays/tooltip/Tooltip';
 import { formatBytes } from '@/shared/utils/formatBytes';
 import { formatDate } from '@/shared/utils/formatDate';
@@ -16,9 +17,11 @@ interface WorkspaceCardProps {
   projectId: string;
   workspace: ProjectWorkspace;
   previewsEnabled: boolean;
+  /** Off inside the session itself, where a link back to it would lead nowhere. */
+  linked?: boolean;
 }
 
-export const WorkspaceCard = ({ projectId, workspace, previewsEnabled }: WorkspaceCardProps) => {
+export const WorkspaceCard = ({ projectId, workspace, previewsEnabled, linked = true }: WorkspaceCardProps) => {
   const advanced = workspace.headCommit !== null && workspace.headCommit !== workspace.baseCommit;
   const drifted = workspace.headBranch !== null && workspace.headBranch !== workspace.branch;
   const preview = previewUrl(workspace.previewUrl);
@@ -27,14 +30,19 @@ export const WorkspaceCard = ({ projectId, workspace, previewsEnabled }: Workspa
     <li className="flex min-w-0 flex-col gap-4 rounded-card border border-line bg-surface p-4 sm:p-5">
       <div className="flex min-w-0 items-start gap-3">
         <div className="min-w-0 flex-1">
-          <Link
-            to={sessionPath(projectId, workspace.sessionId)}
-            className="group inline-flex max-w-full items-center gap-1.5 rounded text-sm font-semibold text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
-          >
-            <GitBranch className="size-3.5 shrink-0 text-ink-subtle" />
-            <span className="truncate font-mono">{workspace.branch}</span>
-            <ArrowRight className="size-3.5 shrink-0 text-ink-subtle transition hover-device:group-hover:translate-x-0.5 hover-device:group-hover:text-ink" />
-          </Link>
+          {linked ? (
+            <Link to={sessionPath(projectId, workspace.sessionId)}
+              className="group inline-flex max-w-full items-center gap-1.5 rounded text-callout font-semibold text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand">
+              <GitBranch aria-hidden className="size-3.5 shrink-0 text-ink-subtle" />
+              <TruncatedText text={workspace.branch} mono />
+              <ArrowRight aria-hidden className="size-3.5 shrink-0 text-ink-subtle transition hover-device:group-hover:translate-x-0.5 hover-device:group-hover:text-ink" />
+            </Link>
+          ) : (
+            <p className="flex max-w-full items-center gap-1.5 text-callout font-semibold text-ink">
+              <GitBranch aria-hidden className="size-3.5 shrink-0 text-ink-subtle" />
+              <TruncatedText text={workspace.branch} mono />
+            </p>
+          )}
           <p className="mt-0.5 text-caption text-ink-subtle">
             Cloned {formatDate(workspace.createdAt)} · {formatTime(workspace.createdAt)}
           </p>
@@ -59,10 +67,10 @@ export const WorkspaceCard = ({ projectId, workspace, previewsEnabled }: Workspa
 
       <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-caption sm:grid-cols-4">
         <div className="min-w-0">
-          <dt className="font-mono text-mono font-medium tracking-[0.12em] text-ink-subtle uppercase">Base</dt>
+          <dt className="text-caption font-medium text-ink-subtle">Base</dt>
           <dd className="mt-0.5 flex min-w-0 items-center gap-1 font-mono text-ink">
             <GitBranch className="size-3 shrink-0 text-ink-subtle" />
-            <span className="truncate" title={workspace.baseBranch}>{workspace.baseBranch || '—'}</span>
+            <TruncatedText text={workspace.baseBranch || '—'} />
           </dd>
           {drifted ? (
             <dd className="mt-0.5 truncate font-mono text-mono text-warning">checked out {workspace.headBranch}</dd>
@@ -72,7 +80,7 @@ export const WorkspaceCard = ({ projectId, workspace, previewsEnabled }: Workspa
         </div>
 
         <div className="min-w-0">
-          <dt className="font-mono text-mono font-medium tracking-[0.12em] text-ink-subtle uppercase">Commit</dt>
+          <dt className="text-caption font-medium text-ink-subtle">Commit</dt>
           <dd className="mt-0.5 flex items-center gap-1 font-mono text-ink">
             <GitCommitHorizontal className="size-3 shrink-0 text-ink-subtle" />
             {shortCommit(workspace.headCommit)}
@@ -83,7 +91,7 @@ export const WorkspaceCard = ({ projectId, workspace, previewsEnabled }: Workspa
         </div>
 
         <div className="min-w-0">
-          <dt className="font-mono text-mono font-medium tracking-[0.12em] text-ink-subtle uppercase">Changes</dt>
+          <dt className="text-caption font-medium text-ink-subtle">Changes</dt>
           <dd className="mt-0.5 font-extrabold text-ink tabular-nums">{workspace.dirtyFiles}</dd>
           <dd className="mt-0.5 text-caption text-ink-subtle">
             {workspace.dirtyFiles === 0 ? 'Clean tree' : 'Uncommitted files'}
@@ -91,7 +99,7 @@ export const WorkspaceCard = ({ projectId, workspace, previewsEnabled }: Workspa
         </div>
 
         <div className="min-w-0">
-          <dt className="font-mono text-mono font-medium tracking-[0.12em] text-ink-subtle uppercase">Size</dt>
+          <dt className="text-caption font-medium text-ink-subtle">Size</dt>
           <dd className="mt-0.5 font-extrabold text-ink tabular-nums">{formatBytes(workspace.sizeBytes)}</dd>
           {preview ? (
             <dd className="mt-0.5">
