@@ -1,5 +1,6 @@
 # TODOs
 
+- [ ] Full power agent
 - [ ] Subagentes
 - [/] Refactor mobile
 - [ ] When you ask the chat for something and chat makes a deterministic deployment in dev session, the deployment set up message appears, and it should not appers cause that message is always when you are setting up the deployment with the agent from fisrt time (triggered from chat or from button)
