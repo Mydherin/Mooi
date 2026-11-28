@@ -1,6 +1,6 @@
 # TODOs
 
-- [ ] Refactor mobile
+- [/] Refactor mobile
 - [ ] Ver correctamente las sesiones hijas
 - [ ] Drag and drop pattern improve
 - [ ] Micrófono Pausa y evitar borrado en movil
