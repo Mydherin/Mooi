@@ -1,11 +1,11 @@
 # TODOs
 
 - [ ] Ver correctamente las sesiones hijas
+- [ ] Refactor mobile
 - [ ] Drag and drop pattern improve
 - [ ] Micrófono Pausa y evitar borrado en movil
 - [ ] Cuadro de texto menor en chat tras movimientos
 - [ ] Reordenar en mi projects view
-- [ ] Refactor mobile
 - [ ] Iconos pequeños
 - [ ] HOrario utc+1 en formato del cliente
 - [ ] Agregar nuevo proyecto, listado de busqueda libre con pestaña de mis proyectos, permite buscar cualquier repo publico de otro autor o privado con acceso, si no esta en mis personales antes de agregarlo a Mooi hace un fork
