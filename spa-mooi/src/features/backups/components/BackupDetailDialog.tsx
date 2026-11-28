@@ -1,15 +1,21 @@
 import { useEffect, useState } from 'react';
-import { ArchiveRestore, FlaskConical, LoaderCircle, ShieldCheck, Trash2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { ArchiveRestore, ArrowUpRight, FlaskConical, ShieldCheck, Trash2 } from 'lucide-react';
 import { fetchBackupDetail } from '@/features/backups/api/backupHistoryApi';
 import { backupOperationLabel } from '@/features/backups/lib/backupOperationLabel';
 import type { Backup } from '@/features/backups/types/Backup';
 import type { BackupDetail } from '@/features/backups/types/BackupDetail';
-import { DeploymentStateBadge } from '@/features/production/components/DeploymentStateBadge';
-import { DeploymentStateIcon } from '@/features/production/components/DeploymentStateIcon';
-import { Badge } from '@/shared/components/data-display/Badge';
+import { OperationOutput } from '@/features/production/components/operation/OperationOutput';
+import { OperationStateBadge } from '@/features/production/components/operation/OperationStateBadge';
+import { OperationStateIcon } from '@/features/production/components/operation/OperationStateIcon';
 import { Button } from '@/shared/components/actions/Button';
+import { Badge } from '@/shared/components/data-display/Badge';
+import { Alert } from '@/shared/components/feedback/Alert';
+import { Spinner } from '@/shared/components/feedback/Spinner';
+import { SelectField } from '@/shared/components/forms/select/SelectField';
+import { SegmentedControl } from '@/shared/components/navigation/SegmentedControl';
 import { Dialog } from '@/shared/components/overlays/dialog/Dialog';
-import { cn } from '@/shared/utils/cn';
+import { buttonStyles } from '@/shared/styles/buttonStyles';
 import { formatDate } from '@/shared/utils/formatDate';
 import { formatDuration } from '@/shared/utils/formatDuration';
 import { formatRelativeTime } from '@/shared/utils/formatRelativeTime';
@@ -18,14 +24,18 @@ import { formatTime } from '@/shared/utils/formatTime';
 interface BackupDetailDialogProps {
   backup: Backup;
   projectName: string;
+  /** Shown from the cross-project history: leads to the project's backup screen. */
+  projectTo?: string;
   onClose: () => void;
   onVerify?: () => void;
   onRestore?: () => void;
   onDelete?: () => void;
 }
 
+const VIEWS = [{ id: 'output', label: 'Output' }, { id: 'script', label: 'Script' }];
+
 /** One backup and every operation run on it: what ran, when, how it ended and its redacted output. */
-export const BackupDetailDialog = ({ backup, projectName, onClose, onVerify, onRestore, onDelete }: BackupDetailDialogProps) => {
+export const BackupDetailDialog = ({ backup, projectName, projectTo, onClose, onVerify, onRestore, onDelete }: BackupDetailDialogProps) => {
   const [detail, setDetail] = useState<BackupDetail | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [view, setView] = useState<'output' | 'script'>('output');
@@ -44,44 +54,32 @@ export const BackupDetailDialog = ({ backup, projectName, onClose, onVerify, onR
 
   return <Dialog open size="lg" onClose={onClose} title={`${formatDate(backup.startedAt)} · ${formatTime(backup.startedAt)} · ${projectName}`}
     description={`Release ${backup.releaseTag}${backup.finishedAt ? ` · took ${formatDuration(backup.startedAt, backup.finishedAt)}` : ''}`}
-    footer={onDelete ? <Button variant="ghost" onClick={onDelete} className="text-danger sm:mr-auto"><Trash2 className="size-4" />Delete backup</Button> : undefined}>
-    <div className="flex flex-wrap items-center gap-2">
-      <DeploymentStateBadge state={backup.state} />
-      {backup.verifiedAt ? <Badge tone="success" icon={ShieldCheck}>Verified {formatRelativeTime(backup.verifiedAt)}</Badge> : null}
-      {backup.restoredAt ? <Badge tone="info" icon={ArchiveRestore}>Restored {formatRelativeTime(backup.restoredAt)}</Badge> : null}
-      <div className="ml-auto flex gap-2">
-        {onVerify ? <Button variant="secondary" size="sm" onClick={onVerify}><FlaskConical className="size-4" />Verify</Button> : null}
-        {onRestore ? <Button variant="secondary" size="sm" onClick={onRestore}><ArchiveRestore className="size-4" />Restore</Button> : null}
+    footer={<>
+      {onDelete ? <Button variant="ghost" icon={Trash2} onClick={onDelete} className="text-danger sm:mr-auto">Delete backup</Button> : null}
+      {projectTo ? <Link to={projectTo} className={buttonStyles('secondary', 'md')}><ArrowUpRight aria-hidden className="size-4" />Open project</Link> : null}
+      {onVerify ? <Button variant="secondary" icon={FlaskConical} onClick={onVerify}>Verify</Button> : null}
+      {onRestore ? <Button variant="brand" icon={ArchiveRestore} onClick={onRestore}>Restore</Button> : null}
+    </>}>
+    <div className="flex min-w-0 flex-col gap-4">
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <OperationStateBadge state={backup.state} />
+        {backup.verifiedAt ? <Badge tone="success" icon={ShieldCheck}>Verified {formatRelativeTime(backup.verifiedAt)}</Badge> : null}
+        {backup.restoredAt ? <Badge tone="info" icon={ArchiveRestore}>Restored {formatRelativeTime(backup.restoredAt)}</Badge> : null}
       </div>
-    </div>
 
-    {error ? <p role="alert" className="mt-4 rounded-control border border-danger/30 bg-danger-soft px-4 py-2.5 text-sm text-danger">{error}</p>
-      : !detail ? <p className="mt-5 flex items-center gap-2 text-sm text-ink-muted"><LoaderCircle className="size-4 animate-spin" />Loading backup…</p>
-        : <div className="mt-5 grid gap-4 md:grid-cols-[220px_minmax(0,1fr)]">
-          <ol aria-label="Operations" className="flex gap-1.5 overflow-x-auto md:flex-col">
-            {detail.operations.map(({ operation: item }) => <li key={item.operationId} className="shrink-0">
-              <button type="button" onClick={() => setSelected(item.operationId)} aria-pressed={operation?.operation.operationId === item.operationId}
-                className={cn('flex w-full min-w-48 items-center gap-2.5 rounded-control border px-2.5 py-2 text-left transition focus-visible:outline-2 focus-visible:outline-brand md:min-w-0',
-                  operation?.operation.operationId === item.operationId ? 'border-ink bg-surface' : 'border-line hover:bg-surface-2')}>
-                <DeploymentStateIcon state={item.state} className="size-8" />
-                <span className="min-w-0">
-                  <span className="block truncate text-xs font-bold text-ink">{backupOperationLabel(item.action, item.target)}</span>
-                  <span className="block truncate text-[11px] text-ink-muted">{formatRelativeTime(item.startedAt)}
-                    {item.finishedAt ? ` · ${formatDuration(item.startedAt, item.finishedAt)}` : ''}</span>
-                </span>
-              </button>
-            </li>)}
-          </ol>
-          <div className="min-w-0">
-            {operation?.message ? <p className="mb-2 text-sm text-ink-muted">{operation.message}</p> : null}
-            <div role="tablist" aria-label="Operation content" className="flex gap-1.5">
-              {(['output', 'script'] as const).map((item) => <button key={item} type="button" role="tab" aria-selected={view === item} onClick={() => setView(item)}
-                className={cn('rounded-lg px-3 py-1.5 font-mono text-xs font-bold transition',
-                  view === item ? 'bg-contrast text-contrast-ink' : 'bg-surface-2 text-ink-muted hover:text-ink')}>{item === 'output' ? 'Output' : 'Script'}</button>)}
-            </div>
-            <pre role="tabpanel" className={cn('mt-3 max-h-[45dvh] overflow-auto rounded-xl p-4 font-mono text-xs leading-6 whitespace-pre-wrap break-all',
-              view === 'output' ? 'bg-neutral-950 text-neutral-100' : 'border border-line bg-surface-2 text-ink')}>{content}</pre>
-          </div>
-        </div>}
+      {error ? <Alert tone="danger">{error}</Alert>
+        : !detail ? <Spinner label="Loading backup…" />
+          : operation ? <>
+            {detail.operations.length > 1 ? <SelectField label="Operation" value={operation.operation.operationId} onChange={setSelected}
+              options={detail.operations.map(({ operation: item }) => ({
+                value: item.operationId, label: backupOperationLabel(item.action, item.target),
+                description: `${formatRelativeTime(item.startedAt)}${item.finishedAt ? ` · ${formatDuration(item.startedAt, item.finishedAt)}` : ''}`,
+                leading: <OperationStateIcon state={item.state} className="size-8" />,
+              }))} /> : null}
+            {operation.message ? <p className="text-callout break-words text-ink-muted">{operation.message}</p> : null}
+            <SegmentedControl items={VIEWS} value={view} onChange={(next) => setView(next as 'output' | 'script')} ariaLabel="Operation content" className="self-start" />
+            <OperationOutput content={content} kind={view === 'output' ? 'log' : 'file'} label={view === 'output' ? 'Operation output' : 'Operation script'} />
+          </> : <p className="text-callout text-ink-muted">No operation was recorded for this backup.</p>}
+    </div>
   </Dialog>;
 };

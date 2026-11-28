@@ -1,5 +1,5 @@
 import { FileDiff, FolderGit2, HardDrive, Radio } from 'lucide-react';
-import { WorkspaceStat } from '@/features/sessions/components/workspaces/WorkspaceStat';
+import { Stat } from '@/shared/components/data-display/Stat';
 import type { WorkspaceOverview } from '@/features/sessions/types/WorkspaceOverview';
 import { cn } from '@/shared/utils/cn';
 import { formatBytes } from '@/shared/utils/formatBytes';
@@ -21,21 +21,21 @@ export const WorkspaceStats = ({ overview, previewsEnabled }: WorkspaceStatsProp
 
   return (
     <div className={cn('grid grid-cols-2 gap-3', showPreviews ? 'lg:grid-cols-4' : 'lg:grid-cols-3')}>
-      <WorkspaceStat
+      <Stat
         icon={FolderGit2}
         label="Clones"
         value={String(cloned)}
         hint={`${branches} ${branches === 1 ? 'branch' : 'branches'}${cloned < workspaces.length ? ` · ${workspaces.length - cloned} pending` : ''}`}
       />
-      <WorkspaceStat icon={HardDrive} label="Disk" value={formatBytes(overview.totalBytes)} hint="Across all clones" />
-      <WorkspaceStat
+      <Stat icon={HardDrive} label="Disk" value={formatBytes(overview.totalBytes)} hint="Across all clones" />
+      <Stat
         icon={FileDiff}
         label="Uncommitted"
         value={String(dirtyFiles)}
         hint={`${dirtyClones} dirty ${dirtyClones === 1 ? 'clone' : 'clones'}`}
       />
       {showPreviews ? (
-        <WorkspaceStat icon={Radio} label="Previews" value={String(running)} hint="Running deployments" />
+        <Stat icon={Radio} label="Previews" value={String(running)} hint="Running deployments" />
       ) : null}
     </div>
   );

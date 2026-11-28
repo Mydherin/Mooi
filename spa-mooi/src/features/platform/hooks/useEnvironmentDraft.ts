@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { normalizeVariableName, prefixedVariableName, VARIABLE_NAME } from '@/features/development/lib/environmentNames';
+import { normalizeVariableName, prefixedVariableName, VARIABLE_NAME } from '@/features/platform/lib/environmentNames';
 import type { PlatformEnvironmentVariable } from '@/features/platform/types/PlatformEnvironmentVariable';
 
 export interface NewVariable {

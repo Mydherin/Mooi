@@ -1,10 +1,13 @@
-import { Link } from 'react-router-dom';
-import { ArrowRight } from 'lucide-react';
+import { memo } from 'react';
+import { ArrowUpRight } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { deploymentPath } from '@/app/paths';
 import type { Project } from '@/features/projects/types/Project';
-import { DeploymentStateBadge } from '@/features/production/components/DeploymentStateBadge';
-import { DeploymentStateIcon } from '@/features/production/components/DeploymentStateIcon';
+import { OperationStateBadge } from '@/features/production/components/operation/OperationStateBadge';
+import { OperationStateIcon } from '@/features/production/components/operation/OperationStateIcon';
 import type { ProductionDeployment } from '@/features/production/types/ProductionDeployment';
+import { ListGroup } from '@/shared/components/data-display/ListGroup';
+import { ListRow } from '@/shared/components/data-display/ListRow';
 import { formatDuration } from '@/shared/utils/formatDuration';
 import { formatRelativeTime } from '@/shared/utils/formatRelativeTime';
 
@@ -14,28 +17,21 @@ interface ProductionHistoryListProps {
   onOpen: (deployment: ProductionDeployment) => void;
 }
 
-/** Every recorded deployment across projects, newest first. */
+const HistoryRow = memo(({ deployment, project, onOpen }: { deployment: ProductionDeployment; project: Project | undefined; onOpen: (deployment: ProductionDeployment) => void }) => {
+  const navigate = useNavigate();
+  return <ListRow onClick={() => onOpen(deployment)} chevron leading={<OperationStateIcon state={deployment.state} />}
+    title={project?.name ?? 'Removed project'}
+    subtitle={<><span className="font-mono text-ink-muted">{deployment.releaseTag}</span> · {formatRelativeTime(deployment.startedAt)}
+      {deployment.finishedAt ? ` · ${formatDuration(deployment.startedAt, deployment.finishedAt)}` : ''}</>}
+    trailing={<OperationStateBadge state={deployment.state} className="max-sm:hidden" />}
+    swipeActions={project ? [{ id: 'open', label: 'Project', icon: ArrowUpRight, onSelect: () => navigate(deploymentPath(project.id)) }] : undefined} />;
+});
+HistoryRow.displayName = 'HistoryRow';
+
+/** Every recorded deployment across projects, newest first; the detail leads on to its project. */
 export const ProductionHistoryList = ({ deployments, projects, onOpen }: ProductionHistoryListProps) => (
-  <ul className="divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
-    {deployments.map((deployment) => {
-      const project = projects.get(deployment.projectId);
-      return <li key={deployment.operationId} className="group flex items-center gap-1 pr-3 transition hover:bg-surface-2">
-        <button type="button" onClick={() => onOpen(deployment)} aria-label={`View ${deployment.releaseTag} deployment details`}
-          className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3.5 text-left focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand sm:px-5">
-          <DeploymentStateIcon state={deployment.state} />
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-sm font-semibold text-ink">{project?.name ?? 'Removed project'}</span>
-            <span className="mt-0.5 block truncate text-xs text-ink-muted">
-              <span className="font-mono font-bold text-ink">{deployment.releaseTag}</span> · {formatRelativeTime(deployment.startedAt)}
-              {deployment.finishedAt ? ` · ${formatDuration(deployment.startedAt, deployment.finishedAt)}` : ''}
-            </span>
-          </span>
-          <span className="hidden sm:block"><DeploymentStateBadge state={deployment.state} /></span>
-        </button>
-        {project ? <Link to={deploymentPath(project.id)} aria-label={`Open ${project.name} deployment`} title="Open project deployment"
-          className="grid size-9 shrink-0 place-items-center rounded-control text-ink-subtle transition hover:bg-surface hover:text-ink focus-visible:outline-2 focus-visible:outline-brand">
-          <ArrowRight className="size-4" /></Link> : null}
-      </li>;
-    })}
-  </ul>
+  <ListGroup>
+    {deployments.map((deployment) => <HistoryRow key={deployment.operationId} deployment={deployment}
+      project={projects.get(deployment.projectId)} onOpen={onOpen} />)}
+  </ListGroup>
 );

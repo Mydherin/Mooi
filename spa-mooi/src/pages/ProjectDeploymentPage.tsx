@@ -1,10 +1,8 @@
-import { lazy, Suspense, useCallback, useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { Activity, Compass, FileCode2, GitCompareArrows, LayoutDashboard, MessagesSquare, Rocket, Terminal, X } from 'lucide-react';
+import { useCallback, useState } from 'react';
+import { useParams } from 'react-router-dom';
+import { Activity, ExternalLink, KeyRound, Rocket, SlidersHorizontal, Trash2, X } from 'lucide-react';
 import { ROUTES } from '@/app/routes';
 import { useAgentConnections } from '@/features/agents/hooks/useAgentConnections';
-import { useProjects } from '@/features/projects/hooks/useProjects';
-import { findProject } from '@/features/projects/lib/findProject';
 import { PlatformAgentDialog } from '@/features/platform/components/PlatformAgentDialog';
 import { PlatformChatPanel } from '@/features/platform/components/PlatformChatPanel';
 import { PlatformDeleteDialog } from '@/features/platform/components/PlatformDeleteDialog';
@@ -13,69 +11,84 @@ import { PlatformFilesPanel } from '@/features/platform/components/PlatformFiles
 import { usePlatformChat } from '@/features/platform/hooks/usePlatformChat';
 import { usePlatformFiles } from '@/features/platform/hooks/usePlatformFiles';
 import { usePlatformOperation } from '@/features/platform/hooks/usePlatformOperation';
+import type { Project } from '@/features/projects/types/Project';
 import {
   deleteProductionConfiguration, deleteProductionDeployment, fetchProductionFileDiff, saveProductionDraft,
   startProductionDeployment, updateProductionEnvironment,
 } from '@/features/production/api/productionApi';
+import { OperationHeader } from '@/features/production/components/operation/OperationHeader';
+import { OperationProjectGate } from '@/features/production/components/operation/OperationProjectGate';
+import { OperationSessionPanel } from '@/features/production/components/operation/OperationSessionPanel';
 import { ProductionConsolePanel } from '@/features/production/components/ProductionConsolePanel';
 import { ProductionDeploymentDetailDialog } from '@/features/production/components/ProductionDeploymentDetailDialog';
 import { ProductionOverviewPanel } from '@/features/production/components/ProductionOverviewPanel';
-import { ProductionPageHeader } from '@/features/production/components/ProductionPageHeader';
 import { ProductionReleaseDialog } from '@/features/production/components/ProductionReleaseDialog';
 import { useProductionHealth } from '@/features/production/hooks/useProductionHealth';
 import { useProductionOverview } from '@/features/production/hooks/useProductionOverview';
 import { useProjectProductionHistory } from '@/features/production/hooks/useProjectProductionHistory';
+import { operationTabs } from '@/features/production/lib/operationTabs';
 import { PRODUCTION_AGENT_COPY, PRODUCTION_AGENT_SUGGESTIONS } from '@/features/production/lib/productionAgentCopy';
 import { productionAgentMessage } from '@/features/production/lib/productionAgentMessage';
 import { PRODUCTION_DOCUMENTS } from '@/features/production/lib/productionDocuments';
 import { PRODUCTION_FILES_SOURCE } from '@/features/production/lib/productionFilesSource';
 import { productionStage } from '@/features/production/lib/productionStage';
+import { PRODUCTION_STAGE_VIEWS } from '@/features/production/lib/productionStageView';
+import type { OperationTab } from '@/features/production/types/OperationTab';
 import type { ProductionAgentIntent } from '@/features/production/types/ProductionAgentIntent';
 import type { ProductionDeployment } from '@/features/production/types/ProductionDeployment';
+import type { ProductionHealthState } from '@/features/production/types/ProductionHealthState';
 import type { ProductionSnapshot } from '@/features/production/types/ProductionSnapshot';
-import type { ProductionTab } from '@/features/production/types/ProductionTab';
 import type { ReleaseChoice } from '@/features/production/types/ReleaseChoice';
 import { closeSession } from '@/features/sessions/api/sessionsApi';
 import { Button } from '@/shared/components/actions/Button';
-import { Card } from '@/shared/components/data-display/Card';
-import { EmptyState } from '@/shared/components/feedback/EmptyState';
-import { buttonStyles } from '@/shared/styles/buttonStyles';
-import type { TabItem } from '@/shared/types/TabItem';
+import type { ActionItem } from '@/shared/components/actions/ActionItem';
+import { StatusDot } from '@/shared/components/data-display/StatusDot';
+import { useTabParam } from '@/shared/components/navigation/useTabParam';
+import { useBackLink } from '@/shared/hooks/useBackLink';
+import type { BackLink } from '@/shared/types/BackLink';
 import { cn } from '@/shared/utils/cn';
 import { useSessionsStore } from '@/stores/sessionsStore';
 
-const ChangesPanel = lazy(() => import('@/features/sessions/components/changes/ChangesPanel').then((module) => ({ default: module.ChangesPanel })));
-const TracePanel = lazy(() => import('@/features/traces/components/TracePanel').then((module) => ({ default: module.TracePanel })));
+const TAB_IDS: readonly OperationTab[] = ['overview', 'chat', 'console', 'files', 'changes', 'trace'];
+const HEALTH_VIEWS: Record<ProductionHealthState, { label: string; tone: 'neutral' | 'info' | 'success' | 'danger' }> = {
+  unknown: { label: 'Service status unknown', tone: 'neutral' },
+  checking: { label: 'Checking the service…', tone: 'info' },
+  healthy: { label: 'Service online', tone: 'success' },
+  unhealthy: { label: 'Service needs attention', tone: 'danger' },
+};
 
-/**
- * One project's production: an overview first, then — like a session — tabs for the deployment
- * chat, the live console, the platform-stored files and the chat's repository changes as they become
- * relevant. Both file tabs count their pending changes live. The active tab lives in `?tab=` so a
- * reload lands back on the same view.
- */
+/** One project's production; resolves the project first. */
 export const ProjectDeploymentPage = () => {
   const { projectId } = useParams();
-  const { projects, status } = useProjects();
-  const project = findProject(projects, projectId);
-  const { connections } = useAgentConnections();
+  const back = useBackLink({ to: ROUTES.deployments, label: 'Deployments' });
+  return <OperationProjectGate projectId={projectId} back={back}>{(project) => <ProductionScreen key={project.id} project={project} back={back} />}</OperationProjectGate>;
+};
 
-  const stream = usePlatformOperation<ProductionSnapshot>(project?.id, 'production');
+/**
+ * An overview first, then — like a session — views for the deployment chat, the live console, the
+ * platform-stored files and the chat's repository changes and trace as they become relevant. The
+ * active view lives in `?tab=` so a reload lands back on it.
+ */
+const ProductionScreen = ({ project, back }: { project: Project; back: BackLink }) => {
+  const { connections } = useAgentConnections();
+  const stream = usePlatformOperation<ProductionSnapshot>(project.id, 'production');
   const refreshKey = `${stream.configurationRevision}:${stream.snapshot?.operationId ?? ''}:${stream.snapshot?.state ?? ''}`;
-  const { overview, error: overviewError, reload } = useProductionOverview(project?.id, refreshKey);
-  const history = useProjectProductionHistory(project?.id, refreshKey);
-  const { chat, starting, error: chatError, start, clearError } = usePlatformChat(project?.id, 'production');
-  const files = usePlatformFiles(project?.id, stream.configurationRevision, PRODUCTION_FILES_SOURCE);
-  const fetchDiff = useCallback((path: string) => fetchProductionFileDiff(project?.id ?? '', path), [project?.id]);
+  const { overview, error: overviewError, reload } = useProductionOverview(project.id, refreshKey);
+  const history = useProjectProductionHistory(project.id, refreshKey);
+  const { chat, starting, error: chatError, start, clearError } = usePlatformChat(project.id, 'production');
+  const files = usePlatformFiles(project.id, stream.configurationRevision, PRODUCTION_FILES_SOURCE);
+  const fetchDiff = useCallback((path: string) => fetchProductionFileDiff(project.id, path), [project.id]);
   const repositoryChanges = useSessionsStore((state) => (chat ? state.byId[chat.id]?.changes?.files.length ?? 0 : 0));
   const snapshot = stream.snapshot ?? overview?.snapshot ?? null;
   const latest = history.deployments[0];
   const stage = overview ? productionStage(overview, snapshot, latest, Boolean(chat)) : 'unconfigured';
   const missing = overview?.environment.filter((variable) => variable.required && !variable.configured).length ?? 0;
   const configured = Boolean(overview?.configured);
-  const health = useProductionHealth(project?.id, configured && stage !== 'deploying'
+  const deployingStage = stage === 'deploying';
+  const health = useProductionHealth(project.id, configured && !deployingStage
     && Boolean(overview?.deployed || latest?.state === 'succeeded'));
 
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [tab, openTab] = useTabParam(TAB_IDS, 'overview');
   const [agentIntent, setAgentIntent] = useState<ProductionAgentIntent | null>(null);
   const [releaseOpen, setReleaseOpen] = useState(false);
   const [environmentOpen, setEnvironmentOpen] = useState(false);
@@ -86,20 +99,7 @@ export const ProjectDeploymentPage = () => {
 
   // The chat only lives while the script is being (re)written; once tested for real it may be closed.
   const chatTested = Boolean(chat && overview?.chatTested && overview.chatSessionId === chat.id);
-  const chatClosable = chatTested && chat?.status === 'ready' && !chat.pending && stage !== 'deploying';
-
-  const tabs: TabItem[] = [
-    { id: 'overview', label: 'Overview', icon: LayoutDashboard },
-    ...(chat ? [{ id: 'chat', label: 'Chat', icon: MessagesSquare, dot: chat.status === 'working' || chat.status === 'waiting' || chat.status === 'provisioning',
-      ...(chatClosable ? { onClose: () => void closeChat(), closeLabel: 'Close deployment chat' } : {}) }] : []),
-    ...(snapshot?.operationId ? [{ id: 'console', label: 'Console', icon: Terminal, dot: snapshot.state === 'running' }] : []),
-    ...(configured || chat || files.documents?.draft ? [{ id: 'files', label: 'Platform files', icon: FileCode2, count: files.summary?.files.length || undefined }] : []),
-    ...(chat ? [{ id: 'changes', label: 'Changes', icon: GitCompareArrows, count: repositoryChanges || undefined }] : []),
-    ...(chat ? [{ id: 'trace', label: 'Trace', icon: Activity }] : []),
-  ];
-  const requested = searchParams.get('tab');
-  const tab = (tabs.some((item) => item.id === requested) ? requested : 'overview') as ProductionTab;
-  const openTab = (next: string) => setSearchParams(next === 'overview' ? {} : { tab: next }, { replace: true });
+  const chatClosable = chatTested && chat?.status === 'ready' && !chat.pending && !deployingStage;
 
   const closeChat = async () => {
     if (!chat) return;
@@ -115,16 +115,12 @@ export const ProjectDeploymentPage = () => {
     }
   };
 
-  if (!project) {
-    if (status === 'loading' || status === 'idle') {
-      return <div className="mx-auto w-full max-w-6xl px-5 pt-7 pb-[calc(1.75rem+var(--safe-bottom))] sm:px-8 lg:px-10 lg:pt-10 lg:pb-10"><Card className="h-56 animate-pulse-soft" /></div>;
-    }
-    return <div className="mx-auto w-full max-w-6xl px-5 pt-7 pb-[calc(1.75rem+var(--safe-bottom))] sm:px-8 lg:px-10 lg:pt-10 lg:pb-10">
-      <EmptyState icon={Compass} title="Project not found" description="This project is not part of your workspace.">
-        <Link to={ROUTES.deployments} className={buttonStyles('secondary', 'md')}>Back to deployments</Link>
-      </EmptyState>
-    </div>;
-  }
+  const tabs = operationTabs({
+    chat, onCloseChat: chatClosable ? () => void closeChat() : undefined, closeChatLabel: 'Close deployment chat',
+    operationId: snapshot?.operationId ?? null, running: snapshot?.state === 'running',
+    showFiles: configured || Boolean(chat) || Boolean(files.documents?.draft), pendingFiles: files.summary?.files.length ?? 0, repositoryChanges,
+  });
+  const view: OperationTab = tabs.some((item) => item.id === tab) ? tab : 'overview';
 
   const requestDeploy = () => {
     setActionError(null);
@@ -155,45 +151,54 @@ export const ProjectDeploymentPage = () => {
 
   const fixFailure = () => (chat ? openTab('chat') : openAgent('fix'));
   const failedRelease = snapshot?.state === 'failed' ? snapshot.releaseTag : latest?.state === 'failed' ? latest.releaseTag : null;
+  const stageView = PRODUCTION_STAGE_VIEWS[stage];
+  const healthView = HEALTH_VIEWS[health.state];
+
+  const actions: ActionItem[] = [
+    ...(configured ? [{ id: 'deploy', label: 'Deploy', icon: Rocket, primary: true, variant: 'brand' as const, loading: deploying || deployingStage,
+      disabled: deployingStage, onSelect: requestDeploy }] : []),
+    { id: 'variables', label: 'Environment variables', icon: KeyRound, onSelect: () => setEnvironmentOpen(true) },
+    ...(configured ? [
+      { id: 'reconfigure', label: 'Change deployment', icon: SlidersHorizontal, disabled: deployingStage, onSelect: () => openAgent('update') },
+      { id: 'status', label: 'Check service status', icon: Activity, disabled: deployingStage || health.state === 'checking', onSelect: health.check },
+    ] : []),
+    ...(project.htmlUrl ? [{ id: 'releases', label: 'GitHub releases', icon: ExternalLink, href: `${project.htmlUrl}/releases` }] : []),
+    { id: 'delete', label: 'Delete configuration', icon: Trash2, destructive: true, disabled: !configured || deployingStage, onSelect: () => setDeleteOpen(true) },
+  ];
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <ProductionPageHeader project={project} stage={stage} configured={configured} healthState={health.state}
-        tabs={tabs} tab={tab} onTabChange={openTab} onDeploy={requestDeploy} onReconfigure={() => openAgent('update')}
-        onEnvironment={() => setEnvironmentOpen(true)} onCheckStatus={health.check} onDelete={() => setDeleteOpen(true)} />
+      <OperationHeader back={back} title={project.name} idPrefix="production" tabsLabel="Deployment views"
+        status={{ label: stageView.label, tone: stageView.tone, pulse: deployingStage }}
+        meta={configured ? <span className="inline-flex items-center gap-1.5"><StatusDot tone={healthView.tone} pulse={health.state === 'checking'} />{healthView.label}</span> : null}
+        actions={actions} actionsLabel="More deployment actions" tabs={tabs} tab={view} onTabChange={(next) => openTab(next as OperationTab)} />
 
-      <div className="relative min-h-0 flex-1 bg-canvas">
-        {tab === 'overview' ? <ProductionOverviewPanel project={project} overview={overview} error={overviewError ?? actionError}
+      <div role="tabpanel" id={`production-panel-${view}`} aria-labelledby={`production-tab-${view}`} className="relative min-h-0 flex-1 bg-canvas">
+        {view === 'overview' ? <ProductionOverviewPanel overview={overview} error={overviewError ?? actionError}
           onRetry={reload} stage={stage} hasChat={Boolean(chat)} missingVariables={missing} releaseTag={latest?.releaseTag ?? null}
           latest={latest} health={health} history={history} deploying={deploying}
           onSetup={() => openAgent('setup')} onDeploy={requestDeploy} onOpenChat={() => openTab('chat')}
           onOpenConsole={() => openTab('console')} onFix={fixFailure} onEnvironment={() => setEnvironmentOpen(true)}
           onOpenDeployment={setDetail} onRedeploy={(deployment) => void deploy({ tag: deployment.releaseTag, create: false })} /> : null}
 
-        {chat ? <div className={cn('h-full', tab !== 'chat' && 'hidden')}>
+        {chat ? <div className={cn('h-full', view !== 'chat' && 'hidden')}>
           <PlatformChatPanel key={chat.id} sessionId={chat.id} loadingLabel="Opening the deployment chat…"
             completion={chatClosable ? { done: true, title: 'Tested and deployed.', description: 'Close this chat to accept its platform files.',
-              action: <Button variant="brand" size="sm" onClick={() => void closeChat()}><X className="size-4" />Close chat</Button> }
-              : configured && missing === 0 && stage !== 'deploying' ? { done: false, title: 'The configuration is ready.', description: 'Deploy whenever you want.',
-                action: <Button variant="brand" size="sm" onClick={requestDeploy}><Rocket className="size-4" />Deploy</Button> } : null} />
+              action: <Button variant="brand" size="sm" icon={X} onClick={() => void closeChat()}>Close chat</Button> }
+              : configured && missing === 0 && !deployingStage ? { done: false, title: 'The configuration is ready.', description: 'Deploy whenever you want.',
+                action: <Button variant="brand" size="sm" icon={Rocket} onClick={requestDeploy}>Deploy</Button> } : null} />
         </div> : null}
 
-        {tab === 'console' ? <ProductionConsolePanel snapshot={snapshot} logs={stream.logs} hasChat={Boolean(chat)}
+        {view === 'console' ? <ProductionConsolePanel snapshot={snapshot} logs={stream.logs} hasChat={Boolean(chat)}
           onOpenChat={() => openTab('chat')} onFix={() => openAgent('fix')} onDeploy={requestDeploy} /> : null}
 
-        {tab === 'files' ? <PlatformFilesPanel fields={PRODUCTION_DOCUMENTS} documents={files.documents} summary={files.summary}
-          loadError={files.error} locked={stage === 'deploying'} fetchDiff={fetchDiff}
+        {view === 'files' ? <PlatformFilesPanel fields={PRODUCTION_DOCUMENTS} documents={files.documents} summary={files.summary}
+          loadError={files.error} locked={deployingStage} fetchDiff={fetchDiff}
           saveDraft={(draft) => saveProductionDraft(project.id, draft)} onSaved={files.reload}
           emptyDescription="The agent saves DEPLOYMENT.md, deploy.sh and status.sh here one by one while it prepares the deployment. They live in Mooi, never in the repository." /> : null}
 
-        {tab === 'changes' && chat ? <Suspense fallback={<p className="p-6 text-sm text-ink-muted">Loading changes…</p>}>
-          <ChangesPanel sessionId={chat.id} showMerge={false}
-            emptyDescription={`Production Compose and other repository changes appear here. The agent asks before committing them to ${project.defaultBranch}.`} />
-        </Suspense> : null}
-
-        {tab === 'trace' && chat ? <Suspense fallback={<p className="p-6 text-sm text-ink-muted">Loading trace…</p>}>
-          <TracePanel key={chat.id} sessionId={chat.id} active />
-        </Suspense> : null}
+        {(view === 'changes' || view === 'trace') && chat ? <OperationSessionPanel view={view} sessionId={chat.id}
+          changesDescription={`Production Compose and other repository changes appear here. The agent asks before committing them to ${project.defaultBranch}.`} /> : null}
       </div>
 
       {agentIntent ? <PlatformAgentDialog key={agentIntent} copy={PRODUCTION_AGENT_COPY[agentIntent]} projectName={project.name}
@@ -226,7 +231,7 @@ export const ProjectDeploymentPage = () => {
         }} /> : null}
       {detail ? <ProductionDeploymentDetailDialog key={detail.operationId} deployment={detail} projectName={project.name}
         onClose={() => setDetail(null)}
-        onRedeploy={configured && stage !== 'deploying' ? () => void deploy({ tag: detail.releaseTag, create: false }) : undefined}
+        onRedeploy={configured && !deployingStage ? () => void deploy({ tag: detail.releaseTag, create: false }) : undefined}
         onFix={() => { setDetail(null); fixFailure(); }}
         onDelete={async () => {
           await deleteProductionDeployment(project.id, detail.operationId);

@@ -1,14 +1,20 @@
 import { useEffect, useState } from 'react';
-import { LoaderCircle, RotateCcw, Sparkles, Trash2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { ArrowUpRight, RotateCcw, Sparkles, Trash2 } from 'lucide-react';
 import { fetchProductionDeploymentDetail } from '@/features/production/api/productionHistoryApi';
+import { OperationOutput } from '@/features/production/components/operation/OperationOutput';
+import { OperationStateBadge } from '@/features/production/components/operation/OperationStateBadge';
 import { PRODUCTION_DOCUMENTS } from '@/features/production/lib/productionDocuments';
 import type { ProductionDeployment } from '@/features/production/types/ProductionDeployment';
 import type { ProductionDeploymentDetail } from '@/features/production/types/ProductionDeploymentDetail';
 import type { ProductionFiles } from '@/features/production/types/ProductionFiles';
-import { DeploymentStateBadge } from '@/features/production/components/DeploymentStateBadge';
 import { Button } from '@/shared/components/actions/Button';
+import { Alert } from '@/shared/components/feedback/Alert';
+import { Spinner } from '@/shared/components/feedback/Spinner';
+import { Tabs } from '@/shared/components/navigation/Tabs';
+import { ConfirmDialog } from '@/shared/components/overlays/confirm/ConfirmDialog';
 import { Dialog } from '@/shared/components/overlays/dialog/Dialog';
-import { cn } from '@/shared/utils/cn';
+import { buttonStyles } from '@/shared/styles/buttonStyles';
 import { formatDate } from '@/shared/utils/formatDate';
 import { formatDuration } from '@/shared/utils/formatDuration';
 import { formatTime } from '@/shared/utils/formatTime';
@@ -16,19 +22,24 @@ import { formatTime } from '@/shared/utils/formatTime';
 interface ProductionDeploymentDetailDialogProps {
   deployment: ProductionDeployment;
   projectName: string;
+  /** Shown from the cross-project history: leads to the project's production screen. */
+  projectTo?: string;
   onClose: () => void;
   onRedeploy?: () => void;
   onFix?: () => void;
   onDelete?: () => Promise<void>;
 }
 
+type DetailView = keyof ProductionFiles | 'output';
+
 /** One recorded attempt: its result, the exact files it ran and its redacted output. */
-export const ProductionDeploymentDetailDialog = ({ deployment, projectName, onClose, onRedeploy, onFix, onDelete }: ProductionDeploymentDetailDialogProps) => {
+export const ProductionDeploymentDetailDialog = ({ deployment, projectName, projectTo, onClose, onRedeploy, onFix, onDelete }: ProductionDeploymentDetailDialogProps) => {
   const [detail, setDetail] = useState<ProductionDeploymentDetail | null>(null);
-  const [selected, setSelected] = useState<keyof ProductionFiles | 'output'>('output');
+  const [view, setView] = useState<DetailView>('output');
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -40,47 +51,44 @@ export const ProductionDeploymentDetailDialog = ({ deployment, projectName, onCl
 
   const remove = async () => {
     if (!onDelete) return;
-    setDeleting(true); setError(null);
+    setDeleting(true);
+    setDeleteError(null);
     try { await onDelete(); }
-    catch (failure) { setError((failure as Error).message); setDeleting(false); }
+    catch (failure) { setDeleteError((failure as Error).message); setDeleting(false); }
   };
 
   const files = detail?.files;
-  const tabs = [{ id: 'output' as const, label: 'Output' },
+  const views = [{ id: 'output', label: 'Output' },
     ...PRODUCTION_DOCUMENTS.filter(({ key }) => Boolean(files?.[key])).map(({ key, name }) => ({ id: key, label: name }))];
-  const content = selected === 'output' ? (detail?.logs.join('\n') || 'No output was recorded.') : files?.[selected] ?? '';
+  const content = view === 'output' ? (detail?.logs.join('\n') || 'No output was recorded.') : files?.[view] ?? '';
   const finished = deployment.finishedAt;
+  const settled = deployment.state !== 'running';
 
-  return <Dialog open size="lg" onClose={onClose} dismissible={!deleting} title={`${deployment.releaseTag} · ${projectName}`}
-    description={`${formatDate(deployment.startedAt)} at ${formatTime(deployment.startedAt)}${finished ? ` · took ${formatDuration(deployment.startedAt, finished)}` : ''}`}
-    footer={onDelete && deployment.state !== 'running' ? confirmDelete ? <>
-      <Button variant="ghost" onClick={() => setConfirmDelete(false)} disabled={deleting}>Keep it</Button>
-      <Button variant="danger" onClick={() => void remove()} disabled={deleting}>
-        {deleting ? <LoaderCircle className="size-4 animate-spin" /> : <Trash2 className="size-4" />}Delete saved data</Button>
-    </> : <Button variant="ghost" onClick={() => setConfirmDelete(true)} className="text-danger sm:mr-auto">
-      <Trash2 className="size-4" />Delete from history</Button> : undefined}>
-    <div className="flex flex-wrap items-center gap-2">
-      <DeploymentStateBadge state={deployment.state} />
-      {detail?.message ? <p className="min-w-0 flex-1 text-sm text-ink-muted">{detail.message}</p> : null}
-      <div className="flex gap-2">
-        {onFix && deployment.state === 'failed' ? <Button variant="secondary" size="sm" onClick={onFix}><Sparkles className="size-4" />Fix with agent</Button> : null}
-        {onRedeploy && deployment.state !== 'running' ? <Button variant="secondary" size="sm" onClick={onRedeploy}><RotateCcw className="size-4" />Redeploy</Button> : null}
+  return <>
+    <Dialog open size="lg" onClose={onClose} title={`${deployment.releaseTag} · ${projectName}`}
+      description={`${formatDate(deployment.startedAt)} at ${formatTime(deployment.startedAt)}${finished ? ` · took ${formatDuration(deployment.startedAt, finished)}` : ''}`}
+      footer={<>
+        {onDelete && settled ? <Button variant="ghost" icon={Trash2} onClick={() => setConfirmDelete(true)} className="text-danger sm:mr-auto">Delete from history</Button> : null}
+        {projectTo ? <Link to={projectTo} className={buttonStyles('secondary', 'md')}><ArrowUpRight aria-hidden className="size-4" />Open project</Link> : null}
+        {onFix && deployment.state === 'failed' ? <Button variant="secondary" icon={Sparkles} onClick={onFix}>Fix with agent</Button> : null}
+        {onRedeploy && settled ? <Button variant="brand" icon={RotateCcw} onClick={onRedeploy}>Redeploy</Button> : null}
+      </>}>
+      <div className="flex min-w-0 flex-col gap-4">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
+          <OperationStateBadge state={deployment.state} />
+          {detail?.message ? <p className="min-w-0 flex-1 text-callout break-words text-ink-muted">{detail.message}</p> : null}
+        </div>
+        {error ? <Alert tone="danger">{error}</Alert>
+          : !detail ? <Spinner label="Loading deployment…" />
+            : <>
+              {views.length > 1 ? <Tabs items={views} value={view} onChange={(next) => setView(next as DetailView)} ariaLabel="Deployment content" /> : null}
+              <OperationOutput content={content} kind={view === 'output' ? 'log' : 'file'} label={views.find((item) => item.id === view)?.label ?? 'Output'} />
+              {!files ? <p className="text-footnote text-ink-subtle">This attempt predates saved file snapshots.</p> : null}
+            </>}
       </div>
-    </div>
-    {confirmDelete ? <p className="mt-4 rounded-control bg-surface-2 px-3.5 py-2.5 text-xs leading-relaxed text-ink-muted">
-      Removes this entry, its files and its output from Mooi. The deployed service and the current configuration stay in place.</p> : null}
-
-    {error ? <p role="alert" className="mt-4 rounded-control border border-danger/30 bg-danger-soft px-4 py-2.5 text-sm text-danger">{error}</p>
-      : !detail ? <p className="mt-5 flex items-center gap-2 text-sm text-ink-muted"><LoaderCircle className="size-4 animate-spin" />Loading deployment…</p>
-        : <div className="mt-5">
-          <div role="tablist" aria-label="Deployment content" className="flex flex-wrap gap-1.5">
-            {tabs.map((tab) => <button key={tab.id} type="button" role="tab" aria-selected={selected === tab.id} onClick={() => setSelected(tab.id)}
-              className={cn('rounded-lg px-3 py-1.5 font-mono text-xs font-bold transition',
-                selected === tab.id ? 'bg-contrast text-contrast-ink' : 'bg-surface-2 text-ink-muted hover:text-ink')}>{tab.label}</button>)}
-          </div>
-          <pre role="tabpanel" className={cn('mt-3 max-h-[45dvh] overflow-auto rounded-xl p-4 font-mono text-xs leading-6 whitespace-pre-wrap break-all',
-            selected === 'output' ? 'bg-neutral-950 text-neutral-100' : 'border border-line bg-surface-2 text-ink')}>{content}</pre>
-          {!files ? <p className="mt-3 text-xs text-ink-subtle">This attempt predates saved file snapshots.</p> : null}
-        </div>}
-  </Dialog>;
+    </Dialog>
+    <ConfirmDialog open={confirmDelete} onClose={() => setConfirmDelete(false)} onConfirm={() => void remove()} tone="danger" busy={deleting}
+      error={deleteError} title="Delete from history?" confirmLabel="Delete saved data" cancelLabel="Keep it"
+      description="Removes this entry, its files and its output from Mooi. The deployed service and the current configuration stay in place." />
+  </>;
 };

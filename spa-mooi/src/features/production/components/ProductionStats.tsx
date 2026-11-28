@@ -3,7 +3,7 @@ import type { ProductionDeployment } from '@/features/production/types/Productio
 import type { ProductionHealth } from '@/features/production/types/ProductionHealth';
 import type { ProductionHealthState } from '@/features/production/types/ProductionHealthState';
 import type { ProductionOverview } from '@/features/production/types/ProductionOverview';
-import { WorkspaceStat } from '@/features/sessions/components/workspaces/WorkspaceStat';
+import { Stat } from '@/shared/components/data-display/Stat';
 import { formatDuration } from '@/shared/utils/formatDuration';
 import { formatRelativeTime } from '@/shared/utils/formatRelativeTime';
 
@@ -25,14 +25,14 @@ export const ProductionStats = ({ overview, latest, healthState, health, healthE
   const configuration = overview.deployed ? overview.hasDraft ? 'Active + draft' : 'Active' : overview.configured ? 'Draft' : 'None';
 
   return (
-    <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 lg:grid-cols-4">
-      <WorkspaceStat icon={Tag} label="Release" value={latest?.releaseTag ?? '—'}
+    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <Stat icon={Tag} label="Release" value={latest?.releaseTag ?? '—'}
         hint={latest ? latest.state === 'succeeded' ? 'Last deployed version' : `Last attempt ${latest.state}` : 'Never deployed'} />
-      <WorkspaceStat icon={History} label="Last deployment" value={latest ? formatRelativeTime(latest.finishedAt ?? latest.startedAt) : '—'}
+      <Stat icon={History} label="Last deployment" value={latest ? formatRelativeTime(latest.finishedAt ?? latest.startedAt) : '—'}
         hint={latest?.finishedAt ? `Took ${formatDuration(latest.startedAt, latest.finishedAt)}` : latest ? 'In progress' : 'No history yet'} />
-      <WorkspaceStat icon={Activity} label="Service" value={SERVICE_LABELS[healthState]}
+      <Stat icon={Activity} label="Service" value={SERVICE_LABELS[healthState]}
         hint={healthError ?? (health ? `Checked ${formatRelativeTime(health.checkedAt)}` : overview.configured ? 'Runs status.sh' : 'Needs status.sh')} />
-      <WorkspaceStat icon={FileCode2} label="Configuration" value={configuration}
+      <Stat icon={FileCode2} label="Configuration" value={configuration}
         hint={missing > 0 ? `${missing} variable${missing === 1 ? '' : 's'} missing` : `${overview.environment.length} variable${overview.environment.length === 1 ? '' : 's'} · rev ${overview.revision}`} />
     </div>
   );

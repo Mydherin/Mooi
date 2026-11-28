@@ -5,12 +5,12 @@ import type { Backup } from '@/features/backups/types/Backup';
 import type { BackupOverview } from '@/features/backups/types/BackupOverview';
 import type { BackupStage } from '@/features/backups/types/BackupStage';
 import { PlatformEnvironmentCard } from '@/features/platform/components/PlatformEnvironmentCard';
-import type { Project } from '@/features/projects/types/Project';
-import { Button } from '@/shared/components/actions/Button';
-import { Card } from '@/shared/components/data-display/Card';
+import { Alert } from '@/shared/components/feedback/Alert';
+import { ErrorState } from '@/shared/components/feedback/ErrorState';
+import { Skeleton } from '@/shared/components/feedback/Skeleton';
 
 interface BackupOverviewPanelProps {
-  project: Project;
+  projectId: string;
   overview: BackupOverview | null;
   error: string | null;
   onRetry: () => void;
@@ -32,24 +32,20 @@ interface BackupOverviewPanelProps {
 }
 
 /** The landing tab: the lifecycle card, then numbers, backups and environment once there is something to show. */
-export const BackupOverviewPanel = ({ project, overview, error, onRetry, stage, hasChat, missingVariables, list, busy, onSetup,
+export const BackupOverviewPanel = ({ projectId, overview, error, onRetry, stage, hasChat, missingVariables, list, busy, onSetup,
   onBackup, onOpenChat, onOpenConsole, onFix, onEnvironment, onOpenBackup, onVerify, onRestore, onDelete }: BackupOverviewPanelProps) => {
   const started = Boolean(overview?.configured || list.backups.length > 0 || overview?.environment.length);
   const locked = !overview?.active || stage === 'running' || busy;
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 py-6 sm:px-8 lg:px-10 lg:py-8">
-        {error ? <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-danger/30 bg-danger-soft px-4 py-3 text-sm text-danger">
-          <span className="min-w-0 flex-1">{error}</span>
-          {!overview ? <Button variant="secondary" size="sm" onClick={onRetry}>Retry</Button> : null}
-        </div> : null}
-
-        {!overview ? !error ? <>
-          <Card className="h-64 animate-pulse-soft" />
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{[0, 1, 2, 3].map((item) => <Card key={item} className="h-20 animate-pulse-soft" />)}</div>
-        </> : null : <>
-          <BackupHero project={project} stage={stage} hasChat={hasChat} missingVariables={missingVariables}
+    <div className="h-full overflow-y-auto overscroll-contain">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-gutter py-5 pb-[calc(1.25rem+var(--safe-bottom))] lg:py-8">
+        {!overview ? error ? <ErrorState description={error} onRetry={onRetry} /> : <div aria-busy className="flex flex-col gap-4">
+          <Skeleton className="h-56 rounded-panel" />
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[0, 1, 2, 3].map((item) => <Skeleton key={item} className="h-22 rounded-card" />)}</div>
+        </div> : <>
+          {error ? <Alert tone="danger">{error}</Alert> : null}
+          <BackupHero projectId={projectId} stage={stage} hasChat={hasChat} missingVariables={missingVariables}
             deployedRelease={overview.deployedRelease} busy={busy} onSetup={onSetup} onBackup={onBackup} onOpenChat={onOpenChat}
             onOpenConsole={onOpenConsole} onFix={onFix} onEnvironment={onEnvironment} />
 

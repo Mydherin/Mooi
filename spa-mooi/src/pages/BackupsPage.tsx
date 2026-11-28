@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { DatabaseBackup, FolderGit2, History, LoaderCircle } from 'lucide-react';
+import { DatabaseBackup, FolderGit2, History, SearchX } from 'lucide-react';
+import { backupPath } from '@/app/paths';
 import { BackupDetailDialog } from '@/features/backups/components/BackupDetailDialog';
 import { BackupHistoryList } from '@/features/backups/components/BackupHistoryList';
 import { BackupProjectCard } from '@/features/backups/components/BackupProjectCard';
@@ -8,12 +8,17 @@ import { useBackups } from '@/features/backups/hooks/useBackups';
 import type { Backup } from '@/features/backups/types/Backup';
 import { useProjects } from '@/features/projects/hooks/useProjects';
 import { Button } from '@/shared/components/actions/Button';
-import { Card } from '@/shared/components/data-display/Card';
+import { ListGroup } from '@/shared/components/data-display/ListGroup';
 import { EmptyState } from '@/shared/components/feedback/EmptyState';
+import { ErrorState } from '@/shared/components/feedback/ErrorState';
+import { Skeleton } from '@/shared/components/feedback/Skeleton';
 import { SearchInput } from '@/shared/components/forms/SearchInput';
-import { Tabs } from '@/shared/components/navigation/Tabs';
+import { Page } from '@/shared/components/layout/Page';
+import { PageHeader } from '@/shared/components/layout/PageHeader';
+import { SegmentedControl } from '@/shared/components/navigation/SegmentedControl';
+import { useTabParam } from '@/shared/components/navigation/useTabParam';
 
-const HISTORY_TAB = 'history';
+const VIEWS = ['projects', 'history'] as const;
 
 /**
  * Backups across the workspace: pick a project to open its backup view, or review every recorded
@@ -22,10 +27,9 @@ const HISTORY_TAB = 'history';
 export const BackupsPage = () => {
   const { projects, status, error: projectsError, reload: reloadProjects } = useProjects();
   const history = useBackups();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [view, setView] = useTabParam(VIEWS, 'projects');
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<Backup | null>(null);
-  const tab = searchParams.get('tab') === HISTORY_TAB ? HISTORY_TAB : 'projects';
 
   const projectById = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects]);
   const byProject = useMemo(() => {
@@ -40,55 +44,38 @@ export const BackupsPage = () => {
       .sort((a, b) => (byProject.get(b.id)?.[0]?.startedAt ?? '').localeCompare(byProject.get(a.id)?.[0]?.startedAt ?? ''));
   }, [projects, query, byProject]);
   const protectedProjects = useMemo(() => [...byProject.values()].filter((backups) => backups[0]?.state === 'succeeded').length, [byProject]);
+  const loadingProjects = (status === 'loading' || status === 'idle') && projects.length === 0;
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-5 pt-7 pb-[calc(1.75rem+var(--safe-bottom))] sm:px-8 lg:px-10 lg:pt-10 lg:pb-10">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="mb-2 font-mono text-[10.5px] font-medium tracking-[0.12em] text-ink-subtle uppercase">Production</p>
-          <h1 className="text-[30px] leading-[1.1] font-semibold tracking-[-0.04em] text-ink sm:text-[34px]">Backups</h1>
-          <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-ink-muted">Open a project to prepare, prove and run its backups and restores.</p>
+    <Page>
+      <PageHeader title="Backups" eyebrow="Production"
+        subtitle={`${projects.length} project${projects.length === 1 ? '' : 's'} · ${protectedProjects} protected`}>
+        <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+          <SegmentedControl ariaLabel="Backup views" value={view} onChange={(next) => setView(next as typeof VIEWS[number])} className="sm:w-64"
+            items={[{ id: 'projects', label: 'Projects', icon: FolderGit2 }, { id: 'history', label: 'History', icon: History }]} />
+          {view === 'projects' && projects.length > 6 ? <SearchInput value={query} onChange={setQuery} placeholder="Search projects" className="min-w-0 sm:max-w-xs" /> : null}
         </div>
-        <dl className="flex gap-6">
-          <div><dt className="font-mono text-[10.5px] font-medium tracking-[0.12em] text-ink-subtle uppercase">Projects</dt>
-            <dd className="text-xl font-extrabold text-ink tabular-nums">{projects.length}</dd></div>
-          <div><dt className="font-mono text-[10.5px] font-medium tracking-[0.12em] text-ink-subtle uppercase">Protected</dt>
-            <dd className="text-xl font-extrabold text-ink tabular-nums">{protectedProjects}</dd></div>
-        </dl>
-      </header>
+      </PageHeader>
 
-      <Tabs ariaLabel="Backup views" value={tab} className="-mb-2 border-b border-line"
-        onChange={(next) => setSearchParams(next === HISTORY_TAB ? { tab: HISTORY_TAB } : {}, { replace: true })}
-        items={[{ id: 'projects', label: 'Projects', icon: FolderGit2, count: projects.length },
-          { id: HISTORY_TAB, label: 'History', icon: History }]} />
-
-      {tab === 'projects' ? <section aria-label="Projects" className="flex flex-col gap-4">
-        {projectsError ? <div role="alert" className="flex items-center justify-between gap-3 rounded-xl bg-danger-soft px-4 py-3 text-sm text-danger">
-          <span>{projectsError}</span><Button variant="secondary" size="sm" onClick={reloadProjects}>Retry</Button>
-        </div> : null}
-        {projects.length > 6 ? <SearchInput value={query} onChange={setQuery} placeholder="Search projects" className="sm:max-w-sm" /> : null}
-        {(status === 'loading' || status === 'idle') && projects.length === 0
-          ? <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{[0, 1, 2].map((item) => <Card key={item} className="h-44 animate-pulse-soft" />)}</div>
-          : projects.length === 0 ? !projectsError && <EmptyState icon={FolderGit2} title="No projects yet" description="Add a project to your workspace to back it up." />
-            : visibleProjects.length === 0 ? <p className="py-10 text-center text-sm text-ink-muted">No project matches “{query}”.</p>
-              : <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {visibleProjects.map((project) => <BackupProjectCard key={project.id} project={project}
-                  latest={byProject.get(project.id)?.[0]} count={byProject.get(project.id)?.length ?? 0} />)}
-              </div>}
+      {view === 'projects' ? <section aria-label="Projects" className="flex flex-col gap-4">
+        {projectsError ? <ErrorState description={projectsError} onRetry={reloadProjects} />
+          : loadingProjects ? <div aria-busy className="flex flex-col gap-px overflow-hidden rounded-card">{[0, 1, 2].map((item) => <Skeleton key={item} className="h-16 rounded-none" />)}</div>
+            : projects.length === 0 ? <EmptyState icon={FolderGit2} title="No projects yet" description="Add a project to your workspace to back it up." />
+              : visibleProjects.length === 0 ? <EmptyState icon={SearchX} title="No matches" description={`No project matches “${query}”.`} />
+                : <ListGroup>{visibleProjects.map((project) => <BackupProjectCard key={project.id} project={project}
+                  latest={byProject.get(project.id)?.[0]} count={byProject.get(project.id)?.length ?? 0} />)}</ListGroup>}
       </section> : <section aria-label="History" className="flex flex-col gap-4">
-        {history.error ? <div role="alert" className="flex items-center justify-between gap-3 rounded-xl bg-danger-soft px-4 py-3 text-sm text-danger">
-          <span>{history.error}</span><Button variant="secondary" size="sm" onClick={history.reload}>Retry</Button>
-        </div> : null}
-        {history.loading && history.backups.length === 0 ? <Card className="h-48 animate-pulse-soft" />
-          : history.backups.length === 0 ? !history.error && <EmptyState icon={DatabaseBackup} title="No backups yet"
-            description="Every backup appears here with its date, time, release and outcome." />
-            : <BackupHistoryList backups={history.backups} projects={projectById} onOpen={setSelected} />}
-        {history.hasMore ? <div className="text-center"><Button variant="secondary" onClick={history.loadMore} disabled={history.loading}>
-          {history.loading ? <LoaderCircle className="size-4 animate-spin" /> : null}Load more</Button></div> : null}
+        {history.error && history.backups.length === 0 ? <ErrorState description={history.error} onRetry={history.reload} />
+          : history.loading && history.backups.length === 0 ? <Skeleton className="h-48 rounded-card" />
+            : history.backups.length === 0 ? <EmptyState icon={DatabaseBackup} title="No backups yet"
+              description="Every backup appears here with its date, time, release and outcome." />
+              : <BackupHistoryList backups={history.backups} projects={projectById} onOpen={setSelected} />}
+        {history.hasMore ? <Button variant="secondary" loading={history.loading} onClick={history.loadMore} className="self-center">Load more</Button> : null}
       </section>}
 
       {selected ? <BackupDetailDialog key={selected.id} backup={selected}
-        projectName={projectById.get(selected.projectId)?.name ?? 'Removed project'} onClose={() => setSelected(null)} /> : null}
-    </div>
+        projectName={projectById.get(selected.projectId)?.name ?? 'Removed project'} onClose={() => setSelected(null)}
+        projectTo={projectById.has(selected.projectId) ? backupPath(selected.projectId) : undefined} /> : null}
+    </Page>
   );
 };

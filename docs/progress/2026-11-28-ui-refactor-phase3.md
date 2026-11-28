@@ -4,107 +4,112 @@
 
 ## Request
 
-The user (Spanish) asked to continue the SPA UI/UX refactor described in `docs/plans/ui-refactor/PLAN.md`
-(read it, plus `FOUNDATION.md` = shared API, `AUDIT.md` = findings per screen). Requirements:
-- First close the inconsistent state left by previous sessions (they used sub-agents in parallel and left
-  phase 3 half-done, deleting components without updating pages → the build fails), then finish every
-  pending task of the plan (phases 3, 4, 5), efficient, scalable, complete, maintainable, consistent.
-- **Do NOT use sub-agents** (Agent tool / workflows) — the user was explicit: do everything yourself.
-- It must deploy and work: phase 4 = deploy the preview and verify with Playwright at 360×780 and
-  1440×900, light and dark (the user explicitly asked for deploying/testing; follow the deployment brief
-  via `GET /sessions/<id>/deployment/agent/brief` as the system prompt says). Report in `E2E.md`.
-- Phase 5: `bun run build` green, `AGENTS.md` updated (remove the *SPA UI/UX refactor* pointer under
-  *Current work*), plan files deleted.
+The user (Spanish) asked to continue the SPA UI/UX refactor of `docs/plans/ui-refactor/PLAN.md` exactly where it
+stopped (read this file, then `PLAN.md` and `FOUNDATION.md`; trust them, do not re-explore the repo; read only
+files you touch; pre-refactor versions via `git show fcb897d^:spa-mooi/src/<path>`). Requirements:
+- **Do NOT use sub-agents or workflows** — do everything yourself. Be very context-efficient (batch commands,
+  precise edits, do not re-read documented things).
+- Result efficient, scalable, maintainable, consistent, coherent; no regressions, no lost functionality.
+- Order: typecheck green (areas D, C, B, A) → migrate every screen to the foundation (FOUNDATION.md §14) →
+  `bun run build` green → phase 4 (deploy the preview following the Mooi deployment brief
+  `GET http://127.0.0.1:8000/sessions/<id>/deployment/agent/brief`, Playwright at 360×780 and 1440×900, light
+  and dark, report in `E2E.md`, fix and repeat) → phase 5 (close the plan, update `AGENTS.md`, delete temporary
+  files and `.playwright-mcp/`).
+- Update this progress file after finishing each area.
 - No tests, no new dependencies. Conventional commits only if asked to commit.
 
-## Done (this session)
+## Done
 
-Area E (account, admin, agents, recipes) — complete and type-clean:
-- New shared `shared/components/forms/select/SelectField.tsx` (Select + visible label/hint/error via `Field`).
-  Use it for every labelled picker. Add it to `FOUNDATION.md` §4/§10 when closing.
-- `features/agents/components/accounts/`: `AgentAccountsPanel.tsx` (new), `AddAgentAccountDialog.tsx` (new),
-  `RenameAgentAccountDialog.tsx` (new, mounted with `key`), `AgentSignInAgainDialog.tsx` (new);
-  `AgentAccountRepairNotice.tsx` (dropped unused `legacy` prop), `AgentAccountRow.tsx` (call updated).
-- `features/agents/components/defaults/AgentDefaultsRow.tsx` (new, SelectField instead of native selects),
-  `AdminAgentDefaults.tsx` (rewritten as a `PageSection`).
-- `features/agents/components/AgentAccountSelect.tsx` → SelectField.
-- `features/sessions/components/SessionModelFields.tsx` (SelectField, no native `<select>`),
-  `AgentModelFields.tsx` (Alert/Spinner, no nested label), `AgentAdapterSelect.tsx` (label style).
-- `features/admin/components/AdminUsersPanel.tsx`, `AdminUserRow.tsx` (stacked rows, memo, Live visible),
-  `AdminUserDialog.tsx` (actions as ListRows + ConfirmDialog for ban; no overflowing footer).
-- `features/recipes/components/RecipeMarketplacesPanel.tsx` (new; `RecipeMarketplacesCard.tsx` removed via
-  `git rm`), `RecipeMarketplaceRow.tsx` (Menu + long press), `AddRecipeMarketplaceDialog.tsx` (TextField).
-- `pages/AccountPage.tsx` (Page/PageHeader/Tabs/TabPanels swipeable, `useTabParam`, tabs
-  general|github|agents|recipes — `?tab=agents` deep link kept), `pages/AdminPage.tsx`
-  (SegmentedControl + TabPanels, `?tab=agents`).
+- Earlier session (committed in 8b45405): area E (account, admin, agents, recipes), new shared
+  `shared/components/forms/select/SelectField.tsx` (add it to FOUNDATION/AGENTS facts when closing).
+- This session: **area D typecheck-clean and migrated** (uncommitted, in the working tree):
+  - `features/production/components/`: `ProductionConsolePanel` (thin wrapper of `operation/OperationConsole`),
+    `ProductionHero` (on `OperationStatusCard` + `OperationSteps`, no `project` prop any more),
+    `ProductionOverviewPanel` (ErrorState/Skeleton/Alert, no `project` prop), `ProductionHistoryCard` (ListGroup +
+    memo ListRow, redeploy as swipe action + in detail dialog), `ProductionHistoryList` (ListRow, swipe "Project"),
+    `ProductionProjectCard` (now a `ListRow` → must be rendered inside a `ListGroup`), `ProductionDeploymentDetailDialog`
+    (Tabs + OperationOutput, delete via ConfirmDialog, new optional `projectTo` prop → "Open project" link),
+    `ProductionStats` (shared `Stat`), `ProductionReleaseDialog` (SegmentedControl, TextField, Spinner, Alert).
+  - `features/backups/components/`: `BackupConsolePanel`, `BackupHero` (prop `projectId` instead of `project`),
+    `BackupOverviewPanel` (prop `projectId`), `BackupListCard` (ListGroup), `BackupRow` (memo, Menu + long press:
+    View/Verify/Restore/Delete), `BackupHistoryList`, `BackupProjectCard` (ListRow), `BackupDetailDialog`
+    (SelectField for operations, SegmentedControl Output/Script, `projectTo`), `BackupStats` (Stat).
+  - `pages/ProjectDeploymentPage.tsx` and `pages/ProjectBackupPage.tsx`: `OperationProjectGate` → inner
+    `ProductionScreen`/`BackupScreen`; `OperationHeader` with `ActionItem[]` (Deploy/Create backup primary,
+    Environment variables, Change…, Check status / Production deployment link, GitHub releases, Delete configuration
+    destructive), `operationTabs()`, `useTabParam`, `OperationSessionPanel` for changes/trace, tabpanel ids
+    `<prefix>-panel-<id>` matching `Tabs` `idPrefix` ("production"/"backup").
+  - `pages/DeploymentsPage.tsx`, `pages/BackupsPage.tsx`: Page/PageHeader (eyebrow Production, subtitle counts),
+    SegmentedControl Projects|History via `useTabParam` (`?tab=history` kept), SearchInput, ListGroup,
+    ErrorState/EmptyState/Skeleton, detail dialogs get `projectTo`.
+  - `features/platform/components/PlatformEnvironmentCard.tsx` (tokens, no `title=`).
+  - `features/sessions/components/workspaces/WorkspaceStat.tsx` deleted (`git rm`); its users
+    (`WorkspaceStats.tsx`, `overview/SessionsOverviewStats.tsx`, BackupStats, ProductionStats) use shared `Stat`.
+  - `git mv` `features/development/hooks/useEnvironmentDraft.ts` → `features/platform/hooks/useEnvironmentDraft.ts`
+    and `features/development/lib/environmentNames.ts` → `features/platform/lib/environmentNames.ts` (import updated;
+    still unused — see In progress).
 
 ## In progress
 
-Area D (production, backups, development variables). Nothing half-written. I had just read
-`pages/ProjectDeploymentPage.tsx`. The previous session already built good shared pieces in
-`features/production/components/operation/` (`OperationHeader`, `OperationConsole`, `OperationStatusCard`,
-`OperationSteps`, `OperationStateBadge`, `OperationStateIcon`, `OperationOutput`, `OperationProjectGate`,
-`OperationSessionPanel`, `operationStateView.ts`), `features/production/lib/operationTabs.ts`,
-`types/OperationTab.ts`, `hooks/useNow.ts`. Next step: rewrite `ProjectDeploymentPage.tsx` with
-`OperationProjectGate` + `OperationHeader` (actions as `ActionItem[]`: Deploy primary, Variables, Reconfigure,
-Check status, Delete configuration destructive) + `operationTabs()` + `OperationSessionPanel`; replace
-imports of deleted `DeploymentStateBadge/Icon` → `OperationStateBadge/Icon`, `ProductionSteps/BackupSteps` →
-`OperationSteps`, `ProductionTab/BackupTab` → `OperationTab`, `ProductionPageHeader/BackupPageHeader` →
-`OperationHeader`. Same for `ProjectBackupPage.tsx`. Then fix the console panels/hero components and migrate
-`DeploymentsPage`/`BackupsPage` to Page/PageHeader.
+Platform/D leftovers (legacy markers). Next step: rewrite `features/platform/components/PlatformEnvironmentDialog.tsx`
+on `useEnvironmentDraft(prefix, variables)` (values/removed/added/nameErrors/update/changes/valid/setValue/
+toggleRemoved/add/edit/discard) and `TextField` (`type="password" autoComplete="new-password"`, `mono`,
+`trailing` for the remove/discard IconButton, `leading` or `hint` for the prefix), `Alert` for load/save errors,
+`Spinner` for loading, `Button icon={Plus}` for "Add variable", footer `Button loading`. Drop the local `NAME`
+regex. Then use `shortVariableName` from `platform/lib/environmentNames` in `PlatformEnvironmentCard` (replace its
+local `shortName`). Then fix `PlatformAgentDialog.tsx` (lines ~29, 71-82: raw `text-[11px]`, `pointer-coarse:invisible`
+hint → `touch:hidden`, textarea `text-sm` → `text-input`, Enter submits only on non-touch, suggestions chips
+`hover-device:`, notices/errors → `Alert`, Button `loading`/`icon`) and `PlatformFilesPanel.tsx` (lines ~108-114 raw
+sizes and unwrapped `hover:`). Check also `BackupDeleteDialog`, `BackupRestoreDialog`, `PlatformDeleteDialog`,
+`PlatformChatPanel` for LoaderCircle spinners / raw alerts.
 
 ## Pending (in order)
 
-1. Make `cd spa-mooi && bun run typecheck` green. Remaining errors (34) at handover:
-   - D: see above (BackupConsolePanel, BackupDetailDialog, BackupHero, BackupHistoryList, BackupProjectCard,
-     BackupRow, ProductionConsolePanel, ProductionDeploymentDetailDialog, ProductionHero,
-     ProductionHistoryCard, ProductionHistoryList, ProductionProjectCard, ProjectBackupPage, ProjectDeploymentPage).
-   - C: `pages/ProjectsPage.tsx` imports deleted `ProjectGrid`/`ProjectsHeader`; `pages/ProjectPage.tsx`
-     imports deleted `ProjectHeader` (also deleted: `ProjectCard`, `AddProjectTile`). Rebuild them on the
-     foundation (see AUDIT.md "Projects"/"Project": compact header, ResponsiveActions with destructive
-     "Delete GitHub repository" last in the menu, card long-press menu, no duplicate add actions).
-     Old versions: `git show fcb897d^:spa-mooi/src/<path>`.
+1. Typecheck green. Remaining errors (15) at handover, all outside D:
+   - C: `pages/ProjectsPage.tsx` imports deleted `ProjectGrid`/`ProjectsHeader`; `pages/ProjectPage.tsx` imports
+     deleted `ProjectHeader` (also deleted: `ProjectCard`, `AddProjectTile`). Rebuild on the foundation (AUDIT.md
+     "Projects"/"Project": compact header, ResponsiveActions with destructive "Delete GitHub repository" last,
+     card long-press menu, no duplicate add actions). Old versions: `git show fcb897d^:spa-mooi/src/<path>`.
    - B: `features/sessions/components/WorkspaceHeader.tsx:63` MergeButton needs a `merge` prop;
      `features/sessions/components/deploy/DeployTerminal.tsx:74` passes `sticky` the toolbar doesn't accept.
      New pieces exist in `features/sessions/components/session/` (SessionActionsMenu, SessionDetailRow,
      SessionDetailsSheet), `merge/MergeConflictsDialog.tsx`, `lib/deployMenuSection.tsx`,
-     `hooks/useSessionChangesSeed.ts`, `hooks/useSessionModels.ts` — check whether the old root
-     `SessionActionsMenu.tsx` is now a duplicate and wire the new ones.
-   - A: `features/sessions/components/chat/ActivityGroup.tsx`, `ActivityStepRow.tsx`, `ChatMessageItem.tsx`
-     import `@/features/sessions/lib/describeStep` and `.../groupTurnBlocks`, moved to
-     `@/features/sessions/lib/activity/describeStep` and `.../activity/groupTurnBlocks` (groupTurnBlocks API
-     changed ~50%: read it before fixing); new libs `lib/activity/*`, `lib/commands/*`, `lib/transcript/*`
-     must actually be used by the chat components.
-2. Finish migrating every area to the foundation (FOUNDATION.md §14 checklist). Legacy markers to drive the
-   work (count by `grep -rE "text-\[[0-9]"`, `<select`, native `title=` on elements, unwrapped `hover:`):
-   sessions (86 raw sizes, 7 `<select>`, 19 titles, 37 hovers — e.g. `ComposerSelect`, `ChatUsageIndicators`,
-   `NewSessionDialog`), traces (47 raw, 16 titles), factory (51 raw), todos (24 raw, 17 hovers), projects,
-   platform (`PlatformAgentDialog`: "Enter to start · Shift+Enter" hint must not show on phones), production,
-   backups, layouts (10 raw), shared (16 raw). No page used `Page`/`PageHeader` before this session: migrate
-   SessionsPage, TodosPage, ProjectsPage, ProjectPage, DeploymentsPage, BackupsPage, SessionPage (immersive,
-   own header), LoginPage, GithubCallbackPage, NotFoundPage (add a Back action). Add the session
-   **Workspace** tab if missing (AGENTS.md lists it).
-3. `bun run build` green.
-4. Phase 4: deploy the preview (deployment brief API), Playwright 360×780 + 1440×900, light + dark, every
-   screen and overlay incl. those AUDIT.md lists as "Not exercised"; keyboard open; long texts. Sign in via
+     `hooks/useSessionChangesSeed.ts`, `hooks/useSessionModels.ts`. The old root
+     `features/sessions/components/SessionActionsMenu.tsx` duplicates `session/SessionActionsMenu.tsx` (both import
+     DevelopmentEnvironmentDialog): wire the new one and delete the old.
+   - A: `features/sessions/components/chat/ActivityGroup.tsx`, `ActivityStepRow.tsx`, `ChatMessageItem.tsx` import
+     `@/features/sessions/lib/describeStep` and `.../groupTurnBlocks`, moved to `@/features/sessions/lib/activity/…`
+     (groupTurnBlocks API changed: read it before fixing); new libs `lib/activity/*`, `lib/commands/*`,
+     `lib/transcript/*` must actually be used by the chat components.
+2. Finish migrating every area to the foundation (§14). Find legacy markers with
+   `grep -rnE "text-\[[0-9]|<select|<[a-z]+ [^>]*title=| hover:" src` (D is clean except the platform files above):
+   sessions (`ComposerSelect`, `ChatUsageIndicators`, `NewSessionDialog`…), traces, factory, todos, projects,
+   layouts, shared. Pages still without `Page`/`PageHeader`: SessionsPage, TodosPage, ProjectsPage, ProjectPage,
+   SessionPage (immersive, own header), LoginPage, GithubCallbackPage, NotFoundPage (add a Back action). Add the
+   session **Workspace** tab if missing (AGENTS.md lists it).
+3. `cd spa-mooi && bun run build` green.
+4. Phase 4: deploy the preview (deployment brief API), Playwright 360×780 + 1440×900, light + dark, every screen
+   and overlay incl. those AUDIT.md lists as "Not exercised"; keyboard open; long texts. Sign in via
    `https://mooi.skypea.dev/preview/<id>/` (127.0.0.1 rejects the mock sign-in). Write `E2E.md`, fix, repeat.
-5. Phase 5: update `FOUNDATION.md` facts worth keeping into `AGENTS.md` only if they shape future work
-   (e.g. "overlays only through shared primitives", SelectField), remove the *SPA UI/UX refactor* line from
-   AGENTS.md *Current work*, delete `docs/plans/ui-refactor/`, delete this file and its pointer.
-   Also delete the stray `.playwright-mcp/` files committed in fcb897d.
+5. Phase 5: move FOUNDATION.md facts that shape future work into `AGENTS.md` (e.g. overlays only through shared
+   primitives, SelectField for labelled pickers, operation/ shared pieces for production+backups), remove the
+   *SPA UI/UX refactor* line from AGENTS.md *Current work*, delete `docs/plans/ui-refactor/`, delete this file and
+   its pointer, delete the stray `.playwright-mcp/` files committed in fcb897d.
 
 ## Context
 
-- Repo: `spa-mooi` (React 19, TS, Vite, Tailwind 4, Zustand 5). Typecheck: `cd spa-mooi && bun run typecheck`
-  (bun is installed; `bun install` already done). Do not use `npx tsc`.
-- Last commit `fcb897d refactor: whole interface redesign` holds the half-done work; original files before
-  the refactor: `git show fcb897d^:spa-mooi/src/...` (use `rtk proxy git show ...` when output is truncated).
-- Foundation API is accurate as documented in FOUNDATION.md (Page, PageHeader with sticky children row,
-  PageSection, ListGroup/ListRow (swipeActions), Tabs/TabPanels/useTabParam, SegmentedControl, Dialog
-  (`footer` order Cancel…Primary, `dismissible`, `initialFocus`), Sheet, Menu (sections, controlled open for
-  long press), ResponsiveActions, Select, ConfirmDialog (`error`, `busy`), Alert (`action`), EmptyState
-  (description required), ErrorState (description required), Stat, CompactNumber, TruncatedText, toast()).
-- Select has no visible label: use `SelectField` in forms.
-- Patterns used in area E: per-row `Menu` opened by `useLongPress`, row components `memo`'d with id-based
-  callbacks, overlays mounted conditionally with `key` when they hold a draft, destructive actions via
-  `ConfirmDialog`.
+- `spa-mooi`: React 19, TS, Vite, Tailwind 4, Zustand 5. Run `bun install --frozen-lockfile` first if
+  `node_modules` is missing (it was missing in this clone). Typecheck: `cd spa-mooi && bun run typecheck`. No `npx tsc`.
+- Foundation API as in FOUNDATION.md. Checked details: `Button` has `icon?: LucideIcon` and `loading`; `Card` adds
+  no padding; `ListRow` renders an `<li>` (always inside `ListGroup`), `trailing` sits inside the row's
+  button/link, so never put a button in `trailing` of a clickable row — use `swipeActions` + a menu/dialog, or the
+  `RecipeMarketplaceRow` pattern (row `<li>` with a button + a sibling `Menu`, `useLongPress` opening it);
+  `useTabParam(ids, fallback)` validates against ids; `Tabs` ids are `${prefix}-tab-${id}` / `${prefix}-panel-${id}`
+  (`tabId`/`panelId` exported from `Tabs.tsx`); `SelectField` = Select props + label/hint/error; `Stat`
+  (label, value, hint, icon, tone) in `grid grid-cols-2 gap-3 lg:grid-cols-4`.
+- Shared operation pieces for production and backups live in `features/production/components/operation/`
+  (`OperationHeader`, `OperationConsole`, `OperationStatusCard`, `OperationSteps`, `OperationStateBadge/Icon`,
+  `OperationOutput`, `OperationProjectGate`, `OperationSessionPanel`), `features/production/lib/operationTabs.ts`,
+  `types/OperationTab.ts`, `hooks/useNow.ts`.
+- Patterns: rows `memo`'d with id/object callbacks, overlays mounted conditionally with `key` when they hold a draft,
+  destructive actions via `ConfirmDialog`, errors via `Alert`/`ErrorState`, loading via `Skeleton`/`Spinner`.
