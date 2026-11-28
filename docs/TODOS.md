@@ -11,9 +11,9 @@
 - [ ] Listado de proyectos al crear la sesion por text input
 - [ ] Desvincular de Mooi proyecto
 - [ ] Soportar archivar proyectos
+- [ ] When you ask the chat for something and chat makes a deterministic deployment in dev session, the deployment set up message appears, and it should not appers cause that message is always when you are setting up the deployment with the agent from fisrt time (triggered from chat or from button)
 - [ ] Esquinas blancas en favicon
 - [ ] Adjust at ui ux level properly the session context and 5 hour limit
-- [ ] When you ask the chat for something and chat makes a deterministic deployment in dev session, the deployment set up message appears, and it should not appers cause that message is always when you are setting up the deployment with the agent from fisrt time (triggered from chat or from button)
 - [ ] So times when I make production deployment it says fetching but it do not show more logs until I reload
 - [ ] The user admin dialog sucks in mobile since dialog allow scrolling with no sense and actions buttons are together
 - [ ] Mejorar stt con Go (AllForOne)
