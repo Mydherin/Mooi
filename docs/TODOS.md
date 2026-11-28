@@ -1,7 +1,7 @@
 # TODOs
 
-- [ ] Ver correctamente las sesiones hijas
 - [ ] Refactor mobile
+- [ ] Ver correctamente las sesiones hijas
 - [ ] Drag and drop pattern improve
 - [ ] Micrófono Pausa y evitar borrado en movil
 - [ ] Cuadro de texto menor en chat tras movimientos
