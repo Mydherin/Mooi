@@ -7,7 +7,6 @@
 - [ ] Reordenar en mi projects view
 - [ ] Refactor mobile
 - [ ] Iconos pequeños
-- [/] Auto restart cuando rate limit
 - [/] Support child sessions
 - [ ] HOrario utc+1 en formato del cliente
 - [ ] Agregar nuevo proyecto, listado de busqueda libre con pestaña de mis proyectos, permite buscar cualquier repo publico de otro autor o privado con acceso, si no esta en mis personales antes de agregarlo a Mooi hace un fork
@@ -22,6 +21,7 @@
 - [ ] Mejorar stt con Go (AllForOne)
 - [ ] Say how diff commits from main to previous release
 - [ ] Apply dnd in todos list with better pattern, about grabbing 1.5 secs in any place to enable in the row
+- [x] Auto restart cuando rate limit
 - [x] Upgrade playwright
 - [x] Files view, allowing editing files with plain text manually
 - [x] In changes show file name with extension just and as subtitle the full relative path and if you hover it you could see a tooltip with full path if you could not see entrierly as subtitle cause ellipsis
